@@ -1,0 +1,113 @@
+name: Comic Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      case:
+        description: "Case name (leave blank to auto-pick the next one)"
+        required: false
+        default: ""
+      dry_run:
+        description: "If true, stop after picking the case (no generation, no publish)"
+        required: false
+        default: "false"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install requests rapidocr-onnxruntime kaggle Pillow reportlab
+
+      - name: Install Gumroad CLI
+        run: curl -fsSL https://gumroad.com/install-cli.sh | bash
+
+      - name: Configure Kaggle credentials
+        run: |
+          mkdir -p ~/.kaggle
+          echo "{\"username\":\"${{ secrets.KAGGLE_USERNAME }}\",\"key\":\"${{ secrets.KAGGLE_KEY }}\"}" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Authenticate Gumroad CLI
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Pick case
+        id: pick
+        if: github.event.inputs.case == ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python pipeline_lib/pick_case.py
+
+      - name: Set case variable
+        id: case
+        run: |
+          if [ -n "${{ github.event.inputs.case }}" ]; then
+            echo "case=${{ github.event.inputs.case }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "case=${{ steps.pick.outputs.case }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stop here if dry run
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "DRY RUN — picked case: ${{ steps.case.outputs.case }}"
+          echo "Stopping before generation/publish, as requested."
+          exit 0
+
+      - name: Generate script + panel prompts
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CASE: ${{ steps.case.outputs.case }}
+        run: |
+          SLUG=$(echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40)
+          mkdir -p cases/$SLUG/panels
+          echo "slug=$SLUG" >> "$GITHUB_ENV"
+          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE"
+
+      - name: Generate FLUX art on Kaggle
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python pipeline_lib/gen_flux_kaggle.py --case-dir cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}-flux"
+
+      - name: OCR check + one auto-fix retry
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+        run: |
+          cd pipeline_lib
+          python ocr_autofix.py --case-dir ../cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}"
+
+      - name: Copy shared build engine into case dir
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          cp pipeline_lib/build_comic.py pipeline_lib/lettering.py pipeline_lib/frontback.py cases/${{ env.slug }}/
+          cp -r fonts cases/${{ env.slug }}/fonts
+
+      - name: Build PDF, stage Gumroad draft, deliver to Telegram
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python pipeline_lib/stage_and_deliver.py \
+            --case-dir cases/${{ env.slug }} \
+            --case-id "${{ env.slug }}" \
+            --title "${{ steps.case.outputs.case }}"
+
+      - name: Commit generated case files back to repo
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name "shadow-gasp-bot"
+          git config user.email "bot@shadowgasp.example"
+          git add cases_used.json cases/
+          git commit -m "Generate case: ${{ steps.case.outputs.case }}" || echo "nothing to commit"
+          git push
