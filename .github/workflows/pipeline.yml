@@ -103,11 +103,17 @@ jobs:
             --case-id "${{ env.slug }}" \
             --title "${{ steps.case.outputs.case }}"
 
-      - name: Commit generated case files back to repo
-        if: github.event.inputs.dry_run != 'true'
+      - name: Commit ONLY the dedup ledger back to repo (never the comic content)
+        if: always()
         run: |
           git config user.name "shadow-gasp-bot"
           git config user.email "bot@shadowgasp.example"
-          git add cases_used.json cases/
-          git commit -m "Generate case: ${{ steps.case.outputs.case }}" || echo "nothing to commit"
+          # This repo is PUBLIC (for free Actions minutes). cases/ holds the
+          # actual script, art, and finished PDF for a paid product — it must
+          # NEVER be committed here, or anyone could download the comic free
+          # straight from GitHub before it's even approved. Only the ledger
+          # (case *names*, not content) is safe to keep in git history.
+          git add cases_used.json
+          git commit -m "Update case ledger: ${{ steps.case.outputs.case }}" || echo "nothing to commit"
           git push
+          rm -rf cases/
