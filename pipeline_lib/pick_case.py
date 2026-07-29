@@ -55,7 +55,10 @@ def call_claude(system, user, max_tokens=2000):
         raise RuntimeError(f"Anthropic API HTTP {e.code}: {e.read().decode()}") from e
     if "content" not in data:
         raise RuntimeError(f"Unexpected Anthropic API response: {json.dumps(data)[:1000]}")
-    return data["content"][0]["text"]
+    for block in data["content"]:
+        if block.get("type") == "text":
+            return block["text"]
+    raise RuntimeError(f"No text block in Anthropic API response: {json.dumps(data)[:1000]}")
 
 
 def main():
