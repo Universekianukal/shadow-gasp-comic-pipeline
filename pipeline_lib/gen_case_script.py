@@ -92,8 +92,13 @@ def call_claude(system, user, max_tokens=16000):
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=300) as r:
-        data = json.load(r)
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            data = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Anthropic API HTTP {e.code}: {e.read().decode()}") from e
+    if "content" not in data:
+        raise RuntimeError(f"Unexpected Anthropic API response: {json.dumps(data)[:1000]}")
     return data["content"][0]["text"]
 
 
