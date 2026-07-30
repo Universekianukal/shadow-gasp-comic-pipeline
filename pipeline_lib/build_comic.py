@@ -706,12 +706,16 @@ def render_cover(c, spec, panels_dir, missing):
     c.setStrokeColor(NEWSPRINT)
     c.setLineWidth(1.6)
     c.rect(bx, by, bw, bh, stroke=1, fill=1)
+    # Issue number only -- deliberately no price. A price printed into the
+    # artwork dates every already-sold copy the moment pricing changes, and
+    # it forces the number into any promo image built from this cover.
     c.setFillColor(NEWSPRINT)
-    c.setFont(FONT_HEAVY, 14)
-    c.drawCentredString(bx + bw / 2, by + bh - 0.235 * inch, spec.get("issue_line", "No. 01").replace("ISSUE ", "No."))
+    c.setFont(FONT_HEAVY, 15)
+    c.drawCentredString(bx + bw / 2, by + bh - 0.255 * inch,
+                        spec.get("issue_line", "No. 01").replace("ISSUE ", "No."))
     c.setFillColor(ACCENT_C)
-    c.setFont(FONT_HEAVY, 11)
-    c.drawCentredString(bx + bw / 2, by + 0.10 * inch, spec.get("price", "$2.99"))
+    c.setFont(FONT_HEAVY, 8)
+    c.drawCentredString(bx + bw / 2, by + 0.115 * inch, "SHADOW GASP")
 
     # ---- title, big and outlined ----
     size = 46

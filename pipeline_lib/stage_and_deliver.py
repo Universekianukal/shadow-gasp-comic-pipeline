@@ -181,7 +181,6 @@ def main():
             title=script["title"],
             subtitle_lines=lines,
             issue=f"ISSUE {script.get('issue_no', '01')}",
-            price=f"${args.price}",
             badge=script.get("promo_badge", "REAL CASE"),
             inside=script.get("promo_inside", ["REAL CASE FILES", "NAMED SUSPECTS",
                                                "FORENSIC EVIDENCE", "SOURCED TIMELINE"]),
@@ -209,7 +208,7 @@ def main():
             series=script.get("series", "SHADOW GASP"),
             title=script["title"],
             strip="TRUE CRIME · DOCUMENTARY COMIC",
-            meta_line=f"Issue {script.get('issue_no','01')}  ·  ${args.price}  ·  Instant PDF",
+            meta_line=f"Issue {script.get('issue_no','01')}  ·  Instant PDF download",
             tagline=script.get("subtitle", ""),
         )
     except Exception as e:

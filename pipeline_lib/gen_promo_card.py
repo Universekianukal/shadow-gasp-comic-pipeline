@@ -23,7 +23,7 @@ def _f(n, s):
     return ImageFont.truetype(os.path.join(FONTS, n), s)
 
 
-def build(pdf_path, out, title, subtitle_lines, issue, price, badge, inside, footer,
+def build(pdf_path, out, title, subtitle_lines, issue, badge, inside, footer, cta="OUT NOW",
           strip="TRUE CRIME  ·  DOCUMENTARY COMIC", size=S):
     doc = fitz.open(pdf_path)
     tmp = out + ".cover.png"
@@ -64,7 +64,9 @@ def build(pdf_path, out, title, subtitle_lines, issue, price, badge, inside, foo
 
     bw = (right - tx - 16) // 2
     bdg(tx, 420, bw, 54, badge, GOLD, INK)
-    bdg(tx + bw + 16, 420, bw, 54, price, ACCENT, (255, 255, 255))
+    # deliberately not the price: promo images get posted in groups where a
+    # price tag reads as an ad, and it dates the graphic if pricing changes
+    bdg(tx + bw + 16, 420, bw, 54, cta, ACCENT, (255, 255, 255))
     bdg(tx, 488, right - tx, 54, "INSTANT PDF DOWNLOAD", CREAM, INK, 20)
 
     d.text((tx, 572), "INSIDE:", font=_f("Montserrat-ExtraBold.ttf", 21), fill=GOLD)
