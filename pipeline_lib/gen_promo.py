@@ -39,6 +39,41 @@ def call_claude(system, user, max_tokens=1200):
     raise RuntimeError(f"No text block in response: {json.dumps(data)[:500]}")
 
 
+def get_product_cover_url(product_id):
+    """Pull the cover image URL back off the published Gumroad product.
+
+    The local cases/ folder (with the original cover.jpg) is deleted after the
+    build run, so by publish time Gumroad itself is the only place the image
+    still lives.
+    """
+    import subprocess
+    r = subprocess.run(
+        [os.path.expanduser("~/.local/bin/gumroad"), "products", "view", product_id, "--json"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        return None
+    data = json.loads(r.stdout)
+    p = data.get("product", data)
+    covers = p.get("covers") or []
+    if covers:
+        return covers[0].get("original_url") or covers[0].get("url")
+    return p.get("preview_url") or p.get("thumbnail_url")
+
+
+def tg_send_photo(bot_token, chat_id, photo_url, caption):
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{bot_token}/sendPhoto",
+        data=json.dumps({
+            "chat_id": chat_id, "photo": photo_url, "caption": caption,
+        }).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)
+
+
 def tg_send(bot_token, chat_id, text):
     req = urllib.request.Request(
         f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -56,6 +91,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", required=True)
     ap.add_argument("--url", required=True)
+    ap.add_argument("--product-id")
     args = ap.parse_args()
 
     system = (
@@ -79,7 +115,19 @@ def main():
 
     tg_send(bot_token, chat_id, f"🔗 Shareable link:\n{args.url}")
     tg_send(bot_token, chat_id, f"📋 Facebook post (copy-paste):\n\n{post}")
-    print("Sent link + promo post to Telegram")
+
+    # The cover art as a downloadable photo, so it can be attached to the
+    # Facebook post directly — an image post reaches far more people than a
+    # bare link, and FB's own link-preview scrape isn't reliable enough to
+    # count on.
+    cover_url = get_product_cover_url(args.product_id) if args.product_id else None
+    if cover_url:
+        try:
+            tg_send_photo(bot_token, chat_id, cover_url,
+                          "🖼 Cover image — download and attach to the FB post")
+        except Exception as e:
+            tg_send(bot_token, chat_id, f"(Cover image couldn't be sent: {e})")
+    print("Sent link + promo post + cover to Telegram")
 
 
 if __name__ == "__main__":

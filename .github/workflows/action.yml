@@ -60,7 +60,7 @@ jobs:
             -d chat_id="${{ github.event.inputs.chat_id }}" \
             -d message_id="${{ github.event.inputs.message_id }}" \
             -d text="✅ LIVE on Gumroad: $URL"
-          python pipeline_lib/gen_promo.py --case "${{ github.event.inputs.case }}" --url "$URL"
+          python pipeline_lib/gen_promo.py --case "${{ github.event.inputs.case }}" --url "$URL" --product-id "${{ github.event.inputs.product_id }}"
 
       - name: Reject
         if: github.event.inputs.action == 'reject'
