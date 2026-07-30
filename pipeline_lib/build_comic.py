@@ -702,7 +702,7 @@ def render_title_page(c, spec, meta):
         # edition line so the foot of the title page doesn't ship a bracketed
         # placeholder to a paying reader.
         indicia = [
-            "DIGITAL EDITION · kianukal@theverdictcourier.com · shadowgasp.gumroad.com"
+            "DIGITAL EDITION · kianukal@theverdictcourier.com"
             if ln.startswith("PRINTED IN") else ln
             for ln in indicia
         ]
