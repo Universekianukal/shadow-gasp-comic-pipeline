@@ -34,6 +34,8 @@ Return a single JSON object with exactly two top-level keys: "script" and
   "panels_dir": "panels",
   "output": "TITLE_issue.pdf",
   "subject": "one sentence, what this comic covers",
+  "promo_badge": "ONE or TWO words in caps for a gold badge on the promo graphic, stating the single most striking factual angle of the case — e.g. \"UNSOLVED\", \"COVER-UP\", \"17,000 DEAD\", \"STILL MISSING\". Never invent; must be literally true.",
+  "promo_inside": ["FOUR short all-caps phrases naming what the issue actually covers, e.g. \"6 NAMED SUSPECTS\", \"FBI CASE FILES\", \"FORENSIC EVIDENCE\", \"THE RANSOM MONEY\""],
   "promo_hook": "ONE scroll-stopping sentence (max ~90 chars) stating the real hook of the case in plain language, aimed at someone who has never heard of it. State the mystery, do not tease vaguely. Example: \"He jumped from a plane with $200,000. Nobody ever found him.\"",
   "keywords": "comma, separated, seo, keywords",
   "cover": {"image": "cover.jpg", "logo": "SHADOW GASP", "issue_line": "ISSUE NN", "title": "...", "tagline": "..."},

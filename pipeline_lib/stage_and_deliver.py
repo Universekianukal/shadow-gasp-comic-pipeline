@@ -163,23 +163,33 @@ def main():
     # because that's the comic's actual front cover page inside the PDF — but
     # Gumroad's product hero is wide and its storefront tile is square, so
     # reusing the portrait cover for those just gets it cropped badly.
-    promo_path = os.path.join(comic_dir, "promo.jpg")        # 1:1  social post
-    banner_path = os.path.join(comic_dir, "store_banner.jpg")  # 16:9 product hero
+    promo_path = os.path.join(comic_dir, "promo.jpg")
+    banner_path = None
     try:
-        import gen_promo_image
-        gen_promo_image.build(
-            bg_path=os.path.join(panels, "promo_bg.jpg"), hook=hook,
-            title=script["title"], subtitle=sub, cta="LINK IN COMMENTS ↓",
-            out_path=promo_path, size=(1080, 1080),
-        )
-        gen_promo_image.build(
-            bg_path=os.path.join(panels, "store_banner.jpg"), hook=hook,
-            title=script["title"], subtitle=sub, cta="SHADOWGASP.GUMROAD.COM",
-            out_path=banner_path, size=(1280, 720),
+        import gen_promo_card
+        subtitle = script.get("subtitle", "")
+        words, lines, cur = subtitle.split(), [], ""
+        for wd in words:
+            if len(cur + " " + wd) > 22 and cur:
+                lines.append(cur); cur = wd
+            else:
+                cur = (cur + " " + wd).strip()
+        if cur:
+            lines.append(cur)
+        promo_path = gen_promo_card.build(
+            pdf_path, promo_path,
+            title=script["title"],
+            subtitle_lines=lines,
+            issue=f"ISSUE {script.get('issue_no', '01')}",
+            price=f"${args.price}",
+            badge=script.get("promo_badge", "REAL CASE"),
+            inside=script.get("promo_inside", ["REAL CASE FILES", "NAMED SUSPECTS",
+                                               "FORENSIC EVIDENCE", "SOURCED TIMELINE"]),
+            footer="SHADOW GASP  ·  REAL CASES, RESEARCHED AND DRAWN",
         )
     except Exception as e:
-        print(f"WARNING: promo image build failed ({e}) — continuing without it")
-        promo_path = banner_path = None
+        print(f"WARNING: promo card build failed ({e}) — continuing without it")
+        promo_path = None
 
     # Square storefront tile, styled as a comic cover. A shop tile for a comic
     # IS its cover -- series banner, title, issue number. A bare atmospheric
