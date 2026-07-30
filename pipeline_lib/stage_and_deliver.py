@@ -10,6 +10,7 @@ import glob
 import json
 import mimetypes
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -54,8 +55,18 @@ def pick_preview_panels(comic_dir, script, limit=3):
     return [os.path.join(panels_dir, f) for f in chosen[:limit]]
 
 
+def slugify(title):
+    """Title -> URL slug, so the product lives at /l/norjak rather than /l/vkzul.
+
+    Gumroad hands out a random slug unless a custom permalink is set, and a
+    random one is unshareable, unmemorable and tells a buyer nothing.
+    """
+    s = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return s[:40].strip("-") or "issue"
+
+
 def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
-                preview_paths=None, thumbnail_path=None):
+                preview_paths=None, thumbnail_path=None, permalink=None):
     # Deliberate defaults, all left OFF because the API's absence of a flag IS
     # the off state: pay-what-you-want, installments, quantity selection,
     # purchase limits and shipping. None help a $2.99 single-file download.
@@ -78,6 +89,8 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
         args += ["--tag", t]
     if category:
         args += ["--category", category]
+    if permalink:
+        args += ["--custom-permalink", permalink]
     data = gumroad(args)
     return data.get("product", data)["id"]
 
@@ -181,6 +194,7 @@ def main():
         pdf_path=pdf_path, cover_path=cover_path, price=args.price,
         description=description, tags=tags, category=DEFAULT_CATEGORY,
         preview_paths=previews, thumbnail_path=thumb_path,
+        permalink=slugify(script["title"]),
     )
     print(f"Staged Gumroad draft: {product_id}")
 
