@@ -167,24 +167,9 @@ def main():
     banner_path = None
     try:
         import gen_promo_card
-        subtitle = script.get("subtitle", "")
-        words, lines, cur = subtitle.split(), [], ""
-        for wd in words:
-            if len(cur + " " + wd) > 22 and cur:
-                lines.append(cur); cur = wd
-            else:
-                cur = (cur + " " + wd).strip()
-        if cur:
-            lines.append(cur)
         promo_path = gen_promo_card.build(
             pdf_path, promo_path,
-            title=script["title"],
-            subtitle_lines=lines,
-            issue=f"ISSUE {script.get('issue_no', '01')}",
             badge=script.get("promo_badge", "REAL CASE"),
-            inside=script.get("promo_inside", ["REAL CASE FILES", "NAMED SUSPECTS",
-                                               "FORENSIC EVIDENCE", "SOURCED TIMELINE"]),
-            footer="SHADOW GASP  ·  REAL CASES, RESEARCHED AND DRAWN",
         )
     except Exception as e:
         print(f"WARNING: promo card build failed ({e}) — continuing without it")
@@ -203,14 +188,7 @@ def main():
     # Product-page hero: the comic shown as an object, not a mood image.
     try:
         import gen_store_hero
-        cover_path = gen_store_hero.build(
-            pdf_path, os.path.join(comic_dir, "store_hero.jpg"),
-            series=script.get("series", "SHADOW GASP"),
-            title=script["title"],
-            strip="TRUE CRIME · DOCUMENTARY COMIC",
-            meta_line=f"Issue {script.get('issue_no','01')}  ·  Instant PDF download",
-            tagline=script.get("subtitle", ""),
-        )
+        cover_path = gen_store_hero.build(pdf_path, os.path.join(comic_dir, "store_hero.jpg"))
     except Exception as e:
         print(f"WARNING: store hero build failed ({e}) — falling back")
         if banner_path and os.path.exists(banner_path):
