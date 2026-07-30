@@ -636,37 +636,96 @@ def render_splash_page(c, page, panels_dir, missing, folio=None):
                  inset=(SAFE / bw, SAFE / bh))
 
 
+def _outlined(c, x, y, text, font, size, fill, stroke_w=2.2,
+              stroke=(0, 0, 0), shadow=None, centred=True):
+    """Comic-cover lettering: heavy stroke plus an offset colour shadow.
+
+    Plain flat type is what makes a cover read as a film poster instead of a
+    comic. Trade dress on a comic logo is always outlined and offset.
+    """
+    draw = c.drawCentredString if centred else c.drawString
+    if shadow:
+        c.setFillColor(ink(*shadow))
+        c.setFont(font, size)
+        draw(x + stroke_w * 1.9, y - stroke_w * 1.9, text)
+    c.saveState()
+    c.setLineWidth(stroke_w)
+    c.setStrokeColor(ink(*stroke))
+    c.setFillColor(fill)
+    c.setFont(font, size)
+    t = c.beginText()
+    t.setTextRenderMode(2)          # fill + stroke
+    c.setFont(font, size)
+    if centred:
+        w = pdfmetrics.stringWidth(text, font, size)
+        t.setTextOrigin(x - w / 2, y)
+    else:
+        t.setTextOrigin(x, y)
+    t.setFont(font, size)
+    t.textOut(text)
+    c.drawText(t)
+    c.restoreState()
+
+
 def render_cover(c, spec, panels_dir, missing):
     page_bg(c)
     path = os.path.join(panels_dir, spec["image"])
     if not draw_panel_image(c, path, *bleed_rect())[0]:
         missing.append(spec["image"])
 
+    ACCENT_C = ink(0.78, 0.20, 0.16)
+
     # top scrim so the logo always reads
     for i in range(60):
         t = i / 60.0
-        c.setFillColor(ink(0, 0, 0, alpha=0.75 * (1 - t)))
-        c.rect(0, PAGE_H - (i + 1) * (1.9 * inch / 60), PAGE_W, 1.9 * inch / 60 + 0.6,
+        c.setFillColor(ink(0, 0, 0, alpha=0.80 * (1 - t)))
+        c.rect(0, PAGE_H - (i + 1) * (2.05 * inch / 60), PAGE_W, 2.05 * inch / 60 + 0.6,
                stroke=0, fill=1)
-    # bottom scrim for the tagline
+    # bottom scrim for the title block
     for i in range(50):
         t = i / 50.0
-        c.setFillColor(ink(0, 0, 0, alpha=0.80 * (1 - t)))
-        c.rect(0, i * (1.5 * inch / 50), PAGE_W, 1.5 * inch / 50 + 0.6, stroke=0, fill=1)
+        c.setFillColor(ink(0, 0, 0, alpha=0.88 * (1 - t)))
+        c.rect(0, i * (2.0 * inch / 50), PAGE_W, 2.0 * inch / 50 + 0.6, stroke=0, fill=1)
 
-    c.setFillColor(NEWSPRINT)
-    c.setFont(FONT_HEAVY, 34)
-    c.drawCentredString(PAGE_W / 2, PAGE_H - 0.92 * inch, spec["logo"])
-    c.setFillColor(ink(0.78, 0.20, 0.16))
-    c.setFont(FONT_HEAVY, 10)
-    c.drawCentredString(PAGE_W / 2, PAGE_H - 1.22 * inch, spec["issue_line"])
+    # ---- masthead logo, outlined with a red offset ----
+    _outlined(c, PAGE_W / 2, PAGE_H - 1.00 * inch, spec["logo"], FONT_HEAVY, 40,
+              NEWSPRINT, stroke_w=2.6, shadow=(0.78, 0.20, 0.16))
 
+    # ---- genre strip under the logo ----
+    strip = spec.get("genre_strip", "TRUE CRIME  ·  DOCUMENTARY COMIC")
+    c.setFillColor(ACCENT_C)
+    c.rect(0, PAGE_H - 1.52 * inch, PAGE_W, 0.20 * inch, stroke=0, fill=1)
     c.setFillColor(ink(1, 1, 1))
-    c.setFont(FONT_HEAVY, 30)
-    c.drawCentredString(PAGE_W / 2, 0.92 * inch, spec["title"])
+    c.setFont(FONT_HEAVY, 8.4)
+    c.drawCentredString(PAGE_W / 2, PAGE_H - 1.465 * inch, strip)
+
+    # ---- corner box: issue no. + price, the oldest comic-cover convention ----
+    bw, bh = 0.86 * inch, 0.52 * inch
+    bx, by = MARGIN * 0.6, PAGE_H - 1.05 * inch - bh
+    c.setFillColor(ink(0.07, 0.07, 0.08))
+    c.setStrokeColor(NEWSPRINT)
+    c.setLineWidth(1.6)
+    c.rect(bx, by, bw, bh, stroke=1, fill=1)
     c.setFillColor(NEWSPRINT)
-    c.setFont(FONT_BODY, 8)
-    c.drawCentredString(PAGE_W / 2, 0.62 * inch, spec["tagline"])
+    c.setFont(FONT_HEAVY, 14)
+    c.drawCentredString(bx + bw / 2, by + bh - 0.235 * inch, spec.get("issue_line", "No. 01").replace("ISSUE ", "No."))
+    c.setFillColor(ACCENT_C)
+    c.setFont(FONT_HEAVY, 11)
+    c.drawCentredString(bx + bw / 2, by + 0.10 * inch, spec.get("price", "$2.99"))
+
+    # ---- title, big and outlined ----
+    size = 46
+    while size > 22 and pdfmetrics.stringWidth(spec["title"], FONT_HEAVY, size) > PAGE_W - 1.1 * inch:
+        size -= 2
+    _outlined(c, PAGE_W / 2, 1.12 * inch, spec["title"], FONT_HEAVY, size,
+              ink(1, 1, 1), stroke_w=2.8, shadow=(0.78, 0.20, 0.16))
+
+    # ---- tagline in a cover-blurb bar ----
+    c.setFillColor(ink(0.07, 0.07, 0.08, alpha=0.9))
+    c.rect(0, 0.62 * inch, PAGE_W, 0.30 * inch, stroke=0, fill=1)
+    c.setFillColor(NEWSPRINT)
+    c.setFont(FONT_HEAVY, 8.6)
+    c.drawCentredString(PAGE_W / 2, 0.715 * inch, spec["tagline"].upper())
 
 
 def render_title_page(c, spec, meta):

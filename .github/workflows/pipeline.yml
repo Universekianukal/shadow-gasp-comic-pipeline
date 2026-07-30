@@ -30,7 +30,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        run: pip install requests rapidocr-onnxruntime kaggle Pillow reportlab
+        run: pip install requests rapidocr-onnxruntime kaggle Pillow reportlab PyMuPDF
 
       - name: Install Gumroad CLI
         run: curl -fsSL https://gumroad.com/install-cli.sh | bash
