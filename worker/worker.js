@@ -12,6 +12,11 @@
 // stage_and_deliver.py when the comic is first delivered for approval.
 
 const GITHUB_REPO = "Universekianukal/shadow-gasp-comic-pipeline";
+// Separate repo for the true-crime SHORTS video pipeline (script -> TTS ->
+// FLUX stills -> CogVideoX hook -> render -> YouTube). Distinct from the
+// comic-PDF pipeline above; dispatched with its own token (GITHUB_TOKEN_VIDEO)
+// so this addition can't affect the comic flow's existing token/permissions.
+const VIDEO_REPO = "Universekianukal/shadow-gasp-pipeline";
 
 async function tg(env, method, params) {
   const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
@@ -47,6 +52,22 @@ async function dispatchPipeline(env, inputs) {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "shadow-gasp-bot",
+      },
+      body: JSON.stringify({ ref: "main", inputs }),
+    }
+  );
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
+
+async function dispatchVideoPipeline(env, inputs) {
+  const r = await fetch(
+    `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/pipeline.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
         Accept: "application/vnd.github+json",
         "User-Agent": "shadow-gasp-bot",
       },
@@ -165,15 +186,47 @@ async function handleCallback(env, cq) {
 //   /make <case name>            -> 25 pages (default)
 //   /make <case name> | 50       -> explicit page count
 //   /make                        -> let the pipeline auto-pick the next case
+//
+//   /short                       -> auto-pick case, high quality, no upload (test run)
+//   /short <case name>           -> specific case, high quality, no upload
+//   /short <case name> | draft   -> faster/cheaper render for a pipeline smoke-test
+//   /short <case name> | upload  -> also upload the result to YouTube when done
 async function handleMessage(env, msg) {
   const text = (msg.text || "").trim();
   const chatId = msg.chat.id;
+
+  if (text.startsWith("/short")) {
+    const rest = text.slice("/short".length).trim();
+    let caseName = rest;
+    let quality = "high";
+    let upload = "false";
+    const bar = rest.lastIndexOf("|");
+    if (bar !== -1) {
+      caseName = rest.slice(0, bar).trim();
+      const flag = rest.slice(bar + 1).trim().toLowerCase();
+      if (flag === "draft" || flag === "standard" || flag === "high") quality = flag;
+      else if (flag === "upload") upload = "true";
+    }
+
+    try {
+      await dispatchVideoPipeline(env, { case: caseName, quality, upload });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start short: ${e.message}` });
+      return;
+    }
+
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: `\u{1F3AC} Building short: ${caseName ? `"${caseName}"` : "next auto-picked case"} (${quality} quality${upload === "true" ? ", will upload to YouTube" : ", no upload"}).\nThis runs script -> TTS -> FLUX stills -> hook clip -> render on GitHub Actions, expect 30-60+ min. Check the Actions tab for progress.`,
+    });
+    return;
+  }
 
   if (!text.startsWith("/make")) {
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  — build a comic (25 pages)\n/make <case name> | 50  — set page count\n/make  — auto-pick the next case",
+        text: "Commands:\n/make <case name>  — build a comic (25 pages)\n/make <case name> | 50  — set page count\n/make  — auto-pick the next comic case\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube",
       });
     }
     return;

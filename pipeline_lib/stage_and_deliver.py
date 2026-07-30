@@ -56,8 +56,15 @@ def pick_preview_panels(comic_dir, script, limit=3):
 
 def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
                 preview_paths=None):
+    # Deliberate defaults, all left OFF because the API's absence of a flag IS
+    # the off state: pay-what-you-want, installments, quantity selection,
+    # purchase limits and shipping. None help a $2.99 single-file download.
     args = ["products", "create", "--name", name, "--price", price,
-            "--file", pdf_path, "--file-name", os.path.basename(pdf_path)]
+            "--file", pdf_path, "--file-name", os.path.basename(pdf_path),
+            # Once a PDF is downloaded there's nothing to return, which is why
+            # no-refunds is the norm for low-cost digital downloads.
+            "--refund-period", "none",
+            "--refund-fine-print", "No refunds — this is a digital download."]
     if description:
         args += ["--description", description]
     if cover_path and os.path.exists(cover_path):

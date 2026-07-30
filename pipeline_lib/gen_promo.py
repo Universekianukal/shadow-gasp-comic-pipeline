@@ -143,7 +143,18 @@ def main():
                           "🖼 PROMO GRAPHIC — this is the one to post")
         except Exception as e:
             tg_send(bot_token, chat_id, f"(Promo graphic couldn't be sent: {e})")
-    print(f"Sent link + promo post + promo graphic to Telegram")
+    # Two product settings have no API/CLI flag and can only be toggled in the
+    # Gumroad web UI. The VAT one matters: it changes the tax rate charged to
+    # EU buyers on an e-publication, so it isn't just cosmetic.
+    tg_send(
+        bot_token, chat_id,
+        "⚙️ Two settings still need doing by hand on the Gumroad product page "
+        "(no API flag exists for either):\n\n"
+        "1. Tick “Mark as e-publication for VAT” — affects EU tax rate on a PDF comic.\n"
+        "2. Leave “Publicly show number of sales” OFF until the numbers are worth showing.\n\n"
+        "Everything else (price, no-refunds, category, tags, images, CTA) is already set automatically.",
+    )
+    print("Sent link + promo post + promo graphic + settings reminder to Telegram")
 
 
 if __name__ == "__main__":
