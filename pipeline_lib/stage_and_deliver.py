@@ -191,8 +191,21 @@ def main():
     except Exception as e:
         print(f"WARNING: store tile build failed ({e}) — falling back to cover")
 
-    if banner_path and os.path.exists(banner_path):
-        cover_path = banner_path
+    # Product-page hero: the comic shown as an object, not a mood image.
+    try:
+        import gen_store_hero
+        cover_path = gen_store_hero.build(
+            pdf_path, os.path.join(comic_dir, "store_hero.jpg"),
+            series=script.get("series", "SHADOW GASP"),
+            title=script["title"],
+            strip="TRUE CRIME · DOCUMENTARY COMIC",
+            meta_line=f"{len(script.get('pages', []))} pages · Issue {script.get('issue_no','01')} · ${args.price}",
+            tagline=script.get("subtitle", ""),
+        )
+    except Exception as e:
+        print(f"WARNING: store hero build failed ({e}) — falling back")
+        if banner_path and os.path.exists(banner_path):
+            cover_path = banner_path
 
     previews = ([promo_path] if promo_path else []) + pick_preview_panels(comic_dir, script)
     product_id = stage_draft(
