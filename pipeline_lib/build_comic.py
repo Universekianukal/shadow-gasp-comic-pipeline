@@ -699,23 +699,36 @@ def render_cover(c, spec, panels_dir, missing):
     c.setFont(FONT_HEAVY, 8.4)
     c.drawCentredString(PAGE_W / 2, PAGE_H - 1.465 * inch, strip)
 
-    # ---- corner box: issue no. + price, the oldest comic-cover convention ----
-    bw, bh = 0.86 * inch, 0.52 * inch
-    bx, by = MARGIN * 0.6, PAGE_H - 1.05 * inch - bh
+    # ---- corner box: issue number over the series mark ----
+    # Both lines are measured and shrunk to fit: "SHADOW GASP" at a fixed size
+    # overflowed the box, which looked like a rendering fault rather than
+    # trade dress.
+    issue_txt = spec.get("issue_line", "No. 01").replace("ISSUE ", "No.")
+    mark_txt = spec.get("logo", "SHADOW GASP")
+    bw, bh = 1.02 * inch, 0.56 * inch
+    pad = 0.055 * inch
+    bx, by = MARGIN * 0.6, PAGE_H - 1.62 * inch - bh
+
+    def _fit(txt, start, floor):
+        sz = start
+        while sz > floor and pdfmetrics.stringWidth(txt, FONT_HEAVY, sz) > bw - 2 * pad:
+            sz -= 0.25
+        return sz
+
+    issue_sz = _fit(issue_txt, 15, 7)
+    mark_sz = _fit(mark_txt, 8, 4.5)
+
     c.setFillColor(ink(0.07, 0.07, 0.08))
     c.setStrokeColor(NEWSPRINT)
     c.setLineWidth(1.6)
     c.rect(bx, by, bw, bh, stroke=1, fill=1)
-    # Issue number only -- deliberately no price. A price printed into the
-    # artwork dates every already-sold copy the moment pricing changes, and
-    # it forces the number into any promo image built from this cover.
+
     c.setFillColor(NEWSPRINT)
-    c.setFont(FONT_HEAVY, 15)
-    c.drawCentredString(bx + bw / 2, by + bh - 0.255 * inch,
-                        spec.get("issue_line", "No. 01").replace("ISSUE ", "No."))
+    c.setFont(FONT_HEAVY, issue_sz)
+    c.drawCentredString(bx + bw / 2, by + bh - pad - issue_sz * 0.80, issue_txt)
     c.setFillColor(ACCENT_C)
-    c.setFont(FONT_HEAVY, 8)
-    c.drawCentredString(bx + bw / 2, by + 0.115 * inch, "SHADOW GASP")
+    c.setFont(FONT_HEAVY, mark_sz)
+    c.drawCentredString(bx + bw / 2, by + pad + mark_sz * 0.15, mark_txt)
 
     # ---- title, big and outlined ----
     size = 46
