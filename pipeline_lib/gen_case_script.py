@@ -45,7 +45,7 @@ Return a single JSON object with exactly two top-level keys: "script" and
       "SHADOW GASP #NN: TITLE. First printing, 2026. Published by Shadow Gasp Comics.",
       "Entire contents copyright © 2026 Shadow Gasp Comics. All rights reserved. No part of this publication may be reproduced or transmitted, in any form or by any means, without the prior written permission of the publisher, except for short excerpts for review purposes.",
       "This is a work of documentary comics based on real events and public accounts. Interior art was generated with AI image tools and art-directed, edited and composited for publication; lettering, colour and layout are original to this edition.",
-      "PRINTED IN [COUNTRY TK]  ·  hello@shadowgasp.example  ·  shadowgasp.example"
+      "PRINTED IN [COUNTRY TK]  ·  kianukal@theverdictcourier.com  ·  shadowgasp.gumroad.com"
     ]
   },
   "pages": [
