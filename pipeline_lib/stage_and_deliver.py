@@ -201,6 +201,23 @@ def main():
     )
     print(f"Staged Gumroad draft: {product_id}")
 
+    # Custom landing page, built from the same script data, using the
+    # product's own just-uploaded cover URL. Only ever published if Gumroad's
+    # own sanitizer reports it clean -- a broken landing page would make the
+    # product unpurchasable, worse than just leaving the default page.
+    try:
+        import gen_landing_page
+        cover_data = gumroad(["products", "view", product_id])
+        cover_url = (cover_data.get("product", cover_data)).get("thumbnail_url")
+        if cover_url:
+            landing_path = os.path.join(comic_dir, "landing.html")
+            with open(landing_path, "w", encoding="utf-8") as f:
+                f.write(gen_landing_page.build_html(script, cover_url))
+            ok, err = gen_landing_page.publish_if_safe(product_id, landing_path)
+            print(f"Landing page: {'published' if ok else 'SKIPPED (' + str(err) + ')'}")
+    except Exception as e:
+        print(f"WARNING: landing page step failed ({e}) — default product page stays in place")
+
     bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     result = telegram_send_document(
