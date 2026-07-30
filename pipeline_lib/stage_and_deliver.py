@@ -128,11 +128,31 @@ def main():
     description = script.get("subject", "")
     tags = [t.strip() for t in script.get("keywords", "").split(",") if t.strip()][:5]
 
+    # Purpose-built social promo graphic (hook-led, not a comic page). Built
+    # here at build time because the case folder is deleted after this run --
+    # it rides along as a Gumroad preview so it can be fetched again at
+    # publish time and handed over for posting.
+    promo_path = os.path.join(comic_dir, "promo.jpg")
+    try:
+        import gen_promo_image
+        gen_promo_image.build(
+            bg_path=os.path.join(comic_dir, "panels", "promo_bg.jpg"),
+            hook=script.get("promo_hook") or script.get("tagline", ""),
+            title=script["title"],
+            subtitle=f"{len(script.get('pages', []))}-page documentary comic · {script.get('subtitle', '')}"[:90],
+            cta="LINK IN COMMENTS ↓",
+            out_path=promo_path,
+        )
+    except Exception as e:
+        print(f"WARNING: promo image build failed ({e}) — continuing without it")
+        promo_path = None
+
+    previews = ([promo_path] if promo_path else []) + pick_preview_panels(comic_dir, script)
     product_id = stage_draft(
         name=f"{script['series']} #{script['issue_no']}: {script['title']}",
         pdf_path=pdf_path, cover_path=cover_path, price=args.price,
         description=description, tags=tags, category=DEFAULT_CATEGORY,
-        preview_paths=pick_preview_panels(comic_dir, script),
+        preview_paths=previews,
     )
     print(f"Staged Gumroad draft: {product_id}")
 

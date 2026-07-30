@@ -101,17 +101,23 @@ def main():
     args = ap.parse_args()
 
     system = (
-        "You write short, punchy Facebook promo posts for SHADOW GASP, an "
-        "independent true-crime documentary comic series. Tone: intriguing and "
-        "factual, never sensationalised or disrespectful to real victims. "
-        "Hook the reader with the real mystery, then point to the comic. "
-        "Include 4-6 relevant hashtags at the end. Output ONLY the post text, "
-        "ready to paste — no preamble, no options, no quotes around it."
+        "You write Facebook posts for SHADOW GASP, an independent true-crime "
+        "documentary comic series.\n\n"
+        "These go into large GENERAL-INTEREST groups — most readers have never "
+        "heard of the case and don't care about comics. So:\n"
+        "- Open with the real story. Spend most of the post on the actual case, "
+        "told as a genuinely interesting mini-story with real facts.\n"
+        "- Mention the comic only at the very END, in one short line.\n"
+        "- Do NOT put the URL in the post body (groups suppress link posts). "
+        "End with 'Link in the comments.' instead.\n"
+        "- Never sensationalise or disrespect real victims. No invented facts.\n"
+        "- 4-6 hashtags at the end.\n\n"
+        "Output ONLY the post text, ready to paste — no preamble, no options, "
+        "no surrounding quotes."
     )
     user = (
-        f"Case: {args.case}\n"
-        f"Gumroad link (include it near the end of the post): {args.url}\n\n"
-        f"Write the Facebook post now. Keep it under 120 words."
+        f"Case: {args.case}\n\n"
+        f"Write the Facebook group post now. Under 150 words."
     )
 
     post = call_claude(system, user)
@@ -126,15 +132,18 @@ def main():
     # rest are interior panels (no title/logo text on them), which tend to
     # read as content rather than an ad in a feed. Sent as options rather
     # than one pick, since which performs best is worth testing per case.
+    # The purpose-built promo graphic is uploaded first at build time, so it's
+    # the first cover here. That's the one to actually post — the rest are the
+    # product's own cover/interior art, useful on the Gumroad page but not
+    # what you want to lead with in a general-interest group.
     urls = get_product_image_urls(args.product_id) if args.product_id else []
-    for i, u in enumerate(urls):
-        caption = ("🖼 Option 1 — branded cover" if i == 0
-                   else f"🖼 Option {i + 1} — interior panel (no text; usually better reach)")
+    if urls:
         try:
-            tg_send_photo(bot_token, chat_id, u, caption)
+            tg_send_photo(bot_token, chat_id, urls[0],
+                          "🖼 PROMO GRAPHIC — this is the one to post")
         except Exception as e:
-            tg_send(bot_token, chat_id, f"(Image {i + 1} couldn't be sent: {e})")
-    print(f"Sent link + promo post + {len(urls)} image option(s) to Telegram")
+            tg_send(bot_token, chat_id, f"(Promo graphic couldn't be sent: {e})")
+    print(f"Sent link + promo post + promo graphic to Telegram")
 
 
 if __name__ == "__main__":

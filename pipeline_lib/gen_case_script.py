@@ -34,6 +34,7 @@ Return a single JSON object with exactly two top-level keys: "script" and
   "panels_dir": "panels",
   "output": "TITLE_issue.pdf",
   "subject": "one sentence, what this comic covers",
+  "promo_hook": "ONE scroll-stopping sentence (max ~90 chars) stating the real hook of the case in plain language, aimed at someone who has never heard of it. State the mystery, do not tease vaguely. Example: \"He jumped from a plane with $200,000. Nobody ever found him.\"",
   "keywords": "comma, separated, seo, keywords",
   "cover": {"image": "cover.jpg", "logo": "SHADOW GASP", "issue_line": "ISSUE NN", "title": "...", "tagline": "..."},
   "title_page": {
@@ -69,7 +70,11 @@ REQUIREMENTS for "pages":
   points (opening, a major reveal, the ending).
 
 "panel_prompts" must be a JSON array with ONE entry per unique "file" that
-appears anywhere in "script" (cover.jpg plus every panel file), each:
+appears anywhere in "script" (cover.jpg plus every panel file), PLUS one extra
+entry with file "promo_bg.jpg" and shape "SQUARE": a wide atmospheric
+establishing image of the case's setting/mood with NO people in close-up and
+lots of empty space (it gets darkened and used as a background behind large
+promo text, so it must read at a glance and not compete with type), each:
 {"file": "p02_1.jpg", "shape": "LANDSCAPE", "prompt": "..."}
 
 REQUIREMENTS for every prompt:
