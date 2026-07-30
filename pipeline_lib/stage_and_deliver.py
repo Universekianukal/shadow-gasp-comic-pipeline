@@ -181,9 +181,23 @@ def main():
         print(f"WARNING: promo image build failed ({e}) — continuing without it")
         promo_path = banner_path = None
 
-    # Square storefront tile: raw art, no text — type is illegible at tile size.
-    thumb_src = os.path.join(panels, "store_thumb.jpg")
-    thumb_path = thumb_src if os.path.exists(thumb_src) else cover_path
+    # Square storefront tile, styled as a comic cover. A shop tile for a comic
+    # IS its cover -- series banner, title, issue number. A bare atmospheric
+    # image reads as a documentary still rather than something purchasable.
+    thumb_path = cover_path
+    try:
+        import gen_store_tile
+        art = os.path.join(panels, "store_thumb.jpg")
+        thumb_path = gen_store_tile.build(
+            art_path=art if os.path.exists(art) else cover_path,
+            series=script.get("series", "SHADOW GASP"),
+            issue=f"ISSUE {script.get('issue_no', '01')}",
+            title=script["title"],
+            tagline=script.get("subtitle", ""),
+            out=os.path.join(comic_dir, "store_tile.jpg"),
+        )
+    except Exception as e:
+        print(f"WARNING: store tile build failed ({e}) — falling back to cover")
 
     if banner_path and os.path.exists(banner_path):
         cover_path = banner_path
