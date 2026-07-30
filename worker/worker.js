@@ -122,7 +122,7 @@ async function handleCallback(env, cq) {
       text: `Publishing "${entry.case}"...`,
     });
     await dispatchAction(env, {
-      action: "publish", product_id: entry.product_id,
+      action: "publish", product_id: entry.product_id, case: entry.case,
       chat_id: String(chatId), message_id: String(messageId),
     });
   } else if (action === "cancel_publish") {

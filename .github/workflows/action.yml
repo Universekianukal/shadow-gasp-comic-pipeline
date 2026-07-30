@@ -49,6 +49,10 @@ jobs:
 
       - name: Publish
         if: github.event.inputs.action == 'publish'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           ~/.local/bin/gumroad products publish "${{ github.event.inputs.product_id }}" --yes
           URL=$(~/.local/bin/gumroad products url "${{ github.event.inputs.product_id }}")
@@ -56,6 +60,7 @@ jobs:
             -d chat_id="${{ github.event.inputs.chat_id }}" \
             -d message_id="${{ github.event.inputs.message_id }}" \
             -d text="✅ LIVE on Gumroad: $URL"
+          python pipeline_lib/gen_promo.py --case "${{ github.event.inputs.case }}" --url "$URL"
 
       - name: Reject
         if: github.event.inputs.action == 'reject'
