@@ -157,7 +157,7 @@ def main():
     # publish time and handed over for posting.
     panels = os.path.join(comic_dir, "panels")
     hook = script.get("promo_hook") or script.get("tagline", "")
-    sub = f"{len(script.get('pages', []))}-page documentary comic"
+    sub = "documentary comic"
 
     # Three different shapes for three different jobs. cover.jpg stays 9:16
     # because that's the comic's actual front cover page inside the PDF — but
@@ -209,7 +209,7 @@ def main():
             series=script.get("series", "SHADOW GASP"),
             title=script["title"],
             strip="TRUE CRIME · DOCUMENTARY COMIC",
-            meta_line=f"{len(script.get('pages', []))} pages · Issue {script.get('issue_no','01')} · ${args.price}",
+            meta_line=f"Issue {script.get('issue_no','01')}  ·  ${args.price}  ·  Instant PDF",
             tagline=script.get("subtitle", ""),
         )
     except Exception as e:
