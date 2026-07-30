@@ -55,7 +55,7 @@ def pick_preview_panels(comic_dir, script, limit=3):
 
 
 def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
-                preview_paths=None):
+                preview_paths=None, thumbnail_path=None):
     # Deliberate defaults, all left OFF because the API's absence of a flag IS
     # the off state: pay-what-you-want, installments, quantity selection,
     # purchase limits and shipping. None help a $2.99 single-file download.
@@ -68,7 +68,10 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
     if description:
         args += ["--description", description]
     if cover_path and os.path.exists(cover_path):
-        args += ["--cover-image", cover_path, "--thumbnail", cover_path]
+        args += ["--cover-image", cover_path]
+    thumb = thumbnail_path or cover_path
+    if thumb and os.path.exists(thumb):
+        args += ["--thumbnail", thumb]
     for p in (preview_paths or []):
         args += ["--preview-image", p]
     for t in (tags or []):
@@ -139,27 +142,45 @@ def main():
     # here at build time because the case folder is deleted after this run --
     # it rides along as a Gumroad preview so it can be fetched again at
     # publish time and handed over for posting.
-    promo_path = os.path.join(comic_dir, "promo.jpg")
+    panels = os.path.join(comic_dir, "panels")
+    hook = script.get("promo_hook") or script.get("tagline", "")
+    sub = f"{len(script.get('pages', []))}-page documentary comic"
+
+    # Three different shapes for three different jobs. cover.jpg stays 9:16
+    # because that's the comic's actual front cover page inside the PDF — but
+    # Gumroad's product hero is wide and its storefront tile is square, so
+    # reusing the portrait cover for those just gets it cropped badly.
+    promo_path = os.path.join(comic_dir, "promo.jpg")        # 1:1  social post
+    banner_path = os.path.join(comic_dir, "store_banner.jpg")  # 16:9 product hero
     try:
         import gen_promo_image
         gen_promo_image.build(
-            bg_path=os.path.join(comic_dir, "panels", "promo_bg.jpg"),
-            hook=script.get("promo_hook") or script.get("tagline", ""),
-            title=script["title"],
-            subtitle=f"{len(script.get('pages', []))}-page documentary comic · {script.get('subtitle', '')}"[:90],
-            cta="LINK IN COMMENTS ↓",
-            out_path=promo_path,
+            bg_path=os.path.join(panels, "promo_bg.jpg"), hook=hook,
+            title=script["title"], subtitle=sub, cta="LINK IN COMMENTS ↓",
+            out_path=promo_path, size=(1080, 1080),
+        )
+        gen_promo_image.build(
+            bg_path=os.path.join(panels, "store_banner.jpg"), hook=hook,
+            title=script["title"], subtitle=sub, cta="SHADOWGASP.GUMROAD.COM",
+            out_path=banner_path, size=(1280, 720),
         )
     except Exception as e:
         print(f"WARNING: promo image build failed ({e}) — continuing without it")
-        promo_path = None
+        promo_path = banner_path = None
+
+    # Square storefront tile: raw art, no text — type is illegible at tile size.
+    thumb_src = os.path.join(panels, "store_thumb.jpg")
+    thumb_path = thumb_src if os.path.exists(thumb_src) else cover_path
+
+    if banner_path and os.path.exists(banner_path):
+        cover_path = banner_path
 
     previews = ([promo_path] if promo_path else []) + pick_preview_panels(comic_dir, script)
     product_id = stage_draft(
         name=f"{script['series']} #{script['issue_no']}: {script['title']}",
         pdf_path=pdf_path, cover_path=cover_path, price=args.price,
         description=description, tags=tags, category=DEFAULT_CATEGORY,
-        preview_paths=previews,
+        preview_paths=previews, thumbnail_path=thumb_path,
     )
     print(f"Staged Gumroad draft: {product_id}")
 

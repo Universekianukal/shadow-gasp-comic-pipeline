@@ -57,61 +57,68 @@ def _fit_hook(draw, text, font_name, max_width, start_size, min_size=44):
     return font, textwrap.wrap(text, width=26)[:5]
 
 
-def build(bg_path, hook, title, subtitle, cta, out_path):
+def build(bg_path, hook, title, subtitle, cta, out_path, size=(SIZE, SIZE)):
+    W, H = size
     if bg_path and os.path.exists(bg_path):
         bg = Image.open(bg_path).convert("RGB")
         # cover-crop to square
         w, h = bg.size
-        side = min(w, h)
-        bg = bg.crop(((w - side) // 2, (h - side) // 2,
-                      (w - side) // 2 + side, (h - side) // 2 + side))
-        bg = bg.resize((SIZE, SIZE), Image.LANCZOS)
+        # cover-crop to the target aspect, then scale
+        target = W / H
+        if w / h > target:
+            nw = int(h * target)
+            bg = bg.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
+        else:
+            nh = int(w / target)
+            bg = bg.crop((0, (h - nh) // 2, w, (h - nh) // 2 + nh))
+        bg = bg.resize((W, H), Image.LANCZOS)
         bg = ImageEnhance.Brightness(bg).enhance(0.42)
         bg = bg.filter(ImageFilter.GaussianBlur(1.2))
     else:
-        bg = Image.new("RGB", (SIZE, SIZE), (18, 18, 20))
+        bg = Image.new("RGB", (W, H), (18, 18, 20))
 
     # Vertical scrim: darkest at top and bottom where text sits, so the
     # artwork still reads through the middle.
-    scrim = Image.new("L", (1, SIZE))
-    for y in range(SIZE):
-        t = y / SIZE
+    scrim = Image.new("L", (1, H))
+    for y in range(H):
+        t = y / H
         edge = max(0.0, 1 - abs(t - 0.5) * 2)      # 1 at centre, 0 at edges
         scrim.putpixel((0, y), int(215 - 120 * edge))
-    scrim = scrim.resize((SIZE, SIZE))
-    bg = Image.composite(Image.new("RGB", (SIZE, SIZE), (10, 10, 12)), bg, scrim)
+    scrim = scrim.resize((W, H))
+    bg = Image.composite(Image.new("RGB", (W, H), (10, 10, 12)), bg, scrim)
 
     d = ImageDraw.Draw(bg)
-    margin = 84
-    safe = SIZE - margin * 2
+    margin = int(min(W, H) * 0.078)
+    safe = W - margin * 2
+    scale = min(W, H) / SIZE
 
     # top label
-    label_font = _font("Montserrat-Bold.ttf", 26)
+    label_font = _font("Montserrat-Bold.ttf", max(16, int(26 * scale)))
     d.text((margin, margin), "SHADOW GASP  ·  TRUE CRIME, TOLD IN INK",
            font=label_font, fill=MUTED)
 
     # hook
-    hook_font, lines = _fit_hook(d, hook.upper(), "Montserrat-ExtraBold.ttf", safe, 82)
+    hook_font, lines = _fit_hook(d, hook.upper(), "Montserrat-ExtraBold.ttf", safe, max(40, int(82 * scale)))
     line_h = hook_font.size * 1.16
     block_h = line_h * len(lines)
-    y = (SIZE - block_h) / 2 - 40
+    y = (H - block_h) / 2 - 40 * scale
     for line in lines:
         d.text((margin, y), line, font=hook_font, fill=CREAM)
         y += line_h
 
     # accent rule
     y += 18
-    d.rectangle([margin, y, margin + 150, y + 7], fill=ACCENT)
+    d.rectangle([margin, y, margin + 150 * scale, y + 7 * scale], fill=ACCENT)
 
     # bottom block
-    title_font = _font("Montserrat-Bold.ttf", 40)
-    sub_font = _font("Montserrat-Bold.ttf", 27)
-    cta_font = _font("Montserrat-ExtraBold.ttf", 30)
+    title_font = _font("Montserrat-Bold.ttf", max(24, int(40 * scale)))
+    sub_font = _font("Montserrat-Bold.ttf", max(16, int(27 * scale)))
+    cta_font = _font("Montserrat-ExtraBold.ttf", max(18, int(30 * scale)))
 
-    by = SIZE - margin - 150
+    by = H - margin - 150 * scale
     d.text((margin, by), title.upper(), font=title_font, fill=CREAM)
-    d.text((margin, by + 54), subtitle, font=sub_font, fill=MUTED)
-    d.text((margin, by + 100), cta, font=cta_font, fill=ACCENT)
+    d.text((margin, by + 54 * scale), subtitle, font=sub_font, fill=MUTED)
+    d.text((margin, by + 100 * scale), cta, font=cta_font, fill=ACCENT)
 
     bg.save(out_path, quality=94)
     return out_path
@@ -125,8 +132,10 @@ def main():
     ap.add_argument("--subtitle", default="A documentary comic · Real case, researched")
     ap.add_argument("--cta", default="LINK IN COMMENTS")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--size", default="1080x1080", help="WxH, e.g. 1280x720")
     args = ap.parse_args()
-    print(build(args.bg, args.hook, args.title, args.subtitle, args.cta, args.out))
+    w, h = (int(v) for v in args.size.lower().split("x"))
+    print(build(args.bg, args.hook, args.title, args.subtitle, args.cta, args.out, (w, h)))
 
 
 if __name__ == "__main__":

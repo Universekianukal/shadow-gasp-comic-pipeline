@@ -70,8 +70,12 @@ REQUIREMENTS for "pages":
   points (opening, a major reveal, the ending).
 
 "panel_prompts" must be a JSON array with ONE entry per unique "file" that
-appears anywhere in "script" (cover.jpg plus every panel file), PLUS one extra
-entry with file "promo_bg.jpg" and shape "SQUARE": a wide atmospheric
+appears anywhere in "script" (cover.jpg plus every panel file), PLUS three extra
+entries: "promo_bg.jpg" (shape "SQUARE"), "store_banner.jpg" (shape
+"LANDSCAPE") and "store_thumb.jpg" (shape "SQUARE"). store_banner is the
+wide hero image on the sales page and store_thumb is the small square
+storefront tile, so store_thumb must be a single bold simple subject that
+still reads when shrunk to a tiny tile. The promo_bg entry: a wide atmospheric
 establishing image of the case's setting/mood with NO people in close-up and
 lots of empty space (it gets darkened and used as a background behind large
 promo text, so it must read at a glance and not compete with type), each:
