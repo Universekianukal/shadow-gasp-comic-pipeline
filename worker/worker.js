@@ -77,20 +77,55 @@ async function dispatchVideoPipeline(env, inputs) {
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A workflow_dispatch call returns 204 even when GitHub silently drops it --
+// this happens in practice right after a push to the same branch the
+// workflow lives on (exactly the commitHookVideo -> dispatch sequence this
+// bot does), because the ref hasn't finished propagating internally yet for
+// scheduling purposes. A 204 alone is NOT proof the run was created, so this
+// polls the workflow's own run list afterward and retries once if nothing
+// shows up -- only then is it safe to tell the user "render running now".
 async function dispatchFinishBatchDay(env, inputs) {
-  const r = await fetch(
-    `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/finish_batch_day.yml/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "shadow-gasp-bot",
-      },
-      body: JSON.stringify({ ref: "main", inputs }),
-    }
-  );
-  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+  const dispatchOnce = async () => {
+    const beforeMs = Date.now();
+    const r = await fetch(
+      `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/finish_batch_day.yml/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "shadow-gasp-bot",
+        },
+        body: JSON.stringify({ ref: "main", inputs }),
+      }
+    );
+    if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+    return beforeMs;
+  };
+
+  const runAppeared = async (afterMs) => {
+    const r = await fetch(
+      `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/finish_batch_day.yml/runs?event=workflow_dispatch&per_page=5`,
+      { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
+    );
+    if (!r.ok) return false;
+    const data = await r.json();
+    return (data.workflow_runs || []).some((run) => new Date(run.created_at).getTime() >= afterMs - 2000);
+  };
+
+  let beforeMs = await dispatchOnce();
+  await sleep(4000);
+  if (await runAppeared(beforeMs)) return;
+
+  // Retry once -- the race is transient, a second attempt a few seconds
+  // later almost always lands cleanly.
+  beforeMs = await dispatchOnce();
+  await sleep(4000);
+  if (await runAppeared(beforeMs)) return;
+
+  throw new Error("dispatched twice but no run appeared in Actions -- check the repo's Actions tab manually");
 }
 
 async function ghRaw(env, path) {
