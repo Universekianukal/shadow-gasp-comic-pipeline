@@ -28,22 +28,29 @@ def gumroad(args_list):
 
 
 def pick_preview_panels(comic_dir, script, limit=3):
-    """Pick a few striking interior panels to use as extra product previews.
+    """Pick interior panels to use as extra product previews / promo images.
 
-    Splash panels are the full-page dramatic beats, so they're the best
-    stand-alone images — and unlike the cover they carry no title/logo text,
-    which makes them far more usable as social promo images later.
+    Deliberately drawn from the OPENING THIRD of the book only. The temptation
+    is to grab the splash pages because they're the most striking, but splashes
+    are the story's biggest beats — including the final page. Using those as
+    free previews gives away the reveals and the ending, which is the opposite
+    of what a preview is for. Early pages set atmosphere and raise the question
+    without answering it.
     """
     panels_dir = os.path.join(comic_dir, "panels")
-    splashes, others = [], []
-    for page in script.get("pages", []):
+    pages = script.get("pages", [])
+    early = pages[:max(1, len(pages) // 3)]
+
+    files = []
+    for page in early:
         if page.get("type") == "splash" and page.get("panel"):
-            splashes.append(page["panel"]["file"])
+            files.append(page["panel"]["file"])
         else:
             for row in page.get("rows", []):
                 for cell in row:
-                    others.append(cell["file"])
-    chosen = [f for f in (splashes + others) if os.path.exists(os.path.join(panels_dir, f))]
+                    files.append(cell["file"])
+
+    chosen = [f for f in files if os.path.exists(os.path.join(panels_dir, f))]
     return [os.path.join(panels_dir, f) for f in chosen[:limit]]
 
 
