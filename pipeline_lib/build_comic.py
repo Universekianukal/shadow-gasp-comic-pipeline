@@ -699,36 +699,25 @@ def render_cover(c, spec, panels_dir, missing):
     c.setFont(FONT_HEAVY, 8.4)
     c.drawCentredString(PAGE_W / 2, PAGE_H - 1.465 * inch, strip)
 
-    # ---- corner box: issue number over the series mark ----
-    # Both lines are measured and shrunk to fit: "SHADOW GASP" at a fixed size
-    # overflowed the box, which looked like a rendering fault rather than
-    # trade dress.
+    # ---- corner box: issue number ONLY ----
+    # No price, no repeated series mark -- a single short string that always
+    # fits, so this box can't overflow no matter what the logo/price text is.
     issue_txt = spec.get("issue_line", "No. 01").replace("ISSUE ", "No.")
-    mark_txt = spec.get("logo", "SHADOW GASP")
-    bw, bh = 1.02 * inch, 0.56 * inch
-    pad = 0.055 * inch
+    bw, bh = 0.86 * inch, 0.46 * inch
+    pad = 0.06 * inch
     bx, by = MARGIN * 0.6, PAGE_H - 1.62 * inch - bh
 
-    def _fit(txt, start, floor):
-        sz = start
-        while sz > floor and pdfmetrics.stringWidth(txt, FONT_HEAVY, sz) > bw - 2 * pad:
-            sz -= 0.25
-        return sz
-
-    issue_sz = _fit(issue_txt, 15, 7)
-    mark_sz = _fit(mark_txt, 8, 4.5)
+    issue_sz = 16
+    while issue_sz > 8 and pdfmetrics.stringWidth(issue_txt, FONT_HEAVY, issue_sz) > bw - 2 * pad:
+        issue_sz -= 0.5
 
     c.setFillColor(ink(0.07, 0.07, 0.08))
     c.setStrokeColor(NEWSPRINT)
     c.setLineWidth(1.6)
     c.rect(bx, by, bw, bh, stroke=1, fill=1)
-
     c.setFillColor(NEWSPRINT)
     c.setFont(FONT_HEAVY, issue_sz)
-    c.drawCentredString(bx + bw / 2, by + bh - pad - issue_sz * 0.80, issue_txt)
-    c.setFillColor(ACCENT_C)
-    c.setFont(FONT_HEAVY, mark_sz)
-    c.drawCentredString(bx + bw / 2, by + pad + mark_sz * 0.15, mark_txt)
+    c.drawCentredString(bx + bw / 2, by + (bh - issue_sz * 0.72) / 2, issue_txt)
 
     # ---- title, big and outlined ----
     size = 46
