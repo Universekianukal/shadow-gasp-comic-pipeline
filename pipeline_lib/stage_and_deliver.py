@@ -167,10 +167,7 @@ def main():
     banner_path = None
     try:
         import gen_promo_card
-        promo_path = gen_promo_card.build(
-            pdf_path, promo_path,
-            badge=script.get("promo_badge", "REAL CASE"),
-        )
+        promo_path = gen_promo_card.build(pdf_path, promo_path)
     except Exception as e:
         print(f"WARNING: promo card build failed ({e}) — continuing without it")
         promo_path = None

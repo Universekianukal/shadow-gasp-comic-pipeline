@@ -1,30 +1,23 @@
-"""Square promo card for social posting: the finished comic cover, large,
-with three spec badges underneath.
+"""Square promo card for social posting: just the finished comic cover,
+letterboxed over a blurred copy of itself.
 
-Earlier version put the cover in a small corner next to a big repeated
-title/tagline block -- but the cover already has its own logo and title
-baked in, so that read as the same headline twice at two different sizes,
-cramped and cluttered. This version lets the cover carry the whole image;
-the badges add just the facts a cover can't (unsolved/status/format).
+Two earlier versions both drew button-shaped badges (UNSOLVED / OUT NOW /
+INSTANT PDF) as pixels baked into the image. Whatever page later embeds this
+image (a Gumroad landing page, a social post) can't tell a visitor those
+aren't real buttons -- they look exactly like the actual buy button, get
+tapped, and do nothing. That's a trust problem, not a style one. Any status
+text belongs in real HTML/live UI elsewhere on the page, never burned into
+the image itself.
 """
 import os
 
 import fitz
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageEnhance, ImageFilter
 
-FONTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
-CREAM = (238, 232, 218)
-ACCENT = (198, 48, 36)
-GOLD = (226, 168, 48)
-INK = (14, 14, 16)
 S = 1080
 
 
-def _f(n, s):
-    return ImageFont.truetype(os.path.join(FONTS, n), s)
-
-
-def build(pdf_path, out, badge, cta="OUT NOW", format_label="INSTANT PDF", size=S):
+def build(pdf_path, out, size=S):
     doc = fitz.open(pdf_path)
     tmp = out + ".cover.png"
     doc[0].get_pixmap(dpi=260).save(tmp)
@@ -35,27 +28,12 @@ def build(pdf_path, out, badge, cta="OUT NOW", format_label="INSTANT PDF", size=
     bg = cov.crop(((w - side) // 2, (h - side) // 2,
                    (w - side) // 2 + side, (h - side) // 2 + side)).resize((size, size), Image.LANCZOS)
     bg = ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(30))).enhance(0.22)
-    d = ImageDraw.Draw(bg, "RGBA")
 
-    target_h = int(size * 0.855)
+    target_h = int(size * 0.94)
     scale = target_h / h
     fg = cov.resize((int(w * scale), target_h), Image.LANCZOS)
-    fx, fy = (size - fg.width) // 2, 18
-    d.rectangle([fx - 8, fy - 8, fx + fg.width + 8, fy + fg.height + 8], fill=(0, 0, 0))
-    bg.paste(fg, (fx, fy))
-
-    by = fy + fg.height + 20
-
-    def bdg(bx, byy, bw, bh, t, fill, fgc, sz=19):
-        d.rounded_rectangle([bx, byy, bx + bw, byy + bh], radius=7, fill=fill)
-        d.text((bx + bw / 2, byy + bh / 2), t, font=_f("Montserrat-ExtraBold.ttf", sz),
-               fill=fgc, anchor="mm")
-
-    gap = 10
-    bw3 = (size - 2 * 44 - 2 * gap) // 3
-    bdg(44, by, bw3, 50, badge, GOLD, INK)
-    bdg(44 + bw3 + gap, by, bw3, 50, cta, ACCENT, (255, 255, 255))
-    bdg(44 + 2 * (bw3 + gap), by, bw3, 50, format_label, CREAM, INK, 17)
+    x, y = (size - fg.width) // 2, (size - target_h) // 2
+    bg.paste(fg, (x, y))
 
     bg.save(out, quality=95)
     try:
