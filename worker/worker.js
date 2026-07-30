@@ -77,6 +77,90 @@ async function dispatchVideoPipeline(env, inputs) {
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
 
+async function dispatchFinishBatchDay(env, inputs) {
+  const r = await fetch(
+    `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/finish_batch_day.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "shadow-gasp-bot",
+      },
+      body: JSON.stringify({ ref: "main", inputs }),
+    }
+  );
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
+
+async function ghRaw(env, path) {
+  const r = await fetch(`https://raw.githubusercontent.com/${VIDEO_REPO}/main/${path}`, {
+    headers: { "User-Agent": "shadow-gasp-bot" },
+  });
+  if (!r.ok) throw new Error(`${path} not found in repo (${r.status})`);
+  return r;
+}
+
+// Commits the Telegram-downloaded hook video straight into the day's
+// images/seq/01.mp4 via the Contents API (small binary payload, well under
+// GitHub's 100MB API limit for a ~10s clip) so finish_batch_day.yml's render
+// job has something to check out and render, with no local machine involved.
+async function commitHookVideo(env, dayNum, videoBytes) {
+  const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/images/seq/01.mp4`;
+  let sha;
+  const existing = await fetch(
+    `https://api.github.com/repos/${VIDEO_REPO}/contents/${path}?ref=main`,
+    { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
+  );
+  if (existing.ok) sha = (await existing.json()).sha;
+
+  // btoa needs a binary string, not raw bytes -- build it in chunks to avoid
+  // blowing the call stack on a multi-MB Uint8Array.
+  let binary = "";
+  const bytes = new Uint8Array(videoBytes);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  const b64 = btoa(binary);
+
+  const r = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/contents/${path}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "shadow-gasp-bot",
+    },
+    body: JSON.stringify({
+      message: `batch: day ${String(dayNum).padStart(2, "0")} hook video (via Telegram)`,
+      content: b64,
+      branch: "main",
+      ...(sha ? { sha } : {}),
+    }),
+  });
+  if (!r.ok) throw new Error(`Commit failed: ${r.status} ${await r.text()}`);
+}
+
+// "HH:MM" is read as IST wall-clock, next occurrence (today if still ahead of
+// now, otherwise tomorrow) -- matches how the user actually talks about times
+// ("5:15", "18:30"), converted to the UTC RFC3339 YouTube's publishAt needs.
+function istTimeToPublishAt(hhmm) {
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const [, hh, mm] = m;
+  const nowUtc = new Date();
+  const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1000);
+  let target = new Date(Date.UTC(
+    nowIst.getUTCFullYear(), nowIst.getUTCMonth(), nowIst.getUTCDate(),
+    Number(hh), Number(mm), 0
+  ));
+  if (target.getTime() <= nowIst.getTime()) {
+    target = new Date(target.getTime() + 24 * 3600 * 1000);
+  }
+  const publishAtUtc = new Date(target.getTime() - 5.5 * 3600 * 1000);
+  return publishAtUtc.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
 function approvalKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -191,9 +275,101 @@ async function handleCallback(env, cq) {
 //   /short <case name>           -> specific case, high quality, no upload
 //   /short <case name> | draft   -> faster/cheaper render for a pipeline smoke-test
 //   /short <case name> | upload  -> also upload the result to YouTube when done
+//
+//   /day <N>                     -> sends day N's hook still + motion prompt, to feed into Google Flow
+//   (reply with the Flow video)  -> commits it, renders (no upload yet)
+//   /publish <N>                 -> render+upload day N to YouTube immediately
+//   /publish <N> at <HH:MM>      -> same, but scheduled for that IST time (today or next occurrence)
 async function handleMessage(env, msg) {
   const text = (msg.text || "").trim();
   const chatId = msg.chat.id;
+
+  // A video (or a document that's actually a video, which Telegram uses for
+  // files sent "as file" instead of compressed) arriving while a /day <N> is
+  // pending is treated as that day's Flow hook clip -- no reply-threading
+  // required, just "the most recent /day this chat asked about".
+  const videoObj = msg.video || (msg.document && msg.document.mime_type?.startsWith("video/") ? msg.document : null);
+  if (videoObj) {
+    const dayNum = await env.PENDING.get(`awaiting_hook:${chatId}`);
+    if (!dayNum) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "Got a video, but no /day <N> is pending -- send /day <N> first so I know which day this belongs to." });
+      return;
+    }
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it — committing as day ${dayNum}'s hook video and starting a render (no upload yet)...` });
+    try {
+      const fileInfo = await tg(env, "getFile", { file_id: videoObj.file_id });
+      if (!fileInfo.ok) throw new Error(`getFile failed: ${JSON.stringify(fileInfo)}`);
+      const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${fileInfo.result.file_path}`;
+      const fileResp = await fetch(fileUrl);
+      if (!fileResp.ok) throw new Error(`file download failed: ${fileResp.status}`);
+      const videoBytes = await fileResp.arrayBuffer();
+
+      await commitHookVideo(env, dayNum, videoBytes);
+      await dispatchFinishBatchDay(env, { day: dayNum, upload: "false", publish_at: "" });
+      await env.PENDING.delete(`awaiting_hook:${chatId}`);
+
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `✅ Day ${dayNum} hook video committed, render running now. Once you've confirmed it looks right, use /publish ${dayNum} (or /publish ${dayNum} at HH:MM to schedule).`,
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't process the video: ${e.message}` });
+    }
+    return;
+  }
+
+  if (text.startsWith("/day")) {
+    const dayNum = parseInt(text.slice("/day".length).trim(), 10);
+    if (!dayNum) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "Usage: /day <N>, e.g. /day 1" });
+      return;
+    }
+    const dd = String(dayNum).padStart(2, "0");
+    try {
+      const meta = await (await ghRaw(env, `_pipeline/batch/day${dd}/meta.json`)).json();
+      const shot1Url = `https://raw.githubusercontent.com/${VIDEO_REPO}/main/_pipeline/batch/day${dd}/shot1.jpeg`;
+      await env.PENDING.put(`awaiting_hook:${chatId}`, String(dayNum), { expirationTtl: 86400 });
+      await tg(env, "sendPhoto", {
+        chat_id: chatId,
+        photo: shot1Url,
+        caption: `Day ${dayNum}: "${meta.title_working}"\n\nMotion prompt for Google Flow:\n${meta.hook_motion_prompt}\n\nReply here with the finished Flow video when ready.`,
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't load day ${dayNum}: ${e.message}` });
+    }
+    return;
+  }
+
+  if (text.startsWith("/publish")) {
+    const rest = text.slice("/publish".length).trim();
+    const atMatch = rest.match(/^(\d+)\s+at\s+(\d{1,2}:\d{2})$/i);
+    const dayNum = atMatch ? parseInt(atMatch[1], 10) : parseInt(rest, 10);
+    if (!dayNum) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "Usage: /publish <N>  or  /publish <N> at <HH:MM> (IST)" });
+      return;
+    }
+    let publishAt = "";
+    if (atMatch) {
+      publishAt = istTimeToPublishAt(atMatch[2]);
+      if (!publishAt) {
+        await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't parse time "${atMatch[2]}" — use HH:MM` });
+        return;
+      }
+    }
+    try {
+      await dispatchFinishBatchDay(env, { day: String(dayNum), upload: "true", publish_at: publishAt });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start publish: ${e.message}` });
+      return;
+    }
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: publishAt
+        ? `\u{1F4C5} Rendering day ${dayNum} and scheduling for ${atMatch[2]} IST. Check Actions for progress.`
+        : `\u{1F680} Rendering + publishing day ${dayNum} to YouTube now. Check Actions for progress.`,
+    });
+    return;
+  }
 
   if (text.startsWith("/short")) {
     const rest = text.slice("/short".length).trim();
@@ -226,7 +402,7 @@ async function handleMessage(env, msg) {
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  — build a comic (25 pages)\n/make <case name> | 50  — set page count\n/make  — auto-pick the next comic case\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube",
+        text: "Commands:\n/make <case name>  — build a comic (25 pages)\n/make <case name> | 50  — set page count\n/make  — auto-pick the next comic case\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube\n\n/day <N>  — get day N's hook still + Flow prompt from the 30-day batch\n(reply with the Flow video)  — commits it, renders (no upload yet)\n/publish <N>  — render + upload day N now\n/publish <N> at <HH:MM>  — same, scheduled for that IST time",
       });
     }
     return;
