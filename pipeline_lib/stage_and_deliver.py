@@ -62,9 +62,9 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
     args = ["products", "create", "--name", name, "--price", price,
             "--file", pdf_path, "--file-name", os.path.basename(pdf_path),
             # Once a PDF is downloaded there's nothing to return, which is why
-            # no-refunds is the norm for low-cost digital downloads.
-            "--refund-period", "none",
-            "--refund-fine-print", "No refunds — this is a digital download."]
+            # no-refunds is the norm for low-cost digital downloads. Fine print
+            # deliberately left blank.
+            "--refund-period", "none"]
     if description:
         args += ["--description", description]
     if cover_path and os.path.exists(cover_path):
