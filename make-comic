@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Make a comic on demand.
+#
+#   ./make-comic "The Osage Indian Murders"            # 25 pages (default)
+#   ./make-comic "Hinterkaifeck murders" 50            # 50 pages
+#   ./make-comic                                        # auto-pick the next case
+#
+# Dispatches the GitHub Actions pipeline, which does everything: writes the
+# script, generates the art, OCR-checks it, builds the PDF, stages a Gumroad
+# draft, and sends it to Telegram with approval buttons.
+set -euo pipefail
+
+CASE="${1:-}"
+PAGES="${2:-25}"
+
+gh workflow run pipeline.yml \
+  -R Universekianukal/shadow-gasp-comic-pipeline \
+  -f "case=$CASE" \
+  -f "target_pages=$PAGES" \
+  -f "dry_run=false"
+
+if [ -z "$CASE" ]; then
+  echo "Dispatched: auto-picked case, $PAGES pages."
+else
+  echo "Dispatched: \"$CASE\", $PAGES pages."
+fi
+echo "Watch: gh run watch -R Universekianukal/shadow-gasp-comic-pipeline"
+echo "It'll arrive in Telegram with Approve / Reject / Increase Pages buttons."

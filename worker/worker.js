@@ -40,6 +40,22 @@ async function dispatchAction(env, inputs) {
   }
 }
 
+async function dispatchPipeline(env, inputs) {
+  const r = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/pipeline.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "shadow-gasp-bot",
+      },
+      body: JSON.stringify({ ref: "main", inputs }),
+    }
+  );
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
+
 function approvalKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -144,6 +160,48 @@ async function handleCallback(env, cq) {
 // already has as a GitHub secret), and the Worker writes to its own KV and
 // sends the Telegram message itself. Same pattern MindUnlocked uses: the
 // Worker owns all state, GitHub Actions only does the heavy build work.
+// Text commands, so a comic can be started from a phone without touching a
+// terminal:
+//   /make <case name>            -> 25 pages (default)
+//   /make <case name> | 50       -> explicit page count
+//   /make                        -> let the pipeline auto-pick the next case
+async function handleMessage(env, msg) {
+  const text = (msg.text || "").trim();
+  const chatId = msg.chat.id;
+
+  if (!text.startsWith("/make")) {
+    if (text.startsWith("/")) {
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: "Commands:\n/make <case name>  — build a comic (25 pages)\n/make <case name> | 50  — set page count\n/make  — auto-pick the next case",
+      });
+    }
+    return;
+  }
+
+  const rest = text.slice("/make".length).trim();
+  let caseName = rest;
+  let pages = "25";
+  const bar = rest.lastIndexOf("|");
+  if (bar !== -1) {
+    caseName = rest.slice(0, bar).trim();
+    const n = rest.slice(bar + 1).trim();
+    if (/^\d+$/.test(n)) pages = n;
+  }
+
+  try {
+    await dispatchPipeline(env, { case: caseName, target_pages: pages, dry_run: "false" });
+  } catch (e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start build: ${e.message}` });
+    return;
+  }
+
+  await tg(env, "sendMessage", {
+    chat_id: chatId,
+    text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${pages} pages.\nThis takes a while (script → art → OCR check → PDF). You'll get the draft here with buttons when it's done.`,
+  });
+}
+
 async function sendApprovalMessage(env, { token, caseName, productId, title }) {
   // The Action already sent the PDF itself as a plain document (it has the
   // bytes locally right after building it) -- this Worker follows up with a
@@ -185,6 +243,14 @@ export default {
       update = await request.json();
     } catch {
       return new Response("bad request", { status: 400 });
+    }
+
+    if (update.message) {
+      try {
+        await handleMessage(env, update.message);
+      } catch (e) {
+        console.error(e);
+      }
     }
 
     if (update.callback_query) {
