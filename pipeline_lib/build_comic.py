@@ -699,26 +699,6 @@ def render_cover(c, spec, panels_dir, missing):
     c.setFont(FONT_HEAVY, 8.4)
     c.drawCentredString(PAGE_W / 2, PAGE_H - 1.465 * inch, strip)
 
-    # ---- corner box: issue number ONLY ----
-    # No price, no repeated series mark -- a single short string that always
-    # fits, so this box can't overflow no matter what the logo/price text is.
-    issue_txt = spec.get("issue_line", "No. 01").replace("ISSUE ", "No.")
-    bw, bh = 0.86 * inch, 0.46 * inch
-    pad = 0.06 * inch
-    bx, by = MARGIN * 0.6, PAGE_H - 1.62 * inch - bh
-
-    issue_sz = 16
-    while issue_sz > 8 and pdfmetrics.stringWidth(issue_txt, FONT_HEAVY, issue_sz) > bw - 2 * pad:
-        issue_sz -= 0.5
-
-    c.setFillColor(ink(0.07, 0.07, 0.08))
-    c.setStrokeColor(NEWSPRINT)
-    c.setLineWidth(1.6)
-    c.rect(bx, by, bw, bh, stroke=1, fill=1)
-    c.setFillColor(NEWSPRINT)
-    c.setFont(FONT_HEAVY, issue_sz)
-    c.drawCentredString(bx + bw / 2, by + (bh - issue_sz * 0.72) / 2, issue_txt)
-
     # ---- title, big and outlined ----
     size = 46
     while size > 22 and pdfmetrics.stringWidth(spec["title"], FONT_HEAVY, size) > PAGE_W - 1.1 * inch:
