@@ -20,7 +20,7 @@ import urllib.request
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 MODEL = "claude-sonnet-5"
 
-SCHEMA_SPEC = """
+SCHEMA_SPEC_TEMPLATE = """
 Return a single JSON object with exactly two top-level keys: "script" and
 "panel_prompts".
 
@@ -56,7 +56,11 @@ Return a single JSON object with exactly two top-level keys: "script" and
 }
 
 REQUIREMENTS for "pages":
-- At least 25 entries (pages numbered sequentially starting at 3).
+- At least __TARGET_PAGES__ entries (pages numbered sequentially starting at 3).
+  If the real case doesn't have enough documented material to reach this
+  honestly, write as many genuine, non-padded pages as the facts support and
+  say so in a code comment at the very end of your response after the JSON
+  (outside the JSON object) — do not invent details to hit the number.
 - shape must be one of SPLASH, PORTRAIT, LANDSCAPE, SQUARE.
 - Every fact must be something you have real confidence is true — do not
   invent quotes, statistics, or events. If uncertain, keep the caption
@@ -115,6 +119,7 @@ def main():
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--case", default=os.environ.get("CASE"))
     ap.add_argument("--issue-no", default="01")
+    ap.add_argument("--target-pages", type=int, default=25)
     args = ap.parse_args()
     if not args.case:
         raise SystemExit("Provide --case or set CASE env var")
@@ -125,11 +130,14 @@ def main():
         "You are writing one issue of SHADOW GASP, a true-crime/dark-history "
         "documentary comic series. You write ONLY well-documented real facts — "
         "never invent details about real people or events. Output raw JSON only, "
-        "no markdown fences, no commentary before or after."
+        "no markdown fences, no commentary before the JSON. One optional short "
+        "plain-text note is allowed AFTER the JSON object only if you had to "
+        "write fewer pages than requested due to limited real source material."
     )
+    schema_spec = SCHEMA_SPEC_TEMPLATE.replace("__TARGET_PAGES__", str(args.target_pages))
     user = (
         f"Case: {args.case}\nIssue number: {args.issue_no}\n\n"
-        f"{SCHEMA_SPEC}\n\nWrite the full comic now for this case."
+        f"{schema_spec}\n\nWrite the full comic now for this case."
     )
 
     text = call_claude(system, user)
@@ -146,8 +154,8 @@ def main():
     n_pages = len(result["script"]["pages"])
     n_panels = len(result["panel_prompts"])
     print(f"Wrote {script_path} ({n_pages} story pages) and {prompts_path} ({n_panels} panels)")
-    if n_pages < 25:
-        print(f"WARNING: only {n_pages} pages generated (< 25 requested) — "
+    if n_pages < args.target_pages:
+        print(f"WARNING: only {n_pages} pages generated (< {args.target_pages} requested) — "
               f"this case may not have enough documented material.", file=os.sys.stderr)
 
 

@@ -14,6 +14,10 @@ on:
         description: "If true, stop after picking the case (no generation, no publish)"
         required: false
         default: "false"
+      target_pages:
+        description: "Target story page count (used by the Increase Pages flow)"
+        required: false
+        default: "25"
 
 jobs:
   build:
@@ -72,7 +76,7 @@ jobs:
           SLUG=$(echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40)
           mkdir -p cases/$SLUG/panels
           echo "slug=$SLUG" >> "$GITHUB_ENV"
-          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE"
+          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --target-pages "${{ github.event.inputs.target_pages }}"
 
       - name: Generate FLUX art on Kaggle
         if: github.event.inputs.dry_run != 'true'
@@ -100,6 +104,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
         run: |
           python pipeline_lib/stage_and_deliver.py \
             --case-dir cases/${{ env.slug }} \

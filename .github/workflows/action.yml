@@ -1,0 +1,80 @@
+name: Comic Action (publish / reject / regenerate)
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "publish | reject | regenerate"
+        required: true
+      case:
+        description: "case name (for regenerate)"
+        required: false
+        default: ""
+      product_id:
+        description: "Gumroad product id"
+        required: false
+        default: ""
+      target_pages:
+        description: "target page count (for regenerate)"
+        required: false
+        default: ""
+      chat_id:
+        required: false
+        default: ""
+      message_id:
+        required: false
+        default: ""
+
+jobs:
+  act:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Gumroad CLI
+        if: github.event.inputs.action == 'publish' || github.event.inputs.action == 'reject'
+        run: curl -fsSL https://gumroad.com/install-cli.sh | bash
+
+      - name: Authenticate Gumroad CLI
+        if: github.event.inputs.action == 'publish' || github.event.inputs.action == 'reject'
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Publish
+        if: github.event.inputs.action == 'publish'
+        run: |
+          ~/.local/bin/gumroad products publish "${{ github.event.inputs.product_id }}" --yes
+          URL=$(~/.local/bin/gumroad products url "${{ github.event.inputs.product_id }}")
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/editMessageText" \
+            -d chat_id="${{ github.event.inputs.chat_id }}" \
+            -d message_id="${{ github.event.inputs.message_id }}" \
+            -d text="✅ LIVE on Gumroad: $URL"
+
+      - name: Reject
+        if: github.event.inputs.action == 'reject'
+        run: |
+          ~/.local/bin/gumroad products delete "${{ github.event.inputs.product_id }}" --yes
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/editMessageText" \
+            -d chat_id="${{ github.event.inputs.chat_id }}" \
+            -d message_id="${{ github.event.inputs.message_id }}" \
+            -d text="❌ Rejected and deleted from Gumroad."
+
+      - name: Regenerate with more pages (dispatches the full pipeline again)
+        if: github.event.inputs.action == 'regenerate'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/editMessageText" \
+            -d chat_id="${{ github.event.inputs.chat_id }}" \
+            -d message_id="${{ github.event.inputs.message_id }}" \
+            -d text="\U0001F504 Regenerating \"${{ github.event.inputs.case }}\" at ${{ github.event.inputs.target_pages }} pages... this takes a while (script + art + build)."
+          gh workflow run pipeline.yml \
+            -f "case=${{ github.event.inputs.case }}" \
+            -f "target_pages=${{ github.event.inputs.target_pages }}"

@@ -1,14 +1,16 @@
 """Build the comic PDF, create a Gumroad DRAFT product (not public) with it,
-then deliver to Telegram with Approve / Reject / Increase Pages buttons whose
-callback_data encodes the Gumroad product_id directly — so the Cloudflare
-Worker handling button taps never needs the PDF file itself, just the
-Gumroad API to publish/delete that product_id.
+send the plain PDF to Telegram, then register it with the Cloudflare Worker
+(a plain HTTPS call to the Worker's own public URL, protected by a shared
+secret — no separate Cloudflare API token needed). The Worker owns all
+approval state in its own KV binding and sends the follow-up message with
+Approve / Reject / Increase Pages buttons.
 """
 import argparse
 import glob
 import json
 import mimetypes
 import os
+import secrets
 import subprocess
 import sys
 import urllib.parse
@@ -40,14 +42,12 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category):
     return data.get("product", data)["id"]
 
 
-def telegram_send_document(token, chat_id, file_path, caption, reply_markup):
+def telegram_send_document(token, chat_id, file_path, caption):
     boundary = "----shadowgaspboundary"
     url = f"https://api.telegram.org/bot{token}/sendDocument"
     parts = [f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat_id}\r\n"]
     if caption:
         parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}\r\n")
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"reply_markup\"\r\n\r\n"
-                 f"{json.dumps(reply_markup)}\r\n")
     filename = os.path.basename(file_path)
     mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; "
@@ -61,12 +61,17 @@ def telegram_send_document(token, chat_id, file_path, caption, reply_markup):
         return json.load(r)
 
 
-def approval_keyboard(case_id, product_id):
-    return {"inline_keyboard": [[
-        {"text": "✅ Approve", "callback_data": f"approve:{case_id}:{product_id}"},
-        {"text": "❌ Reject", "callback_data": f"reject:{case_id}:{product_id}"},
-        {"text": "\U0001F4C4 Increase Pages", "callback_data": f"pages_menu:{case_id}:{product_id}"},
-    ]]}
+def register_with_worker(worker_url, shared_secret, token, case_name, product_id, title):
+    req = urllib.request.Request(
+        f"{worker_url.rstrip('/')}/register",
+        data=json.dumps({
+            "token": token, "case": case_name, "product_id": product_id, "title": title,
+        }).encode(),
+        headers={"Content-Type": "application/json", "X-Shared-Secret": shared_secret},
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as r:
+        return r.status
 
 
 def main():
@@ -100,16 +105,26 @@ def main():
     )
     print(f"Staged Gumroad draft: {product_id}")
 
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     result = telegram_send_document(
-        token, chat_id, pdf_path,
-        caption=f"{args.title} — draft ready for review (Gumroad draft: {product_id})",
-        reply_markup=approval_keyboard(args.case_id, product_id),
+        bot_token, chat_id, pdf_path,
+        caption=f"{args.title} — full comic (see next message for approval buttons)",
     )
     if not result.get("ok"):
         raise SystemExit(f"Telegram send failed: {result}")
-    print(f"Delivered to Telegram, message_id={result['result']['message_id']}")
+    print(f"Delivered PDF to Telegram, message_id={result['result']['message_id']}")
+
+    approval_token = secrets.token_urlsafe(8)
+    register_with_worker(
+        worker_url=os.environ["WORKER_URL"],
+        shared_secret=os.environ["WORKER_SHARED_SECRET"],
+        token=approval_token,
+        case_name=args.title,
+        product_id=product_id,
+        title=args.title,
+    )
+    print(f"Registered with Worker, token={approval_token}")
 
 
 if __name__ == "__main__":
