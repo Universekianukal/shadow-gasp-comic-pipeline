@@ -27,13 +27,36 @@ def gumroad(args_list):
     return json.loads(result.stdout)
 
 
-def stage_draft(name, pdf_path, cover_path, price, description, tags, category):
+def pick_preview_panels(comic_dir, script, limit=3):
+    """Pick a few striking interior panels to use as extra product previews.
+
+    Splash panels are the full-page dramatic beats, so they're the best
+    stand-alone images — and unlike the cover they carry no title/logo text,
+    which makes them far more usable as social promo images later.
+    """
+    panels_dir = os.path.join(comic_dir, "panels")
+    splashes, others = [], []
+    for page in script.get("pages", []):
+        if page.get("type") == "splash" and page.get("panel"):
+            splashes.append(page["panel"]["file"])
+        else:
+            for row in page.get("rows", []):
+                for cell in row:
+                    others.append(cell["file"])
+    chosen = [f for f in (splashes + others) if os.path.exists(os.path.join(panels_dir, f))]
+    return [os.path.join(panels_dir, f) for f in chosen[:limit]]
+
+
+def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
+                preview_paths=None):
     args = ["products", "create", "--name", name, "--price", price,
             "--file", pdf_path, "--file-name", os.path.basename(pdf_path)]
     if description:
         args += ["--description", description]
     if cover_path and os.path.exists(cover_path):
         args += ["--cover-image", cover_path, "--thumbnail", cover_path]
+    for p in (preview_paths or []):
+        args += ["--preview-image", p]
     for t in (tags or []):
         args += ["--tag", t]
     if category:
@@ -102,6 +125,7 @@ def main():
         name=f"{script['series']} #{script['issue_no']}: {script['title']}",
         pdf_path=pdf_path, cover_path=cover_path, price=args.price,
         description=description, tags=tags, category=DEFAULT_CATEGORY,
+        preview_paths=pick_preview_panels(comic_dir, script),
     )
     print(f"Staged Gumroad draft: {product_id}")
 

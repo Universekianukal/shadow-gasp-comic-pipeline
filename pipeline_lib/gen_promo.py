@@ -39,12 +39,12 @@ def call_claude(system, user, max_tokens=1200):
     raise RuntimeError(f"No text block in response: {json.dumps(data)[:500]}")
 
 
-def get_product_cover_url(product_id):
-    """Pull the cover image URL back off the published Gumroad product.
+def get_product_image_urls(product_id):
+    """All image URLs off the published Gumroad product: the branded cover
+    plus the interior panels uploaded as extra previews at build time.
 
-    The local cases/ folder (with the original cover.jpg) is deleted after the
-    build run, so by publish time Gumroad itself is the only place the image
-    still lives.
+    The local cases/ folder is deleted after the build run, so by publish time
+    Gumroad is the only place these images still live.
     """
     import subprocess
     r = subprocess.run(
@@ -52,13 +52,19 @@ def get_product_cover_url(product_id):
         capture_output=True, text=True,
     )
     if r.returncode != 0:
-        return None
+        return []
     data = json.loads(r.stdout)
     p = data.get("product", data)
-    covers = p.get("covers") or []
-    if covers:
-        return covers[0].get("original_url") or covers[0].get("url")
-    return p.get("preview_url") or p.get("thumbnail_url")
+    urls = []
+    for c in (p.get("covers") or []):
+        u = c.get("original_url") or c.get("url")
+        if u:
+            urls.append(u)
+    if not urls:
+        u = p.get("preview_url") or p.get("thumbnail_url")
+        if u:
+            urls.append(u)
+    return urls
 
 
 def tg_send_photo(bot_token, chat_id, photo_url, caption):
@@ -116,18 +122,19 @@ def main():
     tg_send(bot_token, chat_id, f"🔗 Shareable link:\n{args.url}")
     tg_send(bot_token, chat_id, f"📋 Facebook post (copy-paste):\n\n{post}")
 
-    # The cover art as a downloadable photo, so it can be attached to the
-    # Facebook post directly — an image post reaches far more people than a
-    # bare link, and FB's own link-preview scrape isn't reliable enough to
-    # count on.
-    cover_url = get_product_cover_url(args.product_id) if args.product_id else None
-    if cover_url:
+    # Images to attach to the FB post. The first is the branded cover; the
+    # rest are interior panels (no title/logo text on them), which tend to
+    # read as content rather than an ad in a feed. Sent as options rather
+    # than one pick, since which performs best is worth testing per case.
+    urls = get_product_image_urls(args.product_id) if args.product_id else []
+    for i, u in enumerate(urls):
+        caption = ("🖼 Option 1 — branded cover" if i == 0
+                   else f"🖼 Option {i + 1} — interior panel (no text; usually better reach)")
         try:
-            tg_send_photo(bot_token, chat_id, cover_url,
-                          "🖼 Cover image — download and attach to the FB post")
+            tg_send_photo(bot_token, chat_id, u, caption)
         except Exception as e:
-            tg_send(bot_token, chat_id, f"(Cover image couldn't be sent: {e})")
-    print("Sent link + promo post + cover to Telegram")
+            tg_send(bot_token, chat_id, f"(Image {i + 1} couldn't be sent: {e})")
+    print(f"Sent link + promo post + {len(urls)} image option(s) to Telegram")
 
 
 if __name__ == "__main__":
