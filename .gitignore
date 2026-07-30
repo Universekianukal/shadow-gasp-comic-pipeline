@@ -1,5 +1,4 @@
-# Generated comic content (script, art, finished PDF) for a paid product.
-# This repo is PUBLIC for free GitHub Actions minutes — cases/ must never be
-# committed, or the comic becomes freely downloadable before it's approved
-# or paid for on Gumroad.
 cases/
+.wrangler/
+worker/.wrangler/
+node_modules/
