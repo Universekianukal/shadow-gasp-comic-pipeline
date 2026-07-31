@@ -553,13 +553,14 @@ export default {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { day, case: caseName, video_id, chat_id } = body;
+      const { day, case: caseName, video_id, drive_link, chat_id } = body;
       if (!day || !video_id) {
         return new Response("missing fields", { status: 400 });
       }
+      const driveLine = drive_link ? `\n\u{1F4F9} Video file: ${drive_link}` : "";
       await tg(env, "sendMessage", {
         chat_id: chat_id || env.TELEGRAM_CHAT_ID,
-        text: `✅ Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}${caseName ? `\n"${caseName}"` : ""}`,
+        text: `✅ Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}${caseName ? `\n"${caseName}"` : ""}${driveLine}`,
       });
       return new Response("ok", { status: 200 });
     }
