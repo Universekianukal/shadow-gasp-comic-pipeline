@@ -86,11 +86,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // scheduling purposes. A 204 alone is NOT proof the run was created, so this
 // polls the workflow's own run list afterward and retries once if nothing
 // shows up -- only then is it safe to tell the user "render running now".
-async function dispatchFinishBatchDay(env, inputs) {
+async function dispatchWorkflowVerified(env, workflowFile, inputs) {
   const dispatchOnce = async () => {
     const beforeMs = Date.now();
     const r = await fetch(
-      `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/finish_batch_day.yml/dispatches`,
+      `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/dispatches`,
       {
         method: "POST",
         headers: {
@@ -107,7 +107,7 @@ async function dispatchFinishBatchDay(env, inputs) {
 
   const runAppeared = async (afterMs) => {
     const r = await fetch(
-      `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/finish_batch_day.yml/runs?event=workflow_dispatch&per_page=5`,
+      `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5`,
       { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
     );
     if (!r.ok) return false;
@@ -126,6 +126,23 @@ async function dispatchFinishBatchDay(env, inputs) {
   if (await runAppeared(beforeMs)) return;
 
   throw new Error("dispatched twice but no run appeared in Actions -- check the repo's Actions tab manually");
+}
+
+async function dispatchFinishBatchDay(env, inputs) {
+  return dispatchWorkflowVerified(env, "finish_batch_day.yml", inputs);
+}
+
+async function dispatchBatchPregen(env, inputs) {
+  return dispatchWorkflowVerified(env, "batch_pregen.yml", inputs);
+}
+
+function pregenKeyboard() {
+  return {
+    inline_keyboard: [
+      [3, 5, 7].map((n) => ({ text: `${n} days`, callback_data: `pregen:${n}` })),
+      [10].map((n) => ({ text: `${n} days`, callback_data: `pregen:${n}` })),
+    ],
+  };
 }
 
 async function ghRaw(env, path) {
@@ -229,6 +246,21 @@ async function handleCallback(env, cq) {
   const [action, token, extra] = data.split(":");
   const chatId = cq.message.chat.id;
   const messageId = cq.message.message_id;
+
+  if (action === "pregen") {
+    const n = parseInt(token, 10);
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Starting ${n} days...` });
+    await tg(env, "editMessageText", {
+      chat_id: chatId, message_id: messageId,
+      text: `\u{1F3AC} Generating ${n} new batch day(s) (case + script + 16 stills, vision-QA checked). This is sequential, so budget ~${n * 20}-${n * 30} min. I'll message you here once this chunk finishes.`,
+    });
+    try {
+      await dispatchBatchPregen(env, { days: String(n), notify_chat_id: String(chatId) });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start pregen: ${e.message}` });
+    }
+    return;
+  }
 
   const raw = await env.PENDING.get(`pending:${token}`);
   if (!raw) {
@@ -354,6 +386,15 @@ async function handleMessage(env, msg) {
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't process the video: ${e.message}` });
     }
+    return;
+  }
+
+  if (text.startsWith("/pregen")) {
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: "How many new batch days should I generate (case + script + 16 stills each, no hook video yet)? Each day takes ~15-30 min, sequentially.",
+      reply_markup: pregenKeyboard(),
+    });
     return;
   }
 
@@ -519,6 +560,22 @@ export default {
       await tg(env, "sendMessage", {
         chat_id: chat_id || env.TELEGRAM_CHAT_ID,
         text: `✅ Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}${caseName ? `\n"${caseName}"` : ""}`,
+      });
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/batch/pregen_done") {
+      // _batch_pregen.py calls this once its chunk finishes, so /pregen's
+      // "I'll message you here" promise is real instead of silent.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { new_days_done, through_day, chat_id } = body;
+      await tg(env, "sendMessage", {
+        chat_id: chat_id || env.TELEGRAM_CHAT_ID,
+        text: `\u{1F4E6} Pregen chunk done: ${new_days_done} new day(s) generated, through day ${through_day}. Use /day <N> to pull a still + prompt for Google Flow whenever you're ready.`,
       });
       return new Response("ok", { status: 200 });
     }
