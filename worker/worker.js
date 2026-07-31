@@ -573,11 +573,11 @@ export default {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { new_days_done, through_day, chat_id } = body;
-      await tg(env, "sendMessage", {
-        chat_id: chat_id || env.TELEGRAM_CHAT_ID,
-        text: `\u{1F4E6} Pregen chunk done: ${new_days_done} new day(s) generated, through day ${through_day}. Use /day <N> to pull a still + prompt for Google Flow whenever you're ready.`,
-      });
+      const { new_days_done, through_day, batch_complete, chat_id } = body;
+      const text = batch_complete
+        ? `\u{1F389} All 30 days generated! Batch pregen is fully complete through day ${through_day}. Use /day <N> to pull a still + prompt for Google Flow whenever you're ready.`
+        : `\u{1F4E6} Pregen chunk done: ${new_days_done} new day(s) generated, through day ${through_day}. Next chunk auto-starting -- I'll message you again once that finishes. Use /day <N> anytime to pull a still + prompt for Google Flow.`;
+      await tg(env, "sendMessage", { chat_id: chat_id || env.TELEGRAM_CHAT_ID, text });
       return new Response("ok", { status: 200 });
     }
 
