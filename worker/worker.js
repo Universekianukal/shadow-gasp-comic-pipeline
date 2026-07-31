@@ -330,7 +330,7 @@ async function handleMessage(env, msg) {
       await tg(env, "sendMessage", { chat_id: chatId, text: "Got a video, but no /day <N> is pending -- send /day <N> first so I know which day this belongs to." });
       return;
     }
-    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it — committing as day ${dayNum}'s hook video and starting a render (no upload yet)...` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it — committing as day ${dayNum}'s hook video, then rendering + uploading to YouTube automatically. I'll confirm here once it's live.` });
     try {
       const fileInfo = await tg(env, "getFile", { file_id: videoObj.file_id });
       if (!fileInfo.ok) throw new Error(`getFile failed: ${JSON.stringify(fileInfo)}`);
@@ -340,12 +340,16 @@ async function handleMessage(env, msg) {
       const videoBytes = await fileResp.arrayBuffer();
 
       await commitHookVideo(env, dayNum, videoBytes);
-      await dispatchFinishBatchDay(env, { day: dayNum, upload: "false", publish_at: "" });
+      // upload: "true" -- end to end, no /publish step needed. finish_batch_day.yml's
+      // upload job POSTs back to this Worker's /batch/uploaded once it's actually
+      // live on YouTube (see that endpoint below), which is what sends the real
+      // confirmation -- this message just confirms the render/upload STARTED.
+      await dispatchFinishBatchDay(env, { day: dayNum, upload: "true", publish_at: "", notify_chat_id: String(chatId) });
       await env.PENDING.delete(`awaiting_hook:${chatId}`);
 
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: `✅ Day ${dayNum} hook video committed, render running now. Once you've confirmed it looks right, use /publish ${dayNum} (or /publish ${dayNum} at HH:MM to schedule).`,
+        text: `\u{1F680} Day ${dayNum} hook video committed. Rendering + uploading to YouTube now (~15-20 min) — I'll message you here the moment it's live.`,
       });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't process the video: ${e.message}` });
@@ -392,7 +396,7 @@ async function handleMessage(env, msg) {
       }
     }
     try {
-      await dispatchFinishBatchDay(env, { day: String(dayNum), upload: "true", publish_at: publishAt });
+      await dispatchFinishBatchDay(env, { day: String(dayNum), upload: "true", publish_at: publishAt, notify_chat_id: String(chatId) });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start publish: ${e.message}` });
       return;
@@ -495,6 +499,27 @@ export default {
       }
       await env.PENDING.put(`pending:${token}`, JSON.stringify({ case: caseName, product_id }));
       await sendApprovalMessage(env, { token, caseName, productId: product_id, title: title || caseName });
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/batch/uploaded") {
+      // finish_batch_day.yml's upload job calls this once a batch day is
+      // actually live on YouTube -- separate secret from /register's
+      // WORKER_SHARED_SECRET (that one belongs to the comic pipeline; this is
+      // scoped to the video pipeline's own GitHub repo secrets).
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { day, case: caseName, video_id, chat_id } = body;
+      if (!day || !video_id) {
+        return new Response("missing fields", { status: 400 });
+      }
+      await tg(env, "sendMessage", {
+        chat_id: chat_id || env.TELEGRAM_CHAT_ID,
+        text: `✅ Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}${caseName ? `\n"${caseName}"` : ""}`,
+      });
       return new Response("ok", { status: 200 });
     }
 
