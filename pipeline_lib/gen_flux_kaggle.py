@@ -1,7 +1,9 @@
 """Generic FLUX-on-Kaggle panel generator (works from any case directory
 containing panel_prompts.json), adapted from the shadow_gasp local pipeline.
 
-Requires KAGGLE_USERNAME / KAGGLE_KEY env vars (set as GitHub Actions secrets).
+Requires KAGGLE_USERNAME / KAGGLE_API_TOKEN env vars (set as GitHub Actions
+secrets) -- kaggle==2.2.2's CLI auths via KAGGLE_API_TOKEN, not the legacy
+KAGGLE_USERNAME/KAGGLE_KEY pair (see pipeline.yml's Kaggle-auth comment).
 """
 import argparse
 import json
@@ -82,20 +84,51 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         "dataset_sources": [], "competition_sources": [], "kernel_sources": [],
     }, open(os.path.join(kernel_dir, "kernel-metadata.json"), "w"), indent=2)
 
-    subprocess.run(["kaggle", "kernels", "push", "-p", "."], cwd=kernel_dir, check=True)
+    # No timeout here used to mean a stalled/hung `kaggle` CLI call (network
+    # stall, or the account's 2-concurrent-GPU-session cap) blocked the whole
+    # Actions job indefinitely with zero visible error -- seen on a real
+    # 75pp build that sat "in progress" for 80+ minutes with no kernel ever
+    # created. Explicit timeout + bounded retry on the GPU-cap message (the
+    # cap clears naturally as other kernels finish) instead of hanging forever.
+    for attempt in range(1, 21):
+        try:
+            r = subprocess.run(["kaggle", "kernels", "push", "-p", "."], cwd=kernel_dir,
+                                capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            print(f"push attempt {attempt}: timed out after 120s, retrying")
+            continue
+        if r.returncode == 0:
+            break
+        if "Maximum batch GPU session count" in (r.stdout + r.stderr):
+            print(f"push attempt {attempt}: GPU sessions full, waiting 60s ...")
+            time.sleep(60)
+            continue
+        raise RuntimeError(f"kaggle kernels push failed: {r.stdout} {r.stderr}")
+    else:
+        raise RuntimeError("kaggle kernels push: GPU sessions still full / unreachable after 20 attempts")
 
-    while True:
+    # Bounded poll: a kernel realistically finishes within ~30-40 min even for
+    # a large panel batch; past that something is genuinely stuck, and an
+    # unbounded loop would (as above) hang the whole job with no signal.
+    for _ in range(90):  # 90 * 30s = 45 min ceiling
         time.sleep(30)
-        r = subprocess.run(["kaggle", "kernels", "status", kernel_id], capture_output=True, text=True)
+        try:
+            r = subprocess.run(["kaggle", "kernels", "status", kernel_id],
+                                capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            print("status check timed out, retrying")
+            continue
         status = r.stdout.strip()
         print(status)
         if "COMPLETE" in status:
             break
         if "ERROR" in status or "CANCEL" in status:
             raise RuntimeError(f"Kaggle kernel failed: {r.stdout} {r.stderr}")
+    else:
+        raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after 45 min -- likely stuck")
 
     out_dir = os.path.join(kernel_dir, "out")
-    subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir], check=True)
+    subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir], check=True, timeout=180)
 
     failed = []
     for p in panels:
