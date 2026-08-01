@@ -20,6 +20,57 @@ import urllib.request
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 MODEL = "claude-sonnet-5"
 
+
+def cache_get(key):
+    """Check the Worker's private KV for an already-generated script.
+
+    cases/ is deliberately never committed to this public repo (see
+    pipeline.yml), so a retry after a LATER step fails (Kaggle auth, OCR,
+    Gumroad) used to silently re-call Claude for a script that already came
+    back fine -- real API cost for a repeat run. The Worker's KV is private
+    (not browsable the way repo content is), so it's a safe place to cache
+    just the script+prompts JSON across retries of the SAME case+page-count.
+    Best-effort: caching is a cost optimization, not correctness-critical, so
+    any failure here (missing secrets, Worker down) just falls through to a
+    fresh generation instead of crashing the build.
+    """
+    worker_url, secret = os.environ.get("WORKER_URL"), os.environ.get("WORKER_SHARED_SECRET")
+    if not worker_url or not secret:
+        return None
+    try:
+        req = urllib.request.Request(
+            f"{worker_url.rstrip('/')}/script-cache/get",
+            data=json.dumps({"key": key}).encode(),
+            headers={"Content-Type": "application/json", "X-Shared-Secret": secret},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"WARNING: script cache lookup failed ({e.code}) -- generating fresh")
+        return None
+    except Exception as e:
+        print(f"WARNING: script cache lookup failed ({e}) -- generating fresh")
+        return None
+
+
+def cache_save(key, result):
+    worker_url, secret = os.environ.get("WORKER_URL"), os.environ.get("WORKER_SHARED_SECRET")
+    if not worker_url or not secret:
+        return
+    try:
+        req = urllib.request.Request(
+            f"{worker_url.rstrip('/')}/script-cache/save",
+            data=json.dumps({"key": key, "script": result["script"], "panel_prompts": result["panel_prompts"]}).encode(),
+            headers={"Content-Type": "application/json", "X-Shared-Secret": secret},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+    except Exception as e:
+        print(f"WARNING: failed to cache script for future retries ({e}) -- not fatal")
+
 SCHEMA_SPEC_TEMPLATE = """
 Return a single JSON object with exactly two top-level keys: "script" and
 "panel_prompts".
@@ -184,6 +235,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--case", default=os.environ.get("CASE"))
+    ap.add_argument("--case-id", default=None, help="Slug used as the script-cache key (falls back to --case if omitted)")
     ap.add_argument("--issue-no", default="01")
     ap.add_argument("--target-pages", type=int, default=25)
     args = ap.parse_args()
@@ -192,26 +244,32 @@ def main():
 
     os.makedirs(os.path.join(args.out_dir, "panels"), exist_ok=True)
 
-    system = (
-        "You are writing one issue of SHADOW GASP, a true-crime/dark-history "
-        "documentary comic series. You write ONLY well-documented real facts — "
-        "never invent details about real people or events. Output raw JSON only, "
-        "no markdown fences, no commentary before the JSON. One optional short "
-        "plain-text note is allowed AFTER the JSON object only if you had to "
-        "write fewer pages than requested due to limited real source material."
-    )
-    schema_spec = SCHEMA_SPEC_TEMPLATE.replace("__TARGET_PAGES__", str(args.target_pages))
-    user = (
-        f"Case: {args.case}\nIssue number: {args.issue_no}\n\n"
-        f"{schema_spec}\n\nWrite the full comic now for this case."
-    )
+    cache_key = f"{args.case_id or args.case}:{args.issue_no}:{args.target_pages}"
+    result = cache_get(cache_key)
+    if result:
+        print(f"Using cached script for '{cache_key}' -- no Anthropic API call made")
+    else:
+        system = (
+            "You are writing one issue of SHADOW GASP, a true-crime/dark-history "
+            "documentary comic series. You write ONLY well-documented real facts — "
+            "never invent details about real people or events. Output raw JSON only, "
+            "no markdown fences, no commentary before the JSON. One optional short "
+            "plain-text note is allowed AFTER the JSON object only if you had to "
+            "write fewer pages than requested due to limited real source material."
+        )
+        schema_spec = SCHEMA_SPEC_TEMPLATE.replace("__TARGET_PAGES__", str(args.target_pages))
+        user = (
+            f"Case: {args.case}\nIssue number: {args.issue_no}\n\n"
+            f"{schema_spec}\n\nWrite the full comic now for this case."
+        )
 
-    # 16000 was sized for the 25pp default and silently starved a 75pp request
-    # (Claude spent its whole budget on extended thinking and never emitted a
-    # text block at all). Scale with page count; capped at 64000, the highest
-    # output-token budget Claude Sonnet 5 accepts.
-    max_tokens = min(64000, max(16000, args.target_pages * 900))
-    result = generate(system, user, max_tokens=max_tokens)
+        # 16000 was sized for the 25pp default and silently starved a 75pp request
+        # (Claude spent its whole budget on extended thinking and never emitted a
+        # text block at all). Scale with page count; capped at 64000, the highest
+        # output-token budget Claude Sonnet 5 accepts.
+        max_tokens = min(64000, max(16000, args.target_pages * 900))
+        result = generate(system, user, max_tokens=max_tokens)
+        cache_save(cache_key, result)
 
     script_path = os.path.join(args.out_dir, f"script_issue{args.issue_no}.json")
     prompts_path = os.path.join(args.out_dir, "panel_prompts.json")

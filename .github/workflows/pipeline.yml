@@ -72,11 +72,13 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CASE: ${{ steps.case.outputs.case }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
         run: |
           SLUG=$(echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40)
           mkdir -p cases/$SLUG/panels
           echo "slug=$SLUG" >> "$GITHUB_ENV"
-          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --target-pages "${{ github.event.inputs.target_pages }}"
+          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages }}"
 
       - name: Generate FLUX art on Kaggle
         if: github.event.inputs.dry_run != 'true'

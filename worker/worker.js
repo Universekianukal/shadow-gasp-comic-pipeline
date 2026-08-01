@@ -593,6 +593,46 @@ export default {
       return new Response("ok", { status: 200 });
     }
 
+    // Script-generation cache: cases/ (script, art, PDF) is deliberately
+    // NEVER committed to this public repo -- it's wiped by `rm -rf cases/`
+    // at the end of every run, success or failure, so a paid comic can't be
+    // downloaded free straight from git history. That's correct for art/PDF,
+    // but it meant a retry after a LATER step failed (Kaggle auth, OCR, Gumroad)
+    // silently re-billed the Anthropic API for a script that already generated
+    // fine. The Worker's KV is private (not browsable/downloadable the way repo
+    // content is), so it's a safe place to cache just the script+prompts JSON
+    // across retries of the SAME case+page-count, same trust boundary as the
+    // existing /register endpoint. Key includes target_pages because a 25pp
+    // and a 75pp script for the same case are different content.
+    if (request.method === "POST" && url.pathname === "/script-cache/save") {
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { key, script, panel_prompts } = body;
+      if (!key || !script || !panel_prompts) {
+        return new Response("missing fields", { status: 400 });
+      }
+      // 7 days is plenty for a retry cycle without letting stale scripts
+      // (e.g. after a manual case-content edit) live in KV forever.
+      await env.PENDING.put(`script_cache:${key}`, JSON.stringify({ script, panel_prompts }), { expirationTtl: 604800 });
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/script-cache/get") {
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const raw = body.key ? await env.PENDING.get(`script_cache:${body.key}`) : null;
+      if (!raw) {
+        return new Response("not found", { status: 404 });
+      }
+      return new Response(raw, { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
     if (request.method === "POST" && url.pathname === "/batch/uploaded") {
       // finish_batch_day.yml's upload job calls this once a batch day is
       // actually live on YouTube -- separate secret from /register's
