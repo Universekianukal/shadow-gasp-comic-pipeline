@@ -127,28 +127,34 @@ def extract_json(text):
     return json.loads(match.group(0))
 
 
-def generate(system, user, attempts=3):
-    """Call Claude and parse its JSON, retrying on malformed output.
+def generate(system, user, max_tokens=16000, attempts=3):
+    """Call Claude and parse its JSON, retrying on malformed OR missing output.
 
-    A single bad response (usually an unescaped quote inside dialogue text
-    breaking the JSON) used to be an instant hard crash with zero retry --
-    the same failure mode already hit and fixed in MindUnlocked's
-    _gen_video_content.py. Claude's output is stochastic, so a bare retry of
-    the same prompt is enough to usually get valid JSON back.
+    Two distinct failure modes, both retried here:
+    1. Malformed JSON (usually an unescaped quote inside dialogue text) --
+       the same failure mode already hit and fixed in MindUnlocked's
+       _gen_video_content.py. A bare retry of the same prompt usually clears it.
+    2. Empty response (call_claude's own "No text block" RuntimeError) -- seen
+       on a 75-page request: the model spent its whole max_tokens budget on
+       extended thinking and never got to write the actual answer, so the
+       response has a "thinking" block but no "text" block at all. Retrying
+       alone won't fix this if max_tokens is genuinely too small for the
+       requested page count -- see the scaling in main() -- but IS still
+       worth retrying since the model doesn't always think that long.
     """
     last_err = None
     for attempt in range(1, attempts + 1):
-        text = call_claude(system, user)
         try:
+            text = call_claude(system, user, max_tokens=max_tokens)
             result = extract_json(text)
             missing = [k for k in ("script", "panel_prompts") if k not in result]
             if missing:
                 raise ValueError(f"JSON parsed but missing key(s): {missing}")
             return result
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError, RuntimeError) as e:
             last_err = e
-            print(f"WARNING: attempt {attempt}/{attempts} produced malformed JSON ({e}) -- retrying" if attempt < attempts else f"FAILED: attempt {attempt}/{attempts} still malformed ({e})")
-    raise RuntimeError(f"Claude never returned valid JSON after {attempts} attempts: {last_err}")
+            print(f"WARNING: attempt {attempt}/{attempts} failed ({e}) -- retrying" if attempt < attempts else f"FAILED: attempt {attempt}/{attempts} ({e})")
+    raise RuntimeError(f"Claude never returned a usable script after {attempts} attempts: {last_err}")
 
 
 def main():
@@ -177,7 +183,12 @@ def main():
         f"{schema_spec}\n\nWrite the full comic now for this case."
     )
 
-    result = generate(system, user)
+    # 16000 was sized for the 25pp default and silently starved a 75pp request
+    # (Claude spent its whole budget on extended thinking and never emitted a
+    # text block at all). Scale with page count; capped at 64000, the highest
+    # output-token budget Claude Sonnet 5 accepts.
+    max_tokens = min(64000, max(16000, args.target_pages * 900))
+    result = generate(system, user, max_tokens=max_tokens)
 
     script_path = os.path.join(args.out_dir, f"script_issue{args.issue_no}.json")
     prompts_path = os.path.join(args.out_dir, "panel_prompts.json")
