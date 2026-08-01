@@ -122,7 +122,33 @@ def call_claude(system, user, max_tokens=16000):
 
 def extract_json(text):
     match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON object found in Claude's response")
     return json.loads(match.group(0))
+
+
+def generate(system, user, attempts=3):
+    """Call Claude and parse its JSON, retrying on malformed output.
+
+    A single bad response (usually an unescaped quote inside dialogue text
+    breaking the JSON) used to be an instant hard crash with zero retry --
+    the same failure mode already hit and fixed in MindUnlocked's
+    _gen_video_content.py. Claude's output is stochastic, so a bare retry of
+    the same prompt is enough to usually get valid JSON back.
+    """
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        text = call_claude(system, user)
+        try:
+            result = extract_json(text)
+            missing = [k for k in ("script", "panel_prompts") if k not in result]
+            if missing:
+                raise ValueError(f"JSON parsed but missing key(s): {missing}")
+            return result
+        except (json.JSONDecodeError, ValueError) as e:
+            last_err = e
+            print(f"WARNING: attempt {attempt}/{attempts} produced malformed JSON ({e}) -- retrying" if attempt < attempts else f"FAILED: attempt {attempt}/{attempts} still malformed ({e})")
+    raise RuntimeError(f"Claude never returned valid JSON after {attempts} attempts: {last_err}")
 
 
 def main():
@@ -151,8 +177,7 @@ def main():
         f"{schema_spec}\n\nWrite the full comic now for this case."
     )
 
-    text = call_claude(system, user)
-    result = extract_json(text)
+    result = generate(system, user)
 
     script_path = os.path.join(args.out_dir, f"script_issue{args.issue_no}.json")
     prompts_path = os.path.join(args.out_dir, "panel_prompts.json")
