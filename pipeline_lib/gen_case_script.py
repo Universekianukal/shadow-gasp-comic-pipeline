@@ -277,10 +277,12 @@ def main():
         # 2.2 panels/page is measured from a real published issue in this
         # series (27pp/59 panels), not a guess -- see the panel-density fix
         # in REQUIREMENTS below. A prior 75pp run satisfied "at least 75
-        # pages" with ~1 panel/page (88 total, should have been ~165) by
-        # exploiting the fact that only page count, not panel count, was
-        # ever enforced.
-        target_panels = round(args.target_pages * 2.2)
+        # pages" with ~1 panel/page (88 total, should have been ~165 at the
+        # bare density floor) by exploiting the fact that only page count,
+        # not panel count, was ever enforced. +50 buffer on top of the bare
+        # floor (user's call) so there's real surplus to cut weaker panels
+        # from during art-directing, not just exactly enough.
+        target_panels = round(args.target_pages * 2.2) + 50
         schema_spec = (SCHEMA_SPEC_TEMPLATE
                         .replace("__TARGET_PAGES__", str(args.target_pages))
                         .replace("__TARGET_PANELS__", str(target_panels)))
