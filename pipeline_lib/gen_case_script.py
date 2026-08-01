@@ -119,8 +119,25 @@ REQUIREMENTS for "pages":
 - Every fact must be something you have real confidence is true — do not
   invent quotes, statistics, or events. If uncertain, keep the caption
   vaguer rather than fabricate specifics.
-- Vary pacing: mostly "grid" pages, with "splash" pages at key turning
-  points (opening, a major reveal, the ending).
+- TOTAL PANEL COUNT across all pages must be at least __TARGET_PANELS__
+  (roughly 2.2 panels per page on average — measured from a real published
+  issue in this series, NOT a made-up number). Do NOT satisfy the page count
+  by making every page a single panel — that is flat and undramatic, and is
+  not how a real print comic paces a scene. If a real case doesn't have
+  enough distinct FACTS to reach __TARGET_PAGES__ genuine beats, that's fine
+  — decompress the beats you do have across more panels each (a wide
+  establishing shot, then a reaction, then a close-up) rather than either
+  inventing new beats or leaving every page at one panel.
+- A "grid" page must contain at least 2 panels. If a beat only deserves one
+  image, mark it "splash" — a "grid" page with a single row of one panel is
+  not allowed, it's just a mislabeled splash.
+- Distribute panel counts the way a real comic paces itself, NOT uniformly.
+  For reference, a real 27-page/59-panel issue in this series broke down as:
+  ~15% single-panel splash pages (reserved for genuine dramatic beats: an
+  opening image, a major reveal, a death, the ending), ~59% two-panel pages
+  (the default rhythm for an ordinary story beat), ~19% three-panel pages,
+  and ~7% four-panel pages (for busy/expository moments — a montage, a list
+  of names, a fast sequence). Match that shape, not a flat repeated count.
 
 "panel_prompts" must be a JSON array with ONE entry per unique "file" that
 appears anywhere in "script" (cover.jpg plus every panel file), PLUS three extra
@@ -257,17 +274,28 @@ def main():
             "plain-text note is allowed AFTER the JSON object only if you had to "
             "write fewer pages than requested due to limited real source material."
         )
-        schema_spec = SCHEMA_SPEC_TEMPLATE.replace("__TARGET_PAGES__", str(args.target_pages))
+        # 2.2 panels/page is measured from a real published issue in this
+        # series (27pp/59 panels), not a guess -- see the panel-density fix
+        # in REQUIREMENTS below. A prior 75pp run satisfied "at least 75
+        # pages" with ~1 panel/page (88 total, should have been ~165) by
+        # exploiting the fact that only page count, not panel count, was
+        # ever enforced.
+        target_panels = round(args.target_pages * 2.2)
+        schema_spec = (SCHEMA_SPEC_TEMPLATE
+                        .replace("__TARGET_PAGES__", str(args.target_pages))
+                        .replace("__TARGET_PANELS__", str(target_panels)))
         user = (
             f"Case: {args.case}\nIssue number: {args.issue_no}\n\n"
             f"{schema_spec}\n\nWrite the full comic now for this case."
         )
 
-        # 16000 was sized for the 25pp default and silently starved a 75pp request
-        # (Claude spent its whole budget on extended thinking and never emitted a
-        # text block at all). Scale with page count; capped at 64000, the highest
-        # output-token budget Claude Sonnet 5 accepts.
-        max_tokens = min(64000, max(16000, args.target_pages * 900))
+        # 16000 was sized for the 25pp default and silently starved a 75pp
+        # request (Claude spent its whole budget on extended thinking and
+        # never emitted a text block at all). Scale with PANEL count now,
+        # not page count -- panel_prompts is one entry per panel, and the
+        # panel-density fix means panel count can run ~2x page count, so
+        # sizing off pages alone would under-budget again.
+        max_tokens = min(64000, max(16000, target_panels * 500))
         result = generate(system, user, max_tokens=max_tokens)
         cache_save(cache_key, result)
 
