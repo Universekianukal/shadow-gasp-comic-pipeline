@@ -30,16 +30,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        run: pip install requests rapidocr-onnxruntime kaggle Pillow reportlab PyMuPDF
+        # kaggle pinned to 2.2.2: unpinned installs pick up a later release
+        # whose CLI switched to a KAGGLE_API_TOKEN auth flow and silently
+        # fails auth with the legacy KAGGLE_USERNAME/KAGGLE_KEY kaggle.json
+        # pair, even on this pinned version -- same gotcha already hit and
+        # fixed on the shadow_gasp video pipeline. Auth is via KAGGLE_API_TOKEN
+        # env var directly on the steps that call the CLI, no kaggle.json.
+        run: pip install requests rapidocr-onnxruntime "kaggle==2.2.2" Pillow reportlab PyMuPDF
 
       - name: Install Gumroad CLI
         run: curl -fsSL https://gumroad.com/install-cli.sh | bash
-
-      - name: Configure Kaggle credentials
-        run: |
-          mkdir -p ~/.kaggle
-          echo "{\"username\":\"${{ secrets.KAGGLE_USERNAME }}\",\"key\":\"${{ secrets.KAGGLE_KEY }}\"}" > ~/.kaggle/kaggle.json
-          chmod 600 ~/.kaggle/kaggle.json
 
       - name: Authenticate Gumroad CLI
         run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
@@ -82,6 +82,7 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python pipeline_lib/gen_flux_kaggle.py --case-dir cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}-flux"
 
@@ -89,6 +90,7 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           cd pipeline_lib
           python ocr_autofix.py --case-dir ../cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}"
