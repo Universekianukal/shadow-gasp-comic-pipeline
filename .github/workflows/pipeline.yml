@@ -110,7 +110,8 @@ jobs:
           python pipeline_lib/stage_and_deliver.py \
             --case-dir cases/${{ env.slug }} \
             --case-id "${{ env.slug }}" \
-            --title "${{ steps.case.outputs.case }}"
+            --title "${{ steps.case.outputs.case }}" \
+            --target-pages "${{ github.event.inputs.target_pages }}"
 
       - name: Commit ONLY the dedup ledger back to repo (never the comic content)
         if: always()

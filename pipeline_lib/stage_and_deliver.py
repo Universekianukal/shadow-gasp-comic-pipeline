@@ -20,6 +20,11 @@ import urllib.request
 GUMROAD_BIN = "gumroad"
 DEFAULT_CATEGORY = "comics-and-graphic-novels"
 
+# Flat tier pricing keyed by target page count, shared with the Worker's
+# "Increase Pages" buttons (worker/worker.js pageCountKeyboard). 25pp is the
+# pipeline's own default page count and keeps the base $2.99 price.
+PAGE_PRICE_TIERS = {20: "0", 25: "2.99", 35: "3.99", 50: "4.99", 75: "6.99", 100: "8.99"}
+
 
 def gumroad(args_list):
     result = subprocess.run([GUMROAD_BIN, *args_list, "--json"], capture_output=True, text=True)
@@ -132,8 +137,11 @@ def main():
     ap.add_argument("--case-dir", required=True)
     ap.add_argument("--case-id", required=True)
     ap.add_argument("--title", required=True)
-    ap.add_argument("--price", default="2.99")
+    ap.add_argument("--target-pages", default="25")
+    ap.add_argument("--price", default=None, help="Overrides the tier price derived from --target-pages")
     args = ap.parse_args()
+    if args.price is None:
+        args.price = PAGE_PRICE_TIERS.get(int(args.target_pages), "2.99")
 
     comic_dir = args.case_dir
     scripts = glob.glob(os.path.join(comic_dir, "script_issue*.json"))

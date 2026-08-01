@@ -223,10 +223,14 @@ function approvalKeyboard(token) {
   };
 }
 
+// Mirrors PAGE_PRICE_TIERS in pipeline_lib/stage_and_deliver.py -- keep both
+// in sync if the tiers ever change.
+const PAGE_PRICE_TIERS = { 20: "0", 35: "3.99", 50: "4.99", 75: "6.99", 100: "8.99" };
+
 function pageCountKeyboard(token) {
   return {
-    inline_keyboard: [[35, 50, 75, 100].map((n) => ({
-      text: String(n),
+    inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
+      text: PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`,
       callback_data: `set_pages:${token}:${n}`,
     }))],
   };
@@ -294,10 +298,11 @@ async function handleCallback(env, cq) {
       reply_markup: pageCountKeyboard(token),
     });
   } else if (action === "set_pages") {
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Regenerating at ${extra} pages...` });
+    const priceLabel = PAGE_PRICE_TIERS[extra] === "0" ? "FREE" : `$${PAGE_PRICE_TIERS[extra]}`;
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Regenerating at ${extra} pages (${priceLabel})...` });
     await tg(env, "editMessageText", {
       chat_id: chatId, message_id: messageId,
-      text: `\u{1F504} Regenerating "${entry.case}" at ${extra} pages. This takes a while (script + art + build) — you'll get a new message when it's ready.`,
+      text: `\u{1F504} Regenerating "${entry.case}" at ${extra} pages (new price: ${priceLabel}). This takes a while (script + art + build) — you'll get a new message when it's ready.`,
     });
     await dispatchAction(env, {
       action: "regenerate", case: entry.case, target_pages: extra,
