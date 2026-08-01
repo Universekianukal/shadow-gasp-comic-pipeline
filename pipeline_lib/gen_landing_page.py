@@ -59,6 +59,7 @@ TEMPLATE = """<!DOCTYPE html>
     <h1 class="display text-6xl sm:text-7xl mt-3" data-gumroad-field="name">{title_esc}</h1>
     <div class="rule mt-6"></div>
     <p class="mt-7 text-xl sm:text-2xl font-bold leading-snug">{hook_esc}</p>
+    {free_offer_banner}
     <div class="mt-9 flex flex-wrap items-center gap-3">
       <a data-gumroad-action="buy" class="buy inline-flex items-center justify-center rounded-lg px-8 py-4 font-extrabold tracking-wide text-white text-lg">
         Get the comic &mdash; <span data-gumroad-field="price" class="ml-2">$2.99</span>
@@ -147,9 +148,39 @@ TEMPLATE = """<!DOCTYPE html>
     document.documentElement.classList.toggle('light');
     document.documentElement.classList.toggle('dark');
   }});
+  {free_offer_script}
 </script>
 </body>
 </html>
+"""
+
+# Deliberately a SEPARATE element from the existing data-gumroad-action="buy"
+# buttons rather than rewriting their href via JS -- those buttons work today
+# through Gumroad's own product-page embed wiring, which isn't guaranteed to
+# just be a plain link-follow (could be overlay JS reading the href, could be
+# something else). A standalone claim link with its own real href to
+# {buy_url}/{code} can't break the proven $-price checkout path no matter how
+# Gumroad's buy-button JS actually works internally.
+#
+# Fetched client-side so the count is always live (Gumroad's own times_used,
+# not a separately-tracked counter that could drift). If the Worker is down
+# or the offer's sold out, the claim link just never appears -- the normal
+# buy buttons are completely unaffected either way.
+FREE_OFFER_SCRIPT = """
+  fetch("{worker_url}/free-claims/{slug}").then(function(r){{ return r.json(); }}).then(function(d){{
+    var banner = document.getElementById('freeOfferBanner');
+    if (!banner) return;
+    if (d.sold_out || d.remaining <= 0) {{
+      banner.innerHTML = '<span style="color:#8a8680">All {cap} free copies claimed \\u2014 thanks for the interest!</span>';
+      return;
+    }}
+    banner.innerHTML = '<a href="{buy_url}/' + d.code + '" class="underline decoration-2" style="color:var(--gold)">'
+      + '\\u{{1F381}} FREE for the next <b>' + d.remaining + '</b> of {cap} readers \\u2014 claim your copy</a>';
+  }}).catch(function(){{}});
+"""
+
+FREE_OFFER_BANNER = """
+    <div id="freeOfferBanner" class="tag mt-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold tracking-wide" style="border-color:var(--gold);color:var(--gold)"></div>
 """
 
 
@@ -162,7 +193,10 @@ def _fact_paragraphs(script, limit=3):
     return lines[:limit] or [script.get("subject", "")]
 
 
-def build_html(script, cover_url):
+def build_html(script, cover_url, free_offer=None):
+    """free_offer, if given: {"worker_url", "slug", "cap", "buy_url"} --
+    buy_url is the plain product URL (e.g. https://shadowgasp.gumroad.com/l/norjak),
+    the free code itself is fetched live from the Worker, never hard-coded here."""
     title = script["title"]
     what_happened = "\n    ".join(
         f"<p>{html.escape(p)}</p>" for p in _fact_paragraphs(script)
@@ -175,6 +209,18 @@ def build_html(script, cover_url):
         f'style="color:var(--gold)">{html.escape(item.upper())}</p></div>'
         for item in inside[:4]
     )
+    if free_offer:
+        free_offer_banner = FREE_OFFER_BANNER
+        free_offer_script = FREE_OFFER_SCRIPT.format(
+            worker_url=free_offer["worker_url"].rstrip("/"),
+            slug=free_offer["slug"],
+            cap=free_offer["cap"],
+            buy_url=free_offer["buy_url"].rstrip("/"),
+        )
+    else:
+        free_offer_banner = ""
+        free_offer_script = ""
+
     return TEMPLATE.format(
         title_esc=html.escape(f'{script.get("series","SHADOW GASP")} #{script.get("issue_no","01")}: {title}'),
         issue_no_esc=html.escape(str(script.get("issue_no", "01"))),
@@ -184,6 +230,8 @@ def build_html(script, cover_url):
         what_happened=what_happened,
         inside_cards=inside_cards,
         subject_esc=html.escape(script.get("subject", "")),
+        free_offer_banner=free_offer_banner,
+        free_offer_script=free_offer_script,
     )
 
 

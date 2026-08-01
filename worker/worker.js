@@ -578,6 +578,48 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // "Free for the first N customers" -- backed by a real Gumroad offer code
+    // (100% off, --max-purchase-count N), which is the actual enforcement:
+    // Gumroad itself refuses redemption #N+1, atomically, no race condition
+    // on our side. This pair of routes only exists to show a live "N left"
+    // counter on the landing page, reading Gumroad's own times_used as
+    // ground truth (not a separately-tracked click counter, which could
+    // drift from what actually got redeemed).
+    if (request.method === "POST" && url.pathname === "/free-offer/set") {
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { slug, product_id, offer_code_id, code } = body;
+      if (!slug || !product_id || !offer_code_id || !code) {
+        return new Response("missing fields", { status: 400 });
+      }
+      await env.PENDING.put(`free_offer:${slug}`, JSON.stringify({ product_id, offer_code_id, code }));
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/free-claims/")) {
+      const slug = url.pathname.slice("/free-claims/".length);
+      const raw = await env.PENDING.get(`free_offer:${slug}`);
+      if (!raw) {
+        return new Response(JSON.stringify({ error: "no free offer configured for this slug" }), {
+          status: 404, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      }
+      const { product_id, offer_code_id, code } = JSON.parse(raw);
+      const gr = await fetch(
+        `https://api.gumroad.com/v2/products/${product_id}/offer_codes/${offer_code_id}?access_token=${env.GUMROAD_ACCESS_TOKEN}`
+      );
+      const grData = await gr.json();
+      const oc = grData.offer_code || {};
+      const cap = oc.max_purchase_count ?? 0;
+      const claimed = oc.times_used ?? 0;
+      return new Response(JSON.stringify({
+        code, cap, claimed, remaining: Math.max(0, cap - claimed), sold_out: claimed >= cap,
+      }), { status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    }
+
     if (request.method === "POST" && url.pathname === "/register") {
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) {
