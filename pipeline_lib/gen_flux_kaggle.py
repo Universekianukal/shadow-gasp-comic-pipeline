@@ -107,10 +107,15 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     else:
         raise RuntimeError("kaggle kernels push: GPU sessions still full / unreachable after 20 attempts")
 
-    # Bounded poll: a kernel realistically finishes within ~30-40 min even for
-    # a large panel batch; past that something is genuinely stuck, and an
-    # unbounded loop would (as above) hang the whole job with no signal.
-    for _ in range(90):  # 90 * 30s = 45 min ceiling
+    # Bounded poll, but scaled to the batch size: a flat 45-min cap killed the
+    # Actions job's WAIT on a real 75pp/151-panel build that was still
+    # legitimately generating -- the underlying Kaggle kernel isn't tied to
+    # the Actions job's lifecycle, so it kept running and actually finished
+    # fine minutes later, its output briefly stranded until fetched manually.
+    # ~1 min/panel (2 polls of 30s) plus headroom covers a normal-size comic
+    # comfortably while still catching genuinely stuck kernels eventually.
+    max_polls = max(90, len(panels) * 2)
+    for _ in range(max_polls):
         time.sleep(30)
         try:
             r = subprocess.run(["kaggle", "kernels", "status", kernel_id],
@@ -125,7 +130,7 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         if "ERROR" in status or "CANCEL" in status:
             raise RuntimeError(f"Kaggle kernel failed: {r.stdout} {r.stderr}")
     else:
-        raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after 45 min -- likely stuck")
+        raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after {max_polls * 30 // 60} min -- likely stuck")
 
     out_dir = os.path.join(kernel_dir, "out")
     subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir], check=True, timeout=180)
