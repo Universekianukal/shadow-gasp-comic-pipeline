@@ -225,12 +225,27 @@ function approvalKeyboard(token) {
 
 // Mirrors PAGE_PRICE_TIERS in pipeline_lib/stage_and_deliver.py -- keep both
 // in sync if the tiers ever change.
-const PAGE_PRICE_TIERS = { 20: "0", 35: "3.99", 50: "4.99", 75: "6.99", 100: "8.99" };
+const PAGE_PRICE_TIERS = { 20: "0", 25: "2.99", 35: "3.99", 50: "4.99", 75: "6.99", 100: "8.99" };
+
+function priceLabel(n) {
+  return PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`;
+}
+
+// Used before a build starts (/make), so the page count -- and therefore the
+// price -- is a deliberate choice, not a silent 25pp/$2.99 default.
+function makePageCountKeyboard() {
+  return {
+    inline_keyboard: [[20, 25, 35, 50, 75, 100].map((n) => ({
+      text: priceLabel(n),
+      callback_data: `make_pages:${n}`,
+    }))],
+  };
+}
 
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
-      text: PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`,
+      text: priceLabel(n),
       callback_data: `set_pages:${token}:${n}`,
     }))],
   };
@@ -262,6 +277,28 @@ async function handleCallback(env, cq) {
       await dispatchBatchPregen(env, { days: String(n), notify_chat_id: String(chatId) });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start pregen: ${e.message}` });
+    }
+    return;
+  }
+
+  if (action === "make_pages") {
+    const pages = token; // callback_data is "make_pages:<n>" -- no approval token involved
+    const caseName = await env.PENDING.get(`awaiting_make:${chatId}`);
+    if (caseName === null) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This /make request expired -- send /make again" });
+      return;
+    }
+    await env.PENDING.delete(`awaiting_make:${chatId}`);
+    const label = priceLabel(parseInt(pages, 10));
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Building at ${label}...` });
+    await tg(env, "editMessageText", {
+      chat_id: chatId, message_id: messageId,
+      text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${label}.\nThis takes a while (script → art → OCR check → PDF). You'll get the draft here with buttons when it's done.`,
+    });
+    try {
+      await dispatchPipeline(env, { case: caseName, target_pages: pages, dry_run: "false" });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start build: ${e.message}` });
     }
     return;
   }
@@ -298,11 +335,11 @@ async function handleCallback(env, cq) {
       reply_markup: pageCountKeyboard(token),
     });
   } else if (action === "set_pages") {
-    const priceLabel = PAGE_PRICE_TIERS[extra] === "0" ? "FREE" : `$${PAGE_PRICE_TIERS[extra]}`;
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Regenerating at ${extra} pages (${priceLabel})...` });
+    const label = priceLabel(parseInt(extra, 10));
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Regenerating at ${label}...` });
     await tg(env, "editMessageText", {
       chat_id: chatId, message_id: messageId,
-      text: `\u{1F504} Regenerating "${entry.case}" at ${extra} pages (new price: ${priceLabel}). This takes a while (script + art + build) — you'll get a new message when it's ready.`,
+      text: `\u{1F504} Regenerating "${entry.case}" at ${label}. This takes a while (script + art + build) — you'll get a new message when it's ready.`,
     });
     await dispatchAction(env, {
       action: "regenerate", case: entry.case, target_pages: extra,
@@ -339,8 +376,8 @@ async function handleCallback(env, cq) {
 // Worker owns all state, GitHub Actions only does the heavy build work.
 // Text commands, so a comic can be started from a phone without touching a
 // terminal:
-//   /make <case name>            -> 25 pages (default)
-//   /make <case name> | 50       -> explicit page count
+//   /make <case name>            -> asks how many pages (button picker, shows price)
+//   /make <case name> | 50       -> explicit page count, skips the picker
 //   /make                        -> let the pipeline auto-pick the next case
 //
 //   /short                       -> auto-pick case, high quality, no upload (test run)
@@ -487,7 +524,7 @@ async function handleMessage(env, msg) {
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  — build a comic (25 pages)\n/make <case name> | 50  — set page count\n/make  — auto-pick the next comic case\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube\n\n/day <N>  — get day N's hook still + Flow prompt from the 30-day batch\n(reply with the Flow video)  — commits it, renders (no upload yet)\n/publish <N>  — render + upload day N now\n/publish <N> at <HH:MM>  — same, scheduled for that IST time",
+        text: "Commands:\n/make <case name>  — build a comic (asks how many pages first)\n/make <case name> | 50  — build now, explicit page count (skips the picker)\n/make  — auto-pick the next comic case (still asks pages)\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube\n\n/day <N>  — get day N's hook still + Flow prompt from the 30-day batch\n(reply with the Flow video)  — commits it, renders (no upload yet)\n/publish <N>  — render + upload day N now\n/publish <N> at <HH:MM>  — same, scheduled for that IST time",
       });
     }
     return;
@@ -495,24 +532,32 @@ async function handleMessage(env, msg) {
 
   const rest = text.slice("/make".length).trim();
   let caseName = rest;
-  let pages = "25";
   const bar = rest.lastIndexOf("|");
   if (bar !== -1) {
     caseName = rest.slice(0, bar).trim();
     const n = rest.slice(bar + 1).trim();
-    if (/^\d+$/.test(n)) pages = n;
+    // Explicit "| N" still skips the picker -- you already made the choice.
+    if (/^\d+$/.test(n)) {
+      try {
+        await dispatchPipeline(env, { case: caseName, target_pages: n, dry_run: "false" });
+      } catch (e) {
+        await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start build: ${e.message}` });
+        return;
+      }
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${priceLabel(parseInt(n, 10))}.\nThis takes a while (script → art → OCR check → PDF). You'll get the draft here with buttons when it's done.`,
+      });
+      return;
+    }
   }
 
-  try {
-    await dispatchPipeline(env, { case: caseName, target_pages: pages, dry_run: "false" });
-  } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start build: ${e.message}` });
-    return;
-  }
-
+  // No explicit page count -- ask instead of silently defaulting to 25pp/$2.99.
+  await env.PENDING.put(`awaiting_make:${chatId}`, caseName, { expirationTtl: 3600 });
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${pages} pages.\nThis takes a while (script → art → OCR check → PDF). You'll get the draft here with buttons when it's done.`,
+    text: `How many pages should ${caseName ? `"${caseName}"` : "the next auto-picked case"} be?`,
+    reply_markup: makePageCountKeyboard(),
   });
 }
 
