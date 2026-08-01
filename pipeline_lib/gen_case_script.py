@@ -92,6 +92,15 @@ REQUIREMENTS for every prompt:
 
 
 def call_claude(system, user, max_tokens=16000):
+    """Stream the response instead of waiting for one big blocking read.
+
+    A large --target-pages request needs a large max_tokens budget, and a
+    64000-token generation can genuinely take longer than a flat request
+    timeout to finish (hit exactly this on a 75pp build: 5-minute read
+    timeout, still generating -> TimeoutError, zero output). Streaming turns
+    the timeout into a per-chunk idle bound instead of a total-duration cap,
+    so a slow-but-still-progressing generation doesn't get killed early.
+    """
     req = urllib.request.Request(
         "https://api.anthropic.com/v1/messages",
         data=json.dumps({
@@ -99,6 +108,7 @@ def call_claude(system, user, max_tokens=16000):
             "max_tokens": max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
+            "stream": True,
         }).encode(),
         headers={
             "x-api-key": ANTHROPIC_API_KEY,
@@ -107,17 +117,30 @@ def call_claude(system, user, max_tokens=16000):
         },
         method="POST",
     )
+    block_types = {}
+    text_parts = []
     try:
-        with urllib.request.urlopen(req, timeout=300) as r:
-            data = json.load(r)
+        with urllib.request.urlopen(req, timeout=120) as r:
+            for raw_line in r:
+                line = raw_line.decode("utf-8").strip()
+                if not line.startswith("data: "):
+                    continue
+                event = json.loads(line[len("data: "):])
+                etype = event.get("type")
+                if etype == "content_block_start":
+                    block_types[event["index"]] = event["content_block"].get("type")
+                elif etype == "content_block_delta":
+                    delta = event.get("delta", {})
+                    if block_types.get(event["index"]) == "text" and delta.get("type") == "text_delta":
+                        text_parts.append(delta.get("text", ""))
+                elif etype == "error":
+                    raise RuntimeError(f"Anthropic API streaming error: {event}")
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Anthropic API HTTP {e.code}: {e.read().decode()}") from e
-    if "content" not in data:
-        raise RuntimeError(f"Unexpected Anthropic API response: {json.dumps(data)[:1000]}")
-    for block in data["content"]:
-        if block.get("type") == "text":
-            return block["text"]
-    raise RuntimeError(f"No text block in Anthropic API response: {json.dumps(data)[:1000]}")
+    text = "".join(text_parts)
+    if not text:
+        raise RuntimeError(f"No text content in streamed response (block types seen: {block_types})")
+    return text
 
 
 def extract_json(text):
