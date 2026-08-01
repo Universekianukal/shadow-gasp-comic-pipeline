@@ -1,0 +1,91 @@
+name: Generate one-time free-copy code
+
+# Creates a fresh, single-use (max_purchase_count=1) 100%-off Gumroad offer
+# code and DMs it back to the requesting Telegram chat. Used for manual
+# DM-gated distribution (user posts on Facebook, asks people to inbox them,
+# hands out one code per requester) instead of one shared code -- a shared
+# code can be forwarded to a friend and reused; a single-use code can't be,
+# since Gumroad rejects any redemption after the first.
+#
+# The overall "first N only" cap is enforced by US (the Worker's KV counter,
+# checked via /free-codes/reserve BEFORE creating the code), not Gumroad --
+# each individual code only caps at 1, so nothing on Gumroad's side limits
+# how many distinct codes could exist. Reserve-then-create means a code is
+# never handed out past the cap.
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "Case slug, e.g. norjak"
+        required: true
+      product_id:
+        description: "Gumroad product id"
+        required: true
+      cap:
+        description: "Total free codes ever allowed for this slug"
+        default: "50"
+      chat_id:
+        description: "Telegram chat id to DM the code to"
+        required: true
+
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reserve a slot (fails closed if the cap's already reached)
+        id: reserve
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+        run: |
+          RESP=$(curl -s -w "\n%{http_code}" -X POST "$WORKER_URL/free-codes/reserve" \
+            -H "X-Shared-Secret: $WORKER_SHARED_SECRET" -H "Content-Type: application/json" \
+            -d "{\"slug\":\"${{ github.event.inputs.slug }}\",\"cap\":${{ github.event.inputs.cap }}}")
+          BODY=$(echo "$RESP" | head -n -1)
+          CODE=$(echo "$RESP" | tail -n1)
+          echo "reserve response: $BODY (http $CODE)"
+          if [ "$CODE" != "200" ]; then
+            echo "sold_out=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sold_out=false" >> "$GITHUB_OUTPUT"
+            echo "count=$(echo "$BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify sold out
+        if: steps.reserve.outputs.sold_out == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${{ github.event.inputs.chat_id }}" \
+            -d text="😔 All free copies of \"${{ github.event.inputs.slug }}\" have already been claimed (cap reached). No new code generated."
+
+      - name: Create the single-use Gumroad code
+        if: steps.reserve.outputs.sold_out != 'true'
+        env:
+          GUMROAD_ACCESS_TOKEN: ${{ secrets.GUMROAD_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          curl -fsSL https://gumroad.com/install-cli.sh | bash
+          echo "$GUMROAD_ACCESS_TOKEN" | ~/.local/bin/gumroad auth login --non-interactive
+
+          CODE="SG$(python3 -c 'import secrets; print(secrets.token_hex(4).upper())')"
+          RESULT=$(~/.local/bin/gumroad offer-codes create \
+            --product "${{ github.event.inputs.product_id }}" \
+            --name "$CODE" --percent-off 100 --max-purchase-count 1 --json)
+          echo "$RESULT"
+          OK=$(echo "$RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("success"))')
+          if [ "$OK" != "True" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d chat_id="${{ github.event.inputs.chat_id }}" \
+              -d text="❌ Code creation failed for ${{ github.event.inputs.slug }}: $RESULT"
+            exit 1
+          fi
+
+          PERMALINK=$(~/.local/bin/gumroad products view "${{ github.event.inputs.product_id }}" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["product"]["short_url"])')
+          MSG=$(printf '🎁 One-time code for "%s" (%s/%s issued): %s\nSend this link to just ONE person — it only works once:\n%s/%s' \
+            "${{ github.event.inputs.slug }}" "${{ steps.reserve.outputs.count }}" "${{ github.event.inputs.cap }}" "$CODE" "$PERMALINK" "$CODE")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${{ github.event.inputs.chat_id }}" \
+            --data-urlencode "text=$MSG"

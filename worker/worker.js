@@ -61,6 +61,22 @@ async function dispatchPipeline(env, inputs) {
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
 
+async function dispatchGenCode(env, inputs) {
+  const r = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/gen_code.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "shadow-gasp-bot",
+      },
+      body: JSON.stringify({ ref: "main", inputs }),
+    }
+  );
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
+
 async function dispatchVideoPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -431,6 +447,43 @@ async function handleMessage(env, msg) {
     return;
   }
 
+  if (text.startsWith("/freeclaims")) {
+    const slug = text.slice("/freeclaims".length).trim();
+    if (!slug) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "Usage: /freeclaims <slug>, e.g. /freeclaims norjak" });
+      return;
+    }
+    const count = parseInt((await env.PENDING.get(`free_codes_count:${slug}`)) || "0", 10);
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F381} ${slug}: ${count} one-time code(s) issued so far.` });
+    return;
+  }
+
+  if (text.startsWith("/gencode")) {
+    const rest = text.slice("/gencode".length).trim();
+    const [slug, capStr] = rest.split(/\s+/);
+    if (!slug) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "Usage: /gencode <slug> [cap], e.g. /gencode norjak 50" });
+      return;
+    }
+    const raw = await env.PENDING.get(`free_offer:${slug}`);
+    if (!raw) {
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `No product registered for "${slug}" yet. Register it once with the product_id first (ask Claude), then /gencode will work from here on.`,
+      });
+      return;
+    }
+    const { product_id } = JSON.parse(raw);
+    const cap = capStr && /^\d+$/.test(capStr) ? capStr : "50";
+    try {
+      await dispatchGenCode(env, { slug, product_id, cap, chat_id: String(chatId) });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F504} Generating a one-time code for "${slug}" (cap ${cap}) — I'll DM it here shortly.` });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start code generation: ${e.message}` });
+    }
+    return;
+  }
+
   if (text.startsWith("/pregen")) {
     await tg(env, "sendMessage", {
       chat_id: chatId,
@@ -524,7 +577,7 @@ async function handleMessage(env, msg) {
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  — build a comic (asks how many pages first)\n/make <case name> | 50  — build now, explicit page count (skips the picker)\n/make  — auto-pick the next comic case (still asks pages)\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube\n\n/day <N>  — get day N's hook still + Flow prompt from the 30-day batch\n(reply with the Flow video)  — commits it, renders (no upload yet)\n/publish <N>  — render + upload day N now\n/publish <N> at <HH:MM>  — same, scheduled for that IST time",
+        text: "Commands:\n/make <case name>  — build a comic (asks how many pages first)\n/make <case name> | 50  — build now, explicit page count (skips the picker)\n/make  — auto-pick the next comic case (still asks pages)\n\n/gencode <slug> [cap]  — mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only — it stops working after their first use.\n/freeclaims <slug>  — check how many one-time codes have been issued so far\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube\n\n/day <N>  — get day N's hook still + Flow prompt from the 30-day batch\n(reply with the Flow video)  — commits it, renders (no upload yet)\n/publish <N>  — render + upload day N now\n/publish <N> at <HH:MM>  — same, scheduled for that IST time",
       });
     }
     return;
@@ -578,13 +631,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // "Free for the first N customers" -- backed by a real Gumroad offer code
-    // (100% off, --max-purchase-count N), which is the actual enforcement:
-    // Gumroad itself refuses redemption #N+1, atomically, no race condition
-    // on our side. This pair of routes only exists to show a live "N left"
-    // counter on the landing page, reading Gumroad's own times_used as
-    // ground truth (not a separately-tracked click counter, which could
-    // drift from what actually got redeemed).
+    // Records which Gumroad product a case slug maps to (product_id), so
+    // /gencode doesn't need it typed in by hand every time. The `code`/
+    // `offer_code_id` fields here are leftover from an earlier one-shared-
+    // code design that was replaced by per-requester single-use codes (see
+    // /free-codes/reserve + gen_code.yml below) -- kept only for the
+    // product_id lookup, safe to ignore otherwise.
     if (request.method === "POST" && url.pathname === "/free-offer/set") {
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) {
@@ -599,12 +651,55 @@ export default {
       return new Response("ok", { status: 200 });
     }
 
+    // Reserve one slot out of the overall "first N free" cap BEFORE a new
+    // single-use code is created (gen_code.yml calls this first). Each
+    // individual Gumroad code only caps at 1 use -- Gumroad has no concept of
+    // an aggregate cap across many separate codes -- so this counter, not
+    // Gumroad, is what actually enforces the total N. KV increments aren't
+    // perfectly atomic under concurrent requests, but this is a manual,
+    // one-person, one-at-a-time DM flow -- a worst-case off-by-one here isn't
+    // worth the complexity of a Durable Object.
+    if (request.method === "POST" && url.pathname === "/free-codes/reserve") {
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { slug, cap } = body;
+      if (!slug || !cap) {
+        return new Response("missing fields", { status: 400 });
+      }
+      const key = `free_codes_count:${slug}`;
+      const current = parseInt((await env.PENDING.get(key)) || "0", 10);
+      if (current >= cap) {
+        return new Response(JSON.stringify({ error: "cap reached", count: current }), {
+          status: 409, headers: { "Content-Type": "application/json" },
+        });
+      }
+      const next = current + 1;
+      await env.PENDING.put(key, String(next));
+      return new Response(JSON.stringify({ ok: true, count: next }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Auth-gated, NOT a public landing-page widget: the free code is being
+    // handed out manually (user DMs it to whoever messages them on Facebook,
+    // up to the cap), so this must never be reachable by anyone who doesn't
+    // already have the shared secret -- an unauthenticated version of this
+    // would leak the code to anyone who found the URL, bypassing the entire
+    // point of gating it behind a DM. Private "how many have I given out"
+    // check only.
     if (request.method === "GET" && url.pathname.startsWith("/free-claims/")) {
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
       const slug = url.pathname.slice("/free-claims/".length);
       const raw = await env.PENDING.get(`free_offer:${slug}`);
       if (!raw) {
         return new Response(JSON.stringify({ error: "no free offer configured for this slug" }), {
-          status: 404, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 404, headers: { "Content-Type": "application/json" },
         });
       }
       const { product_id, offer_code_id, code } = JSON.parse(raw);
@@ -617,7 +712,7 @@ export default {
       const claimed = oc.times_used ?? 0;
       return new Response(JSON.stringify({
         code, cap, claimed, remaining: Math.max(0, cap - claimed), sold_out: claimed >= cap,
-      }), { status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     if (request.method === "POST" && url.pathname === "/register") {
