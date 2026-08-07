@@ -212,6 +212,19 @@ async function commitHookVideo(env, dayNum, videoBytes) {
 // "HH:MM" is read as IST wall-clock, next occurrence (today if still ahead of
 // now, otherwise tomorrow) -- matches how the user actually talks about times
 // ("5:15", "18:30"), converted to the UTC RFC3339 YouTube's publishAt needs.
+// Always the NEXT calendar day at 05:15 IST, regardless of current time --
+// used by the 5h hook-video timeout fallback, which must never publish same-day.
+function nextDayFiveFifteenIST() {
+  const nowUtc = new Date();
+  const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1000);
+  const target = new Date(Date.UTC(
+    nowIst.getUTCFullYear(), nowIst.getUTCMonth(), nowIst.getUTCDate() + 1,
+    5, 15, 0
+  ));
+  const publishAtUtc = new Date(target.getTime() - 5.5 * 3600 * 1000);
+  return publishAtUtc.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
 function istTimeToPublishAt(hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -396,10 +409,8 @@ async function handleCallback(env, cq) {
 //   /make <case name> | 50       -> explicit page count, skips the picker
 //   /make                        -> let the pipeline auto-pick the next case
 //
-//   /short                       -> auto-pick case, high quality, no upload (test run)
-//   /short <case name>           -> specific case, high quality, no upload
-//   /short <case name> | draft   -> faster/cheaper render for a pipeline smoke-test
-//   /short <case name> | upload  -> also upload the result to YouTube when done
+//   /short                       -> auto-pick case, generate script + stills, then wait for a Flow hook video (like /day)
+//   /short <case name>           -> same, for a specific case
 //
 //   /day <N>                     -> sends day N's hook still + motion prompt, to feed into Google Flow
 //   (reply with the Flow video)  -> commits it, renders (no upload yet)
@@ -415,9 +426,20 @@ async function handleMessage(env, msg) {
   // required, just "the most recent /day this chat asked about".
   const videoObj = msg.video || (msg.document && msg.document.mime_type?.startsWith("video/") ? msg.document : null);
   if (videoObj) {
-    const dayNum = await env.PENDING.get(`awaiting_hook:${chatId}`);
+    // A short-pipeline hook-wait (fresh auto-picked day, 5h deadline) takes
+    // priority over a manual /day <N> pending in the same chat -- it's the
+    // one with a hard timeout riding on it.
+    let dayNum = null;
+    let shortPending = false;
+    const shortRaw = await env.PENDING.get(`awaiting_short_hook:${chatId}`);
+    if (shortRaw) {
+      dayNum = String(JSON.parse(shortRaw).day);
+      shortPending = true;
+    } else {
+      dayNum = await env.PENDING.get(`awaiting_hook:${chatId}`);
+    }
     if (!dayNum) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "Got a video, but no /day <N> is pending -- send /day <N> first so I know which day this belongs to." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "Got a video, but no day is waiting on a hook clip -- send /day <N> first so I know which day this belongs to." });
       return;
     }
     await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it — committing as day ${dayNum}'s hook video, then rendering + uploading to YouTube automatically. I'll confirm here once it's live.` });
@@ -435,7 +457,7 @@ async function handleMessage(env, msg) {
       // live on YouTube (see that endpoint below), which is what sends the real
       // confirmation -- this message just confirms the render/upload STARTED.
       await dispatchFinishBatchDay(env, { day: dayNum, upload: "true", publish_at: "", notify_chat_id: String(chatId) });
-      await env.PENDING.delete(`awaiting_hook:${chatId}`);
+      await env.PENDING.delete(shortPending ? `awaiting_short_hook:${chatId}` : `awaiting_hook:${chatId}`);
 
       await tg(env, "sendMessage", {
         chat_id: chatId,
@@ -548,19 +570,11 @@ async function handleMessage(env, msg) {
 
   if (text.startsWith("/short")) {
     const rest = text.slice("/short".length).trim();
-    let caseName = rest;
-    let quality = "high";
-    let upload = "false";
     const bar = rest.lastIndexOf("|");
-    if (bar !== -1) {
-      caseName = rest.slice(0, bar).trim();
-      const flag = rest.slice(bar + 1).trim().toLowerCase();
-      if (flag === "draft" || flag === "standard" || flag === "high") quality = flag;
-      else if (flag === "upload") upload = "true";
-    }
+    const caseName = bar !== -1 ? rest.slice(0, bar).trim() : rest;
 
     try {
-      await dispatchVideoPipeline(env, { case: caseName, quality, upload });
+      await dispatchVideoPipeline(env, { case: caseName });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start short: ${e.message}` });
       return;
@@ -568,7 +582,7 @@ async function handleMessage(env, msg) {
 
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F3AC} Building short: ${caseName ? `"${caseName}"` : "next auto-picked case"} (${quality} quality${upload === "true" ? ", will upload to YouTube" : ", no upload"}).\nThis runs script -> TTS -> FLUX stills -> hook clip -> render on GitHub Actions, expect 30-60+ min. Check the Actions tab for progress.`,
+      text: `\u{1F3AC} Building short: ${caseName ? `"${caseName}"` : "next auto-picked case"} (script -> FLUX stills on GitHub Actions, ~15-25 min). It'll land as a new batch day and I'll DM you the hook still + Flow motion prompt here, same as /day -- reply with the Flow video within 5h or it auto-falls-back to a static cut, scheduled for the next 05:15 IST slot.`,
     });
     return;
   }
@@ -577,7 +591,7 @@ async function handleMessage(env, msg) {
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  — build a comic (asks how many pages first)\n/make <case name> | 50  — build now, explicit page count (skips the picker)\n/make  — auto-pick the next comic case (still asks pages)\n\n/gencode <slug> [cap]  — mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only — it stops working after their first use.\n/freeclaims <slug>  — check how many one-time codes have been issued so far\n\n/short  — auto-pick + build a true-crime short (test run, no upload)\n/short <case>  — build a specific case\n/short <case> | draft  — faster render for testing\n/short <case> | upload  — build and upload to YouTube\n\n/day <N>  — get day N's hook still + Flow prompt from the 30-day batch\n(reply with the Flow video)  — commits it, renders (no upload yet)\n/publish <N>  — render + upload day N now\n/publish <N> at <HH:MM>  — same, scheduled for that IST time",
+        text: "Commands:\n/make <case name>  — build a comic (asks how many pages first)\n/make <case name> | 50  — build now, explicit page count (skips the picker)\n/make  — auto-pick the next comic case (still asks pages)\n\n/gencode <slug> [cap]  — mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only — it stops working after their first use.\n/freeclaims <slug>  — check how many one-time codes have been issued so far\n\n/short  — auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  — same, for a specific case\n\n/day <N>  — get day N's hook still + Flow prompt from the batch\n(reply with the Flow video)  — commits it, renders + uploads to YouTube automatically\n/publish <N>  — render + upload day N now\n/publish <N> at <HH:MM>  — same, scheduled for that IST time",
       });
     }
     return;
@@ -627,7 +641,50 @@ async function sendApprovalMessage(env, { token, caseName, productId, title }) {
   });
 }
 
+// Cron-triggered sweep (see wrangler.toml's [triggers]) for /short/ready
+// hook-video requests whose 5h deadline has passed with no reply. Falls
+// back to a static (no Flow, no CogVideoX) render, scheduled for the next
+// 05:15 IST slot rather than publishing hookless immediately.
+async function sweepExpiredHookWaits(env) {
+  const list = await env.PENDING.list({ prefix: "awaiting_short_hook:" });
+  for (const key of list.keys) {
+    const raw = await env.PENDING.get(key.name);
+    if (!raw) continue;
+    let entry;
+    try {
+      entry = JSON.parse(raw);
+    } catch {
+      await env.PENDING.delete(key.name);
+      continue;
+    }
+    if (Date.now() < entry.deadline) continue;
+
+    const chatId = key.name.slice("awaiting_short_hook:".length);
+    const day = entry.day;
+    try {
+      await dispatchFinishBatchDay(env, {
+        day: String(day),
+        upload: "true",
+        publish_at: nextDayFiveFifteenIST(),
+        notify_chat_id: chatId,
+        use_cog_fallback: "false",
+      });
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u{23F0} No Flow hook video for day ${String(day).padStart(2, "0")} within 5 hours — falling back to a static cut, rendering now and scheduling it for tomorrow 05:15 IST.`,
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Day ${day}'s hook-video deadline passed and the static-fallback dispatch failed: ${e.message}. Use /publish ${day} to retry manually.` });
+    }
+    await env.PENDING.delete(key.name);
+  }
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(sweepExpiredHookWaits(env));
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
 
@@ -805,6 +862,43 @@ export default {
         ? `\u{1F389} All 30 days generated! Batch pregen is fully complete through day ${through_day}. Use /day <N> to pull a still + prompt for Google Flow whenever you're ready.`
         : `\u{1F4E6} Pregen chunk done: ${new_days_done} new day(s) generated, through day ${through_day}. Next chunk auto-starting -- I'll message you again once that finishes. Use /day <N> anytime to pull a still + prompt for Google Flow.`;
       await tg(env, "sendMessage", { chat_id: chat_id || env.TELEGRAM_CHAT_ID, text });
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/short/ready") {
+      // pipeline.yml's daily/auto-picked run calls this once script+stills
+      // are committed as a new batch day, so it gets the exact same
+      // hook-video request treatment as manual /day <N> -- except with a 5h
+      // deadline: env.PENDING.list() below is swept by the cron trigger
+      // (see `scheduled` export), and if nothing arrives in time it falls
+      // back to a static render, scheduled for the next 05:15 IST slot,
+      // instead of publishing hookless same-day.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { day, case: caseName } = body;
+      if (!day) {
+        return new Response("missing fields", { status: 400 });
+      }
+      const chatId = env.TELEGRAM_CHAT_ID;
+      const dd = String(day).padStart(2, "0");
+      try {
+        const meta = await (await ghRaw(env, `_pipeline/batch/day${dd}/meta.json`)).json();
+        const shot1Url = `https://raw.githubusercontent.com/${VIDEO_REPO}/main/_pipeline/batch/day${dd}/shot1.jpeg`;
+        const deadline = Date.now() + 5 * 3600 * 1000;
+        // TTL well past the 5h deadline so the cron sweep (runs every 15 min)
+        // is always the thing that expires this, not KV eviction racing it.
+        await env.PENDING.put(`awaiting_short_hook:${chatId}`, JSON.stringify({ day: String(day), deadline }), { expirationTtl: 8 * 3600 });
+        await tg(env, "sendPhoto", {
+          chat_id: chatId,
+          photo: shot1Url,
+          caption: `Day ${dd}: "${meta.title_working}"${caseName ? ` (${caseName})` : ""}\n\nMotion prompt for Google Flow:\n${meta.hook_motion_prompt}\n\nReply here with the finished Flow video within 5 hours, or I'll fall back to a static cut and schedule it for tomorrow 05:15 IST.`,
+        });
+      } catch (e) {
+        await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Day ${dd} generated but I couldn't send the hook-video request: ${e.message}. Use /day ${day} to retry manually.` });
+      }
       return new Response("ok", { status: 200 });
     }
 
