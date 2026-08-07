@@ -5,3 +5,7 @@ compatibility_date = "2026-06-01"
 kv_namespaces = [
   { binding = "PENDING", id = "90c6d41668444b85a2026be78718abf3" }
 ]
+
+[triggers]
+# Sweeps /short/ready hook-video waits for the 5h timeout fallback.
+crons = ["*/15 * * * *"]
