@@ -681,10 +681,6 @@ async function sweepExpiredHookWaits(env) {
 }
 
 export default {
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(sweepExpiredHookWaits(env));
-  },
-
   async fetch(request, env) {
     const url = new URL(request.url);
 
@@ -899,6 +895,20 @@ export default {
       } catch (e) {
         await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Day ${dd} generated but I couldn't send the hook-video request: ${e.message}. Use /day ${day} to retry manually.` });
       }
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/short/sweep") {
+      // Driven by a GitHub Actions cron (sweep_hook_waits.yml, every 15 min),
+      // not a Cloudflare Cron Trigger -- this account is already at the
+      // Workers Free plan's 5-cron-trigger cap from other pipelines, so a
+      // native `scheduled` trigger can't be added here without a plan
+      // upgrade. Same effect, driven externally instead.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      await sweepExpiredHookWaits(env);
       return new Response("ok", { status: 200 });
     }
 
