@@ -6,6 +6,7 @@ kv_namespaces = [
   { binding = "PENDING", id = "90c6d41668444b85a2026be78718abf3" }
 ]
 
-[triggers]
-# Sweeps /short/ready hook-video waits for the 5h timeout fallback.
-crons = ["*/15 * * * *"]
+# No [triggers] cron here -- the account is already at the Workers Free
+# plan's 5-cron-trigger cap. The 5h hook-video-wait sweep (POST /short/sweep)
+# is instead driven by a GitHub Actions cron in shadow-gasp-pipeline
+# (sweep_hook_waits.yml), same effect without touching the account limit.
