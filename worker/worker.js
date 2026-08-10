@@ -825,22 +825,41 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/batch/uploaded") {
       // finish_batch_day.yml's upload job calls this once a batch day is
-      // actually live on YouTube -- separate secret from /register's
-      // WORKER_SHARED_SECRET (that one belongs to the comic pipeline; this is
-      // scoped to the video pipeline's own GitHub repo secrets).
+      // actually live on YouTube and/or crossposted to Facebook/Instagram --
+      // separate secret from /register's WORKER_SHARED_SECRET (that one
+      // belongs to the comic pipeline; this is scoped to the video
+      // pipeline's own GitHub repo secrets).
+      //
+      // video_id, fb_post_id and ig_media_id are all optional individually
+      // (a youtube_upload=false crosspost-only re-run has no video_id at
+      // all) but at least one must be present, otherwise nothing actually
+      // went live and there's nothing to confirm. Before this, the workflow
+      // itself skipped calling this endpoint entirely whenever video_id was
+      // empty -- so a crosspost-only run (e.g. re-grading day7 and posting
+      // to FB/IG without re-uploading to YouTube) finished successfully with
+      // no Telegram confirmation at all, silently.
       const auth = request.headers.get("X-Batch-Notify-Secret");
       if (auth !== env.BATCH_NOTIFY_SECRET) {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { day, case: caseName, video_id, drive_link, chat_id } = body;
-      if (!day || !video_id) {
+      const { day, case: caseName, video_id, drive_link, fb_post_id, ig_media_id, chat_id } = body;
+      if (!day || (!video_id && !fb_post_id && !ig_media_id)) {
         return new Response("missing fields", { status: 400 });
       }
-      const driveLine = drive_link ? `\n\u{1F4F9} Video file: ${drive_link}` : "";
+      const lines = [];
+      if (video_id) {
+        lines.push(`✅ Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}`);
+      } else {
+        lines.push(`✅ Day ${day} crossposted (YouTube upload skipped this run):`);
+      }
+      if (caseName) lines.push(`"${caseName}"`);
+      if (fb_post_id) lines.push(`\u{1F4D8} Facebook: https://facebook.com/${fb_post_id}`);
+      if (ig_media_id) lines.push(`\u{1F4F7} Instagram media_id: ${ig_media_id}`);
+      if (drive_link) lines.push(`\u{1F4F9} Video file: ${drive_link}`);
       await tg(env, "sendMessage", {
         chat_id: chat_id || env.TELEGRAM_CHAT_ID,
-        text: `✅ Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}${caseName ? `\n"${caseName}"` : ""}${driveLine}`,
+        text: lines.join("\n"),
       });
       return new Response("ok", { status: 200 });
     }
