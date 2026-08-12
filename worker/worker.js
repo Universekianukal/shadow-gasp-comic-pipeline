@@ -209,6 +209,63 @@ async function commitHookVideo(env, dayNum, videoBytes) {
   if (!r.ok) throw new Error(`Commit failed: ${r.status} ${await r.text()}`);
 }
 
+// Queues a day for the fixed 04:30 IST render / 05:15 IST publish schedule
+// (render_queue.yml / publish_queue.yml + render_batch_day.yml /
+// publish_batch_day.yml in the video repo) instead of dispatching
+// finish_batch_day.yml immediately. Read-modify-write against queue.json via
+// the Contents API, same pattern as commitHookVideo -- this Worker call and
+// that commit land seconds apart, so a stale sha is the expected case, not
+// an edge case; one retry covers it.
+async function queueDayForScheduledPublish(env, dayNum, chatId) {
+  const path = "_pipeline/batch/queue.json";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const existing = await fetch(
+      `https://api.github.com/repos/${VIDEO_REPO}/contents/${path}?ref=main`,
+      { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
+    );
+    let sha, queue = {};
+    if (existing.ok) {
+      const data = await existing.json();
+      sha = data.sha;
+      queue = JSON.parse(atob(data.content.replace(/\n/g, "")));
+    }
+    queue[String(dayNum)] = {
+      status: "pending_render",
+      notify_chat_id: String(chatId),
+      queued_at: new Date().toISOString(),
+    };
+    const r = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/contents/${path}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "shadow-gasp-bot",
+      },
+      body: JSON.stringify({
+        message: `queue: day ${dayNum} queued for 04:30/05:15 IST`,
+        content: btoa(JSON.stringify(queue, null, 2)),
+        branch: "main",
+        ...(sha ? { sha } : {}),
+      }),
+    });
+    if (r.ok) return;
+    if (attempt === 1) throw new Error(`Queue commit failed: ${r.status} ${await r.text()}`);
+  }
+}
+
+// Human-readable "next occurrence of HH:MM IST" for a Telegram confirmation
+// message -- e.g. "today 04:30 IST" or "tomorrow 04:30 IST".
+function describeNextIST(hh, mm) {
+  const nowUtc = new Date();
+  const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1000);
+  let target = new Date(Date.UTC(
+    nowIst.getUTCFullYear(), nowIst.getUTCMonth(), nowIst.getUTCDate(),
+    hh, mm, 0
+  ));
+  const when = target.getTime() > nowIst.getTime() ? "today" : "tomorrow";
+  return `${when} ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} IST`;
+}
+
 // "HH:MM" is read as IST wall-clock, next occurrence (today if still ahead of
 // now, otherwise tomorrow) -- matches how the user actually talks about times
 // ("5:15", "18:30"), converted to the UTC RFC3339 YouTube's publishAt needs.
@@ -442,7 +499,7 @@ async function handleMessage(env, msg) {
       await tg(env, "sendMessage", { chat_id: chatId, text: "Got a video, but no day is waiting on a hook clip -- send /day <N> first so I know which day this belongs to." });
       return;
     }
-    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it — committing as day ${dayNum}'s hook video, then rendering + uploading to YouTube automatically. I'll confirm here once it's live.` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it — committing as day ${dayNum}'s hook video, then queuing it for the scheduled 04:30/05:15 IST render+publish slot. I'll confirm here once it's live.` });
     try {
       const fileInfo = await tg(env, "getFile", { file_id: videoObj.file_id });
       if (!fileInfo.ok) throw new Error(`getFile failed: ${JSON.stringify(fileInfo)}`);
@@ -452,16 +509,19 @@ async function handleMessage(env, msg) {
       const videoBytes = await fileResp.arrayBuffer();
 
       await commitHookVideo(env, dayNum, videoBytes);
-      // upload: "true" -- end to end, no /publish step needed. finish_batch_day.yml's
-      // upload job POSTs back to this Worker's /batch/uploaded once it's actually
-      // live on YouTube (see that endpoint below), which is what sends the real
-      // confirmation -- this message just confirms the render/upload STARTED.
-      await dispatchFinishBatchDay(env, { day: dayNum, upload: "true", publish_at: "", notify_chat_id: String(chatId) });
+      // Every day now renders at a fixed 04:30 IST and publishes (YouTube +
+      // Facebook + Instagram, all three at once) at a fixed 05:15 IST,
+      // instead of immediately on reply -- see render_queue.yml /
+      // publish_queue.yml in the video repo. publish_batch_day.yml POSTs
+      // back to this Worker's /batch/uploaded once it's actually live, which
+      // is what sends the real confirmation; this message just confirms the
+      // video was queued.
+      await queueDayForScheduledPublish(env, dayNum, chatId);
       await env.PENDING.delete(shortPending ? `awaiting_short_hook:${chatId}` : `awaiting_hook:${chatId}`);
 
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: `\u{1F680} Day ${dayNum} hook video committed. Rendering + uploading to YouTube now (~15-20 min) — I'll message you here the moment it's live.`,
+        text: `\u{1F550} Day ${dayNum} hook video committed and queued. Renders ${describeNextIST(4, 30)}, publishes to YouTube + Facebook + Instagram together at ${describeNextIST(5, 15)} — I'll message you here the moment it's live. (Want it out sooner instead? Use /publish ${dayNum} to skip the queue and go now.)`,
       });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't process the video: ${e.message}` });
