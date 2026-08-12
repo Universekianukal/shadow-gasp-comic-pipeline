@@ -299,6 +299,15 @@ function istTimeToPublishAt(hhmm) {
   return publishAtUtc.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
+function hookGateKeyboard(runId) {
+  return {
+    inline_keyboard: [[
+      { text: "\u{1F6D1} Stop", callback_data: `hk:stop:${runId}` },
+      { text: "▶️ Continue with static still", callback_data: `hk:go:${runId}` },
+    ]],
+  };
+}
+
 function approvalKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -351,6 +360,29 @@ async function handleCallback(env, cq) {
   const [action, token, extra] = data.split(":");
   const chatId = cq.message.chat.id;
   const messageId = cq.message.message_id;
+
+  if (action === "hk") {
+    // Answers render_batch_day.yml / finish_batch_day.yml's hookgate poll --
+    // token is "stop"/"go", extra is the run id. Rebuilt 2026-08-13 after
+    // finding this whole feature (and /batch/hookmissing, /batch/hookdecision,
+    // /batch/failed below) was missing from the deployed Worker even though
+    // it had been built+live-tested before -- a real regression, not new.
+    const decision = token;
+    const runId = extra;
+    if ((decision !== "stop" && decision !== "go") || !runId) return;
+    await env.PENDING.put(`hookdecision:${runId}`, decision, { expirationTtl: 2 * 3600 });
+    await tg(env, "answerCallbackQuery", {
+      callback_query_id: cq.id,
+      text: decision === "stop" ? "Stopping -- won't publish hookless." : "Continuing with a static still.",
+    });
+    await tg(env, "editMessageText", {
+      chat_id: chatId, message_id: messageId,
+      text: decision === "stop"
+        ? "\u{1F6D1} Stopped — render will not publish hookless."
+        : "▶️ Continuing — will render and publish with a static Ken Burns still.",
+    });
+    return;
+  }
 
   if (action === "pregen") {
     const n = parseInt(token, 10);
@@ -920,6 +952,64 @@ export default {
       await tg(env, "sendMessage", {
         chat_id: chat_id || env.TELEGRAM_CHAT_ID,
         text: lines.join("\n"),
+      });
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/batch/hookmissing") {
+      // render_batch_day.yml / finish_batch_day.yml's hookgate step calls
+      // this when a day has no Flow hook video committed, before burning a
+      // render on a static Ken Burns fallback. The run itself polls
+      // /batch/hookdecision every 10s for 15 min and defaults to STOP on
+      // silence -- this endpoint only sends the prompt + starts that clock.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { day, run_id, run_url, reason, chat_id } = body;
+      if (!day || !run_id) {
+        return new Response("missing fields", { status: 400 });
+      }
+      await env.PENDING.put(`hookdecision:${run_id}`, "pending", { expirationTtl: 2 * 3600 });
+      await tg(env, "sendMessage", {
+        chat_id: chat_id || env.TELEGRAM_CHAT_ID,
+        text: `⚠️ Day ${day} has no hook video (${reason}). Publish hookless with a static still, or stop the run?\n${run_url}\n\nNo answer in 15 min defaults to STOP.`,
+        reply_markup: hookGateKeyboard(run_id),
+      });
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "GET" && url.pathname === "/batch/hookdecision") {
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const runId = url.searchParams.get("run_id");
+      const decision = (runId && (await env.PENDING.get(`hookdecision:${runId}`))) || "pending";
+      return new Response(JSON.stringify({ decision }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/batch/failed") {
+      // render_batch_day.yml / publish_batch_day.yml / finish_batch_day.yml /
+      // pipeline.yml call this from a `failure()` step so a crash reaches
+      // Telegram by name (which job, which step) instead of the run just
+      // going red in a tab nobody opens.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { day, job, step, run_url, chat_id } = body;
+      if (!day || !job) {
+        return new Response("missing fields", { status: 400 });
+      }
+      await tg(env, "sendMessage", {
+        chat_id: chat_id || env.TELEGRAM_CHAT_ID,
+        text: `❌ Day ${day}'s "${job}" job failed at step "${step || "unknown"}".\n${run_url || ""}`,
       });
       return new Response("ok", { status: 200 });
     }
