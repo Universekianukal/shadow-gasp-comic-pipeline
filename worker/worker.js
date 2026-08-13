@@ -935,7 +935,7 @@ export default {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { day, case: caseName, video_id, drive_link, cloudinary_link, fb_post_id, ig_media_id, chat_id } = body;
+      const { day, case: caseName, video_id, drive_link, cloudinary_link, fb_post_id, ig_media_id, chat_id, title, hashtags } = body;
       if (!day || (!video_id && !fb_post_id && !ig_media_id)) {
         return new Response("missing fields", { status: 400 });
       }
@@ -945,7 +945,9 @@ export default {
       } else {
         lines.push(`✅ Day ${day} crossposted (YouTube upload skipped this run):`);
       }
-      if (caseName) lines.push(`"${caseName}"`);
+      if (title) lines.push(title);
+      else if (caseName) lines.push(`"${caseName}"`);
+      if (hashtags) lines.push(hashtags);
       if (fb_post_id) lines.push(`\u{1F4D8} Facebook: https://facebook.com/${fb_post_id}`);
       if (ig_media_id) lines.push(`\u{1F4F7} Instagram media_id: ${ig_media_id}`);
       if (drive_link) lines.push(`\u{1F4F9} Video file (Drive): ${drive_link}`);
