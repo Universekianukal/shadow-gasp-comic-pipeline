@@ -148,6 +148,10 @@ async function dispatchFinishBatchDay(env, inputs) {
   return dispatchWorkflowVerified(env, "finish_batch_day.yml", inputs);
 }
 
+async function dispatchTitleVariant(env, inputs) {
+  return dispatchWorkflowVerified(env, "generate_title_variant.yml", inputs);
+}
+
 async function dispatchBatchPregen(env, inputs) {
   return dispatchWorkflowVerified(env, "batch_pregen.yml", inputs);
 }
@@ -202,6 +206,36 @@ async function commitHookVideo(env, dayNum, videoBytes) {
     body: JSON.stringify({
       message: `batch: day ${String(dayNum).padStart(2, "0")} hook video (via Telegram)`,
       content: b64,
+      branch: "main",
+      ...(sha ? { sha } : {}),
+    }),
+  });
+  if (!r.ok) throw new Error(`Commit failed: ${r.status} ${await r.text()}`);
+}
+
+// Writes a chosen title-variant into the day's own directory so
+// _gen_youtube_meta.py picks it up at render time instead of the
+// Claude-generated default -- only ever called from the "Apply" button
+// (see /batch/title-variant + handleCallback's "applytitle" branch), never
+// as a side effect of just drafting a variant.
+async function commitTitleOverride(env, dayNum, title, tags) {
+  const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/TITLE_OVERRIDE.json`;
+  const existing = await fetch(
+    `https://api.github.com/repos/${VIDEO_REPO}/contents/${path}?ref=main`,
+    { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
+  );
+  const sha = existing.ok ? (await existing.json()).sha : undefined;
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify({ title, tags }, null, 2))));
+  const r = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/contents/${path}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "shadow-gasp-bot",
+    },
+    body: JSON.stringify({
+      message: `batch: day ${String(dayNum).padStart(2, "0")} title override (via Telegram)`,
+      content,
       branch: "main",
       ...(sha ? { sha } : {}),
     }),
@@ -355,6 +389,29 @@ function confirmPublishKeyboard(token) {
   };
 }
 
+// Title-style picker shown right after a day is queued -- tapping one
+// dispatches generate_title_variant.yml (video repo) to draft a title+tags
+// in that style, then the result comes back as its own message with an
+// "Apply" button (see /batch/title-variant below). Nothing is ever written
+// to the day's actual title until that Apply button is tapped -- generating
+// a variant is non-destructive by construction, there's no path from picking
+// a style straight to it being used.
+const TITLE_STYLES = {
+  shock: "\u{1F631} Shock",
+  curiosity: "\u{1F914} Curiosity",
+  openloop: "\u{1F513} Open-loop",
+  direct: "\u{1F3AF} Direct",
+};
+
+function titleStyleKeyboard(day) {
+  return {
+    inline_keyboard: [Object.entries(TITLE_STYLES).map(([style, label]) => ({
+      text: label,
+      callback_data: `titlestyle:${day}:${style}`,
+    }))],
+  };
+}
+
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -417,6 +474,44 @@ async function handleCallback(env, cq) {
       await dispatchPipeline(env, { case: caseName, target_pages: pages, dry_run: "false" });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start build: ${e.message}` });
+    }
+    return;
+  }
+
+  if (action === "titlestyle") {
+    const day = token;
+    const style = extra;
+    const label = TITLE_STYLES[style] || style;
+    if (!day || !TITLE_STYLES[style]) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Unknown style" });
+      return;
+    }
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Drafting a ${label} title...` });
+    try {
+      await dispatchTitleVariant(env, { day: String(day), style, notify_chat_id: String(chatId) });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't draft a title: ${e.message}` });
+    }
+    return;
+  }
+
+  if (action === "applytitle") {
+    const id = token;
+    const raw = await env.PENDING.get(`titlevariant:${id}`);
+    if (!raw) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This draft expired -- pick a style again" });
+      return;
+    }
+    const variant = JSON.parse(raw);
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Applying..." });
+    try {
+      await commitTitleOverride(env, variant.day, variant.title, variant.tags);
+      await tg(env, "editMessageText", {
+        chat_id: chatId, message_id: messageId,
+        text: `✅ Applied. Day ${variant.day} will render/upload with:\n"${variant.title}"`,
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't apply the title: ${e.message}` });
     }
     return;
   }
@@ -553,7 +648,8 @@ async function handleMessage(env, msg) {
 
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: `\u{1F550} Day ${dayNum} hook video committed and queued. Renders ${describeNextIST(4, 30)}, publishes to YouTube + Facebook + Instagram together at ${describeNextIST(5, 15)} — I'll message you here the moment it's live. (Want it out sooner instead? Use /publish ${dayNum} to skip the queue and go now.)`,
+        text: `\u{1F550} Day ${dayNum} hook video committed and queued. Renders ${describeNextIST(4, 30)}, publishes to YouTube + Facebook + Instagram together at ${describeNextIST(5, 15)} — I'll message you here the moment it's live. (Want it out sooner instead? Use /publish ${dayNum} to skip the queue and go now.)\n\nWant a different title? Pick a style below to draft one -- it only gets used once you tap Apply on the result.`,
+        reply_markup: titleStyleKeyboard(dayNum),
       });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't process the video: ${e.message}` });
@@ -955,6 +1051,38 @@ export default {
       await tg(env, "sendMessage", {
         chat_id: chat_id || env.TELEGRAM_CHAT_ID,
         text: lines.join("\n"),
+      });
+      return new Response("ok", { status: 200 });
+    }
+
+    if (request.method === "POST" && url.pathname === "/batch/title-variant") {
+      // generate_title_variant.yml calls this once it's drafted a title+tags
+      // in the requested style. Nothing is applied yet -- the draft is just
+      // stashed in KV under a short id and shown with an "Apply" button;
+      // only handleCallback's "applytitle" branch (a real tap) ever commits
+      // it via commitTitleOverride.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { day, style, title, tags, chat_id } = body;
+      if (!day || !title) {
+        return new Response("missing fields", { status: 400 });
+      }
+      const id = crypto.randomUUID().slice(0, 8);
+      await env.PENDING.put(`titlevariant:${id}`, JSON.stringify({ day, title, tags: tags || [] }), { expirationTtl: 24 * 3600 });
+      const hashtags = (tags || []).map((t) => `#${String(t).replace(/\s+/g, "")}`).join(" ");
+      const label = TITLE_STYLES[style] || style || "";
+      await tg(env, "sendMessage", {
+        chat_id: chat_id || env.TELEGRAM_CHAT_ID,
+        text: `${label} draft for day ${day}:\n"${title}"${hashtags ? `\n${hashtags}` : ""}\n\nNot applied yet -- tap Apply to use it, or pick another style.`,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Apply this title", callback_data: `applytitle:${id}` }],
+            Object.entries(TITLE_STYLES).map(([s, l]) => ({ text: l, callback_data: `titlestyle:${day}:${s}` })),
+          ],
+        },
       });
       return new Response("ok", { status: 200 });
     }
