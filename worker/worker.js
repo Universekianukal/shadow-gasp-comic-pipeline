@@ -935,7 +935,7 @@ export default {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { day, case: caseName, video_id, drive_link, fb_post_id, ig_media_id, chat_id } = body;
+      const { day, case: caseName, video_id, drive_link, cloudinary_link, fb_post_id, ig_media_id, chat_id } = body;
       if (!day || (!video_id && !fb_post_id && !ig_media_id)) {
         return new Response("missing fields", { status: 400 });
       }
@@ -948,7 +948,8 @@ export default {
       if (caseName) lines.push(`"${caseName}"`);
       if (fb_post_id) lines.push(`\u{1F4D8} Facebook: https://facebook.com/${fb_post_id}`);
       if (ig_media_id) lines.push(`\u{1F4F7} Instagram media_id: ${ig_media_id}`);
-      if (drive_link) lines.push(`\u{1F4F9} Video file: ${drive_link}`);
+      if (drive_link) lines.push(`\u{1F4F9} Video file (Drive): ${drive_link}`);
+      if (cloudinary_link) lines.push(`\u{2B07}\u{FE0F} Direct download: ${cloudinary_link}`);
       await tg(env, "sendMessage", {
         chat_id: chat_id || env.TELEGRAM_CHAT_ID,
         text: lines.join("\n"),
