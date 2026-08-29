@@ -506,6 +506,25 @@ async function handleCallback(env, cq) {
   const [action, token, extra] = data.split(":");
   const chatId = cq.message.chat.id;
   const messageId = cq.message.message_id;
+  if (action === "clip") {
+    // Answer to the "which day is this clip for?" prompt raised when a video
+    // arrives with two different days pending and no reply-threading.
+    const chosen = token;
+    const raw = await env.PENDING.get(`pendingclip:${chatId}`);
+    if (!raw) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "That clip has expired -- send it again." });
+      return;
+    }
+    await env.PENDING.delete(`pendingclip:${chatId}`);
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Committing as day ${chosen}.` });
+    await tg(env, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: `\u{1F4E5} Using this clip for day ${chosen}.`
+    });
+    await acceptHookClip(env, chatId, chosen, JSON.parse(raw).file_id);
+    return;
+  }
   if (action === "hk") {
     const decision = token;
     const runId = extra;
@@ -758,45 +777,90 @@ Confirm to go LIVE, or Cancel to back out.`,
 }
 __name(handleCallback, "handleCallback");
 __name2(handleCallback, "handleCallback");
+async function acceptHookClip(env, chatId, dayNum, fileId) {
+  dayNum = String(dayNum);
+  await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it — committing as day ${dayNum}'s hook video, then queuing it for the scheduled 04:30/05:15 IST render+publish slot. I'll confirm here once it's live.` });
+  try {
+    const fileInfo = await tg(env, "getFile", { file_id: fileId });
+    if (!fileInfo.ok) throw new Error(`getFile failed: ${JSON.stringify(fileInfo)}`);
+    const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${fileInfo.result.file_path}`;
+    const fileResp = await fetch(fileUrl);
+    if (!fileResp.ok) throw new Error(`file download failed: ${fileResp.status}`);
+    const videoBytes = await fileResp.arrayBuffer();
+    await commitHookVideo(env, dayNum, videoBytes);
+    await queueDayForScheduledPublish(env, dayNum, chatId);
+    // Clear whichever wait this clip actually satisfied, by day number rather
+    // than by which key we happened to read first -- the old code deleted the
+    // short key whenever it was set, even when the clip was for the manual day.
+    const shortRaw = await env.PENDING.get(`awaiting_short_hook:${chatId}`);
+    if (shortRaw && String(JSON.parse(shortRaw).day) === dayNum) {
+      await env.PENDING.delete(`awaiting_short_hook:${chatId}`);
+    }
+    if (await env.PENDING.get(`awaiting_hook:${chatId}`) === dayNum) {
+      await env.PENDING.delete(`awaiting_hook:${chatId}`);
+    }
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: `\u{1F550} Day ${dayNum} hook video committed and queued. Renders ${describeNextIST(4, 30)}, publishes to YouTube at ${describeNextIST(5, 15)} — I'll message you here the moment it's live, with Facebook/Instagram Approve/Reject buttons on that message. (Want it out sooner instead? Use /publish ${dayNum} to skip the queue and go now.)
+
+Want a different title than the AI-generated one? Tap below -- only works before this renders/uploads.`,
+      reply_markup: titleStyleKeyboard(dayNum)
+    });
+  } catch (e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't process the video: ${e.message}` });
+  }
+}
 async function handleMessage(env, msg) {
   const text = (msg.text || "").trim();
   const chatId = msg.chat.id;
   const videoObj = msg.video || (msg.document && msg.document.mime_type?.startsWith("video/") ? msg.document : null);
   if (videoObj) {
-    let dayNum = null;
-    let shortPending = false;
+    // Which day is this clip for? Three sources, in descending reliability.
+    //
+    // This used to read awaiting_short_hook first and, if set, use it
+    // unconditionally -- so whenever the 13:00 UTC daily run had a hook
+    // outstanding, it swallowed the reply to any manual /day <N> in the same
+    // chat. That is exactly what happened on 2026-08-29: a /day 31 clip was
+    // committed as day53's hook, and day53 (Cleveland Torso Murders) was
+    // queued to publish opening on day31's 1994 hospital scene.
+    const repliedTo = msg.reply_to_message;
+    const repliedText = repliedTo ? repliedTo.caption || repliedTo.text || "" : "";
+    // Both hook requests -- manual /day and the short pipeline -- send their
+    // photo with a caption starting `Day <N>: "<title>"`.
+    const replyMatch = repliedText.match(/^Day\s+0*(\d+)\s*:/);
     const shortRaw = await env.PENDING.get(`awaiting_short_hook:${chatId}`);
-    if (shortRaw) {
-      dayNum = String(JSON.parse(shortRaw).day);
-      shortPending = true;
+    const shortDay = shortRaw ? String(JSON.parse(shortRaw).day) : null;
+    const manualDay = await env.PENDING.get(`awaiting_hook:${chatId}`);
+    let dayNum = null;
+    if (replyMatch) {
+      // 1. The user replied to a specific request. That is unambiguous, and it
+      //    beats both KV keys even if neither is still pending.
+      dayNum = String(parseInt(replyMatch[1], 10));
+    } else if (shortDay && manualDay && shortDay !== manualDay) {
+      // 2. Two different days are genuinely waiting and the clip threads to
+      //    neither. Guessing here is the original bug -- ask instead. The
+      //    file_id is parked in KV so the callback can finish the job.
+      await env.PENDING.put(`pendingclip:${chatId}`, JSON.stringify({ file_id: videoObj.file_id }), { expirationTtl: 3600 });
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u2753 Two days are waiting on a hook clip: day ${shortDay} (today's automatic build) and day ${manualDay} (your /day ${manualDay}). Which one is this clip for?
+
+Tip: replying directly to a day's hook-request message skips this question.`,
+        reply_markup: { inline_keyboard: [[
+          { text: `Day ${shortDay}`, callback_data: `clip:${shortDay}` },
+          { text: `Day ${manualDay}`, callback_data: `clip:${manualDay}` }
+        ]] }
+      });
+      return;
     } else {
-      dayNum = await env.PENDING.get(`awaiting_hook:${chatId}`);
+      // 3. Only one thing is pending (or both name the same day).
+      dayNum = shortDay || manualDay;
     }
     if (!dayNum) {
       await tg(env, "sendMessage", { chat_id: chatId, text: "Got a video, but no day is waiting on a hook clip -- send /day <N> first so I know which day this belongs to." });
       return;
     }
-    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it \u2014 committing as day ${dayNum}'s hook video, then queuing it for the scheduled 04:30/05:15 IST render+publish slot. I'll confirm here once it's live.` });
-    try {
-      const fileInfo = await tg(env, "getFile", { file_id: videoObj.file_id });
-      if (!fileInfo.ok) throw new Error(`getFile failed: ${JSON.stringify(fileInfo)}`);
-      const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${fileInfo.result.file_path}`;
-      const fileResp = await fetch(fileUrl);
-      if (!fileResp.ok) throw new Error(`file download failed: ${fileResp.status}`);
-      const videoBytes = await fileResp.arrayBuffer();
-      await commitHookVideo(env, dayNum, videoBytes);
-      await queueDayForScheduledPublish(env, dayNum, chatId);
-      await env.PENDING.delete(shortPending ? `awaiting_short_hook:${chatId}` : `awaiting_hook:${chatId}`);
-      await tg(env, "sendMessage", {
-        chat_id: chatId,
-        text: `\u{1F550} Day ${dayNum} hook video committed and queued. Renders ${describeNextIST(4, 30)}, publishes to YouTube at ${describeNextIST(5, 15)} \u2014 I'll message you here the moment it's live, with Facebook/Instagram Approve/Reject buttons on that message. (Want it out sooner instead? Use /publish ${dayNum} to skip the queue and go now.)
-
-Want a different title than the AI-generated one? Tap below -- only works before this renders/uploads.`,
-        reply_markup: titleStyleKeyboard(dayNum)
-      });
-    } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't process the video: ${e.message}` });
-    }
+    await acceptHookClip(env, chatId, dayNum, videoObj.file_id);
     return;
   }
   if (text.startsWith("/freeclaims")) {
