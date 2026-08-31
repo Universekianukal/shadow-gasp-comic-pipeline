@@ -1150,7 +1150,9 @@ Reply here with the finished Flow video when ready.`);
     return;
   }
   if (text.startsWith("/publish")) {
-    const rest2 = text.slice("/publish".length).trim();
+    const rawRest = text.slice("/publish".length).trim();
+    const publishForced = /\bforce\b/i.test(rawRest);
+    const rest2 = rawRest.replace(/\s*\bforce\b\s*/i, " ").trim();
     const atDateMatch = rest2.match(/^(\d+)\s+at\s+(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}:\d{2})$/i);
     const atTimeMatch = !atDateMatch ? rest2.match(/^(\d+)\s+at\s+(\d{1,2}:\d{2})$/i) : null;
     const dayNum = atDateMatch ? parseInt(atDateMatch[1], 10) : atTimeMatch ? parseInt(atTimeMatch[1], 10) : parseInt(rest2, 10);
@@ -1160,6 +1162,18 @@ Reply here with the finished Flow video when ready.`);
         text: "Usage:\n/publish <N>\n/publish <N> at <HH:MM> (IST, next occurrence)\n/publish <N> at <DD-MM-YYYY> <HH:MM> (IST, exact date)"
       });
       return;
+    }
+    if (!publishForced) {
+      const pst = await dayPublishState(env, dayNum);
+      if (pst && pst.done) {
+        await tg(env, "sendMessage", {
+          chat_id: chatId,
+          text: `✅ Day ${dayNum} is already published${pst.case ? ` — "${pst.case}"` : ""}.
+
+Publishing again would render it and upload a SECOND copy to YouTube. Nothing has been dispatched. If that's genuinely what you want, send \`/publish ${dayNum} force\` (the \`at <time>\` forms still work alongside it).`
+        });
+        return;
+      }
     }
     let publishAt = "";
     let whenLabel = "";
@@ -1285,7 +1299,7 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  \u2014 build a comic (asks pages, then page style)\n/make <case name> | 50  \u2014 build now, explicit page count (skips both pickers, auto style)\n/make  \u2014 auto-pick the next comic case (still asks pages + style)\n\n/gencode <slug> [cap]  \u2014 mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only \u2014 it stops working after their first use.\n/freeclaims <slug>  \u2014 check how many one-time codes have been issued so far\n\n/short  \u2014 auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  \u2014 same, for a specific case\n\n/day <N>  \u2014 get day N's hook still + Flow prompt from the batch (refuses days already published; add ' force' to override)\n(reply with the Flow video)  \u2014 commits it, renders + uploads to YouTube automatically\n/publish <N>  \u2014 render + upload day N now\n/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time\n/cancel <N>  \u2014 cancel an in-progress render/publish for day N (only runs dispatched after this shipped)\n/title <N>  \u2014 draft an alt title in a style (Shock/Curiosity/Open-loop/Direct), tap Apply to use it -- only works before this day uploads to YouTube\n\n/trending  \u2014 report-only scan for trending true-crime/horror stories not yet covered (nothing auto-built)\n/retention  \u2014 report-only digest: last 21 days' views/retention/drop-off per video, ranked by retention AND reach separately"
+        text: "Commands:\n/make <case name>  \u2014 build a comic (asks pages, then page style)\n/make <case name> | 50  \u2014 build now, explicit page count (skips both pickers, auto style)\n/make  \u2014 auto-pick the next comic case (still asks pages + style)\n\n/gencode <slug> [cap]  \u2014 mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only \u2014 it stops working after their first use.\n/freeclaims <slug>  \u2014 check how many one-time codes have been issued so far\n\n/short  \u2014 auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  \u2014 same, for a specific case\n\n/day <N>  \u2014 get day N's hook still + Flow prompt from the batch (refuses days already published; add ' force' to override)\n(reply with the Flow video)  \u2014 commits it, renders + uploads to YouTube automatically\n/publish <N>  \u2014 render + upload day N now (refuses days already published; add ' force' to override)\n/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time\n/cancel <N>  \u2014 cancel an in-progress render/publish for day N (only runs dispatched after this shipped)\n/title <N>  \u2014 draft an alt title in a style (Shock/Curiosity/Open-loop/Direct), tap Apply to use it -- only works before this day uploads to YouTube\n\n/trending  \u2014 report-only scan for trending true-crime/horror stories not yet covered (nothing auto-built)\n/retention  \u2014 report-only digest: last 21 days' views/retention/drop-off per video, ranked by retention AND reach separately"
       });
     }
     return;
