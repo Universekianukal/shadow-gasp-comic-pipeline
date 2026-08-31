@@ -198,6 +198,63 @@ TARGET_DPI = 300
 JPEG_QUALITY = 85
 
 
+# --- Panel-sizing helpers, used by spec_panels ------------------------------
+#
+# spec_panels.py was ported into pipeline_lib yesterday from the Heaven's Gate case dir, but
+# these four symbols it calls through `B.` were left behind, so the new "Fit panel sizes to the
+# page layout" step raised AttributeError on its first real run. Copied verbatim from
+# cases/heavens-gate/build_comic.py, which is the version that actually built an 80-page book.
+
+# How wide a panel's lettering may demand. Past MAX_TEXT_W the caption is the page's problem,
+# not the layout's.
+MIN_TEXT_W = 2.00 * inch
+MAX_TEXT_W = 3.60 * inch
+
+# Characters of house caption per inch of caption box. Calibrated at four lines, not six: at
+# five panels to the page the cells are small, and a caption that technically fits in eight
+# narrow lines still swallows the picture underneath it.
+CHARS_PER_INCH = 60.0
+
+_ASPECT_CACHE = {}
+
+
+def text_len(panel):
+    n = len(panel.get("caption") or "") + len(panel.get("caption2") or "")
+    for item in panel.get("dialogue", []):
+        # Scripts differ: some author dialogue as {"speaker":.., "text":..}, others as a bare
+        # string. Measuring the words should not care which.
+        n += len(item if isinstance(item, str) else (item.get("text") or ""))
+    return n
+
+
+def text_width(panel):
+    """Width this panel's lettering wants, clamped to something sane."""
+    n = text_len(panel)
+    if not n:
+        return 0.0
+    return max(MIN_TEXT_W, min(MAX_TEXT_W, n / CHARS_PER_INCH * inch))
+
+
+def art_aspect(path, fallback=16 / 9):
+    """Trimmed art aspect, cached.
+
+    The matte trim happens before the aspect crop, so solving against the raw file size
+    mis-sizes every panel that arrived matted.
+    """
+    if path in _ASPECT_CACHE:
+        return _ASPECT_CACHE[path]
+    a = fallback
+    if os.path.exists(path):
+        try:
+            img = Image.open(path).convert("RGB")
+            body, _, _ = LT.trim_border(img)
+            a = body.width / float(body.height)
+        except Exception:
+            a = fallback
+    _ASPECT_CACHE[path] = a
+    return a
+
+
 def register_fonts():
     # Two callers, two layouts. build_comic normally runs from a case dir that the workflow has
     # copied fonts/ into, so HERE/fonts is right. But spec_panels imports this module straight
