@@ -199,16 +199,26 @@ JPEG_QUALITY = 85
 
 
 def register_fonts():
-    fdir = os.path.join(HERE, "fonts")
+    # Two callers, two layouts. build_comic normally runs from a case dir that the workflow has
+    # copied fonts/ into, so HERE/fonts is right. But spec_panels imports this module straight
+    # out of pipeline_lib/ BEFORE that copy step happens, and pipeline_lib/fonts does not exist
+    # -- which killed the first real end-to-end run of the daily pipeline at "Fit panel sizes to
+    # the page layout". Search the repo root as well rather than requiring the copy first.
+    candidates = [
+        os.path.join(HERE, "fonts"),
+        os.path.join(os.path.dirname(HERE), "fonts"),
+        os.path.join(os.getcwd(), "fonts"),
+    ]
     pairs = [
         (FONT_BODY, "Montserrat-Bold.ttf"),
         (FONT_HEAVY, "Montserrat-ExtraBold.ttf"),
         (FONT_SFX, "Impact.ttf"),
     ]
     for name, fn in pairs:
-        path = os.path.join(fdir, fn)
-        if not os.path.exists(path):
-            sys.exit("missing font: %s (expected in comic/fonts/)" % path)
+        path = next((os.path.join(d, fn) for d in candidates
+                     if os.path.exists(os.path.join(d, fn))), None)
+        if path is None:
+            sys.exit("missing font: %s (looked in: %s)" % (fn, ", ".join(candidates)))
         pdfmetrics.registerFont(TTFont(name, path))
 
     # ReportLab opens every page with a preamble that selects its base font, and
