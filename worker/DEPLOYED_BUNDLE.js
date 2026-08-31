@@ -14,7 +14,22 @@ async function tg(env, method, params) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params)
   });
-  return r.json();
+  const body = await r.json();
+  if (!body.ok) {
+    console.log(`tg ${method} failed: ${body.error_code} ${body.description}`);
+    const chatId = params && params.chat_id;
+    if (chatId && method !== "sendMessage" && method !== "answerCallbackQuery") {
+      await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `❌ Telegram refused ${method}: ${body.description || body.error_code}`
+        })
+      });
+    }
+  }
+  return body;
 }
 __name(tg, "tg");
 __name2(tg, "tg");
@@ -165,6 +180,25 @@ async function ghRaw(env, path) {
 __name(ghRaw, "ghRaw");
 __name2(ghRaw, "ghRaw");
 __name22(ghRaw, "ghRaw");
+async function hookStillUrl(env, dd) {
+  const candidates = [
+    `_pipeline/batch/day${dd}/shot1.jpeg`,
+    `_pipeline/batch/day${dd}/images/seq/01.jpeg`
+  ];
+  let lastErr = null;
+  for (const path of candidates) {
+    try {
+      await ghRaw(env, path);
+      return `https://raw.githubusercontent.com/${VIDEO_REPO}/main/${path}`;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw new Error(`no hook still for day ${dd} (${lastErr && lastErr.message})`);
+}
+__name(hookStillUrl, "hookStillUrl");
+__name2(hookStillUrl, "hookStillUrl");
+__name22(hookStillUrl, "hookStillUrl");
 async function dispatchCrosspostDecision(env, inputs) {
   return dispatchWorkflowVerified(env, "crosspost_decision.yml", inputs);
 }
@@ -982,7 +1016,7 @@ Tip: replying directly to a day's hook-request message skips this question.`,
     const dd = String(dayNum).padStart(2, "0");
     try {
       const meta = await (await ghRaw(env, `_pipeline/batch/day${dd}/meta.json`)).json();
-      const shot1Url = `https://raw.githubusercontent.com/${VIDEO_REPO}/main/_pipeline/batch/day${dd}/shot1.jpeg`;
+      const shot1Url = await hookStillUrl(env, dd);
       await env.PENDING.put(`awaiting_hook:${chatId}`, String(dayNum), { expirationTtl: 86400 });
       await tg(env, "sendPhoto", {
         chat_id: chatId,
@@ -1545,7 +1579,7 @@ ${run_url || ""}`
       const dd = String(day).padStart(2, "0");
       try {
         const meta = await (await ghRaw(env, `_pipeline/batch/day${dd}/meta.json`)).json();
-        const shot1Url = `https://raw.githubusercontent.com/${VIDEO_REPO}/main/_pipeline/batch/day${dd}/shot1.jpeg`;
+        const shot1Url = await hookStillUrl(env, dd);
         const deadline = Date.now() + 5 * 3600 * 1e3;
         await env.PENDING.put(`awaiting_short_hook:${chatId}`, JSON.stringify({ day: String(day), deadline }), { expirationTtl: 8 * 3600 });
         await tg(env, "sendPhoto", {
