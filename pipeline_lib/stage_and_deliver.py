@@ -100,6 +100,50 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
     return data.get("product", data)["id"]
 
 
+# Telegram bot API hard limit for sendDocument. Not configurable, not raisable by any plan.
+TELEGRAM_DOC_LIMIT = 50 * 1024 * 1024
+
+
+def make_review_copy(pdf_path, target_mb=45):
+    """Rasterise the comic to a smaller PDF that Telegram will actually accept.
+
+    ONLY for the review copy. The file uploaded to Gumroad is always the untouched print
+    master -- quality is the product, and this must never be substituted for it.
+
+    Steps down through DPI until it fits. Flat ink-and-halftone art compresses extremely well:
+    the 114MB/80-page Heaven's Gate master came to 36.6MB at 200 DPI, still comfortably
+    readable on a phone. Returns None on failure rather than raising, so a delivery problem
+    can never lose a comic that already built and staged correctly.
+    """
+    try:
+        import fitz
+    except ImportError:
+        print("WARNING: PyMuPDF not available, cannot build a review copy", flush=True)
+        return None
+
+    out_path = os.path.splitext(pdf_path)[0] + "_review.pdf"
+    try:
+        src = fitz.open(pdf_path)
+        for dpi, quality in ((200, 85), (150, 80), (110, 75), (85, 70)):
+            out = fitz.open()
+            for i in range(src.page_count):
+                pix = src[i].get_pixmap(dpi=dpi)
+                out.new_page(width=pix.width, height=pix.height).insert_image(
+                    fitz.Rect(0, 0, pix.width, pix.height),
+                    stream=pix.pil_tobytes(format="JPEG", quality=quality))
+            out.save(out_path, deflate=True, garbage=4)
+            out.close()
+            mb = os.path.getsize(out_path) / 1e6
+            print(f"review copy: {dpi} DPI q{quality} -> {mb:.1f}MB", flush=True)
+            if mb < target_mb:
+                return out_path
+        print("WARNING: could not get the review copy under the Telegram limit", flush=True)
+        return None
+    except Exception as e:
+        print(f"WARNING: review copy failed ({e})", flush=True)
+        return None
+
+
 def telegram_send_document(token, chat_id, file_path, caption):
     boundary = "----shadowgaspboundary"
     url = f"https://api.telegram.org/bot{token}/sendDocument"
@@ -228,9 +272,23 @@ def main():
 
     bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
+
+    # Telegram's bot API refuses documents over 50MB. Gumroad gets the untouched 300 DPI print
+    # master either way; this only affects the review copy that comes to the phone. An 80-page
+    # issue is ~114MB, so without this the draft simply never arrives and the comic looks like
+    # it failed -- which is exactly what happened on Heaven's Gate.
+    send_path, note = pdf_path, "full comic"
+    if os.path.getsize(pdf_path) > TELEGRAM_DOC_LIMIT:
+        preview = make_review_copy(pdf_path)
+        if preview:
+            send_path = preview
+            note = "full comic, preview quality (Gumroad has the 300dpi master)"
+        else:
+            note = "PREVIEW BUILD FAILED - read it on Gumroad"
+
     result = telegram_send_document(
-        bot_token, chat_id, pdf_path,
-        caption=f"{args.title} — full comic (see next message for approval buttons)",
+        bot_token, chat_id, send_path,
+        caption=f"{args.title} — {note} (see next message for approval buttons)",
     )
     if not result.get("ok"):
         raise SystemExit(f"Telegram send failed: {result}")
