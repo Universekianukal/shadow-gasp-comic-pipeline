@@ -273,13 +273,22 @@ def main():
     ap.add_argument("--case-id", default=None, help="Slug used as the script-cache key (falls back to --case if omitted)")
     ap.add_argument("--issue-no", default="01")
     ap.add_argument("--target-pages", type=int, default=25)
+    ap.add_argument("--profile", default="",
+                    help="Layout profile to force (chamber/cinematic/classic/documentary/"
+                         "mosaic/staccato). Empty = derive it from the case id, which is what "
+                         "the daily scheduled run does.")
     args = ap.parse_args()
     if not args.case:
         raise SystemExit("Provide --case or set CASE env var")
 
     os.makedirs(os.path.join(args.out_dir, "panels"), exist_ok=True)
 
-    cache_key = f"{args.case_id or args.case}:{args.issue_no}:{args.target_pages}"
+    # The profile is part of the key because it changes the generation PROMPT (tier structures,
+    # splash rate, bleed share). Without it, rebuilding the same case at the same page count in
+    # a different style would hit the cache and silently return the previous style's script --
+    # the build would report "cinematic" and deliver the mosaic pages it had already paid for.
+    _profile_key = layout_profiles.profile_for(args.case_id or args.case, args.profile)
+    cache_key = f"{args.case_id or args.case}:{args.issue_no}:{args.target_pages}:{_profile_key}"
     result = cache_get(cache_key)
     if result:
         print(f"Using cached script for '{cache_key}' -- no Anthropic API call made")
@@ -302,7 +311,7 @@ def main():
         # from during art-directing, not just exactly enough.
         # Panel budget follows the issue's layout profile, floored at the original 2.2/page so a
         # profile can never argue the book down below the density that floor was protecting.
-        _prof = layout_profiles.profile_for(args.case_id or args.case)
+        _prof = layout_profiles.profile_for(args.case_id or args.case, args.profile)
         _per_page = max(2.2, layout_profiles.avg_panels_per_page(_prof))
         target_panels = round(args.target_pages * _per_page) + 50
         schema_spec = (SCHEMA_SPEC_TEMPLATE
@@ -312,7 +321,7 @@ def main():
         # rhythm and the series reads as a template -- the previous issue came out ~85%
         # two-panel pages. The profile is derived from the case id, so it is stable across
         # re-runs of the same case and different between neighbouring cases.
-        layout_block = layout_profiles.prompt_block(args.case_id or args.case)
+        layout_block = layout_profiles.prompt_block(args.case_id or args.case, args.profile)
         print(layout_block, flush=True)
 
         user = (
@@ -343,7 +352,8 @@ def main():
     # is not enforced anywhere -- that is exactly how "59% two-panel" became ~85% two-panel on
     # the last issue. This does not block the build; it makes the drift visible in the log so a
     # bad rhythm is caught before 25 pages of art get generated from it.
-    ok, report = layout_profiles.audit(result["script"], args.case_id or args.case)
+    ok, report = layout_profiles.audit(result["script"], args.case_id or args.case,
+                                       override=args.profile)
     print("\n".join(report), flush=True)
     if not ok:
         print("WARNING: page-type mix is off target for this profile (see above). The art will "

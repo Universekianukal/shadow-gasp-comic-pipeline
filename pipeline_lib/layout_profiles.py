@@ -101,12 +101,22 @@ BLEED_SHARE = {
 }
 
 
-def profile_for(case_id):
-    """Deterministic per-case profile. Same case -> same look, forever.
+def profile_for(case_id, override=None):
+    """Deterministic per-case profile, unless an explicit one is asked for.
 
     Hash rather than round-robin: a counter would make the ledger's order decide the look, so
     inserting one case would reshuffle every comic after it and break reproducibility.
+
+    `override` is the manual pick from Telegram's style picker. An unknown name raises rather
+    than silently falling back to the hash -- a typo that quietly builds the wrong look is the
+    kind of thing nobody notices until 25 pages of art already exist.
     """
+    if override:
+        if override not in PROFILES:
+            raise ValueError(
+                f"unknown layout profile {override!r}; choose one of: {', '.join(ORDER)}"
+            )
+        return override
     h = hashlib.sha1((case_id or "").encode("utf-8")).hexdigest()
     return ORDER[int(h[:8], 16) % len(ORDER)]
 
@@ -131,9 +141,9 @@ def density_line(name):
     return ", ".join(parts)
 
 
-def prompt_block(case_id):
+def prompt_block(case_id, override=None):
     """The paragraph injected into the script-generation prompt."""
-    name = profile_for(case_id)
+    name = profile_for(case_id, override)
     p = PROFILES[name]
     return (
         f'LAYOUT PROFILE FOR THIS ISSUE: "{name}" -- {p["blurb"]}.\n'
@@ -151,7 +161,7 @@ def prompt_block(case_id):
         f'- Use bleeds. Any panel may carry "bleed": a list of page edges it runs off, from\n'
         f'  "left" "right" "top" "bottom" -- only edges that panel actually touches. The last\n'
         f"  issue used ZERO bleeds across 396 grid panels, which is why its pages read as tiled\n"
-        f"  boxes. Bleed roughly {int(BLEED_SHARE[profile_for(case_id)] * 100)}% of panels on\n"
+        f"  boxes. Bleed roughly {int(BLEED_SHARE[name] * 100)}% of panels on\n"
         f"  this issue, on establishing shots and dramatic beats -- never on a panel whose\n"
         f"  caption sits near the bleeding edge.\n"
         f"- The percentages above are checked after generation and reported. Treat them as a\n"
@@ -159,13 +169,16 @@ def prompt_block(case_id):
     )
 
 
-def audit(script, case_id, tolerance=0.15):
+def audit(script, case_id, tolerance=0.15, override=None):
     """Compare a generated script against its profile. Returns (ok, report_lines).
 
     The old target lived only in prose and was never checked, which is exactly how a 59%
     instruction became an 85% outcome. Measuring it is the whole point.
+
+    Must be passed the same `override` the prompt used, or a manually-picked issue gets audited
+    against the hash-chosen profile it was never asked to follow.
     """
-    name = profile_for(case_id)
+    name = profile_for(case_id, override)
     want = PROFILES[name]["density"]
 
     counts = {}

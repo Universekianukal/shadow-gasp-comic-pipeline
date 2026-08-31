@@ -371,6 +371,29 @@ function makePageCountKeyboard() {
   };
 }
 
+// The six page architectures in pipeline_lib/layout_profiles.py. Kept in the same order as
+// that module's PROFILES table so the two stay readable side by side; the names must match it
+// exactly, because they are passed straight through to --profile, which rejects unknown names.
+const STYLE_BUTTONS = [
+  ["cinematic", "\u{1F3AC}"],
+  ["mosaic", "\u{1F9E9}"],
+  ["classic", "\u{1F4D6}"],
+  ["chamber", "\u{1F512}"],
+  ["staccato", "⚡"],
+  ["documentary", "\u{1F4C1}"],
+];
+
+function makeStyleKeyboard() {
+  const btn = ([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` });
+  return {
+    inline_keyboard: [
+      STYLE_BUTTONS.slice(0, 3).map(btn),
+      STYLE_BUTTONS.slice(3).map(btn),
+      [{ text: "\u{1F3B2} Auto (from case name)", callback_data: "make_style:auto" }],
+    ],
+  };
+}
+
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
@@ -465,13 +488,43 @@ async function handleCallback(env, cq) {
     }
     await env.PENDING.delete(`awaiting_make:${chatId}`);
     const label = priceLabel(parseInt(pages, 10));
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Building at ${label}...` });
+    // Page count is settled; now ask for the page style. The case name has to be carried
+    // forward in KV because the style tap is a separate update with no memory of the first.
+    await env.PENDING.put(
+      `awaiting_style:${chatId}`,
+      JSON.stringify({ case: caseName, pages, label }),
+      { expirationTtl: 3600 },
+    );
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `${label} -- now pick a style` });
     await tg(env, "editMessageText", {
       chat_id: chatId, message_id: messageId,
-      text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${label}.\nThis takes a while (script → art → OCR check → PDF). You'll get the draft here with buttons when it's done.`,
+      text: `${caseName ? `"${caseName}"` : "Next auto-picked case"} at ${label}.\n\nWhich page style?\n\u{1F3AC} cinematic -- widescreen, wide tiers, splashes used generously\n\u{1F9E9} mosaic -- restless, tier structure changes every page\n\u{1F4D6} classic -- house rhythm, wide establishing then tighter beats\n\u{1F512} chamber -- close and claustrophobic, paired tall panels\n⚡ staccato -- fast cutting, abrupt changes of size\n\u{1F4C1} documentary -- dense evidential grid, splashes rare`,
+      reply_markup: makeStyleKeyboard(),
+    });
+    return;
+  }
+
+  if (action === "make_style") {
+    const style = token; // callback_data is "make_style:<name>" or "make_style:auto"
+    const raw = await env.PENDING.get(`awaiting_style:${chatId}`);
+    if (raw === null) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This /make request expired -- send /make again" });
+      return;
+    }
+    await env.PENDING.delete(`awaiting_style:${chatId}`);
+    const { case: caseName, pages, label } = JSON.parse(raw);
+    // "auto" maps to an EMPTY profile, not the string "auto": pipeline.yml passes the value
+    // straight to --profile, where empty means "derive it from the case id" -- the same thing
+    // the daily scheduled run does. Sending "auto" would raise on an unknown profile name.
+    const profile = style === "auto" ? "" : style;
+    const styleLabel = profile || "auto (from case name)";
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Building ${styleLabel}...` });
+    await tg(env, "editMessageText", {
+      chat_id: chatId, message_id: messageId,
+      text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${label}, ${styleLabel} layout.\nThis takes a while (script → art → OCR check → PDF). You'll get the draft here with buttons when it's done.`,
     });
     try {
-      await dispatchPipeline(env, { case: caseName, target_pages: pages, dry_run: "false" });
+      await dispatchPipeline(env, { case: caseName, target_pages: pages, profile, dry_run: "false" });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start build: ${e.message}` });
     }

@@ -26,6 +26,17 @@ on:
         description: "Target story page count (used by the Increase Pages flow)"
         required: false
         default: "25"
+      case_source:
+        description: "Where an auto-picked case comes from: published (a short already on YouTube, no comic yet) or new (never covered)"
+        required: false
+        default: "published"
+      # Plain string, not `type: choice`: a choice list needs a non-empty default, and "no
+      # override" has to be expressible. An unknown name is rejected by layout_profiles with
+      # the list of valid ones, before any Anthropic or Kaggle spend.
+      profile:
+        description: "Page layout style: chamber|cinematic|classic|documentary|mosaic|staccato (blank = auto, derived from the case id)"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -57,7 +68,7 @@ jobs:
         if: github.event.inputs.case == ''
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python pipeline_lib/pick_case.py
+        run: python pipeline_lib/pick_case.py --source "${{ github.event.inputs.case_source || 'published' }}"
 
       - name: Set case variable
         id: case
@@ -86,7 +97,7 @@ jobs:
           SLUG=$(echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40)
           mkdir -p cases/$SLUG/panels
           echo "slug=$SLUG" >> "$GITHUB_ENV"
-          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages || '25' }}"
+          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages || '25' }}" --profile "${{ github.event.inputs.profile }}"
 
       # Solve the page layout BEFORE any art is generated, and write each panel's real
       # target_px back onto its prompt. Without this, gen_flux_kaggle falls back to one fixed

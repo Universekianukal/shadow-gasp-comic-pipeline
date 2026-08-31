@@ -481,6 +481,26 @@ function makePageCountKeyboard() {
 }
 __name(makePageCountKeyboard, "makePageCountKeyboard");
 __name2(makePageCountKeyboard, "makePageCountKeyboard");
+var STYLE_BUTTONS = [
+  ["cinematic", "\u{1F3AC}"],
+  ["mosaic", "\u{1F9E9}"],
+  ["classic", "\u{1F4D6}"],
+  ["chamber", "\u{1F512}"],
+  ["staccato", "⚡"],
+  ["documentary", "\u{1F4C1}"]
+];
+function makeStyleKeyboard() {
+  const btn = ([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` });
+  return {
+    inline_keyboard: [
+      STYLE_BUTTONS.slice(0, 3).map(btn),
+      STYLE_BUTTONS.slice(3).map(btn),
+      [{ text: "\u{1F3B2} Auto (from case name)", callback_data: "make_style:auto" }]
+    ]
+  };
+}
+__name(makeStyleKeyboard, "makeStyleKeyboard");
+__name2(makeStyleKeyboard, "makeStyleKeyboard");
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
@@ -565,15 +585,50 @@ async function handleCallback(env, cq) {
     }
     await env.PENDING.delete(`awaiting_make:${chatId}`);
     const label = priceLabel(parseInt(pages, 10));
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Building at ${label}...` });
+    await env.PENDING.put(
+      `awaiting_style:${chatId}`,
+      JSON.stringify({ case: caseName, pages, label }),
+      { expirationTtl: 3600 }
+    );
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `${label} -- now pick a style` });
     await tg(env, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
-      text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${label}.
+      text: `${caseName ? `"${caseName}"` : "Next auto-picked case"} at ${label}.
+
+Which page style?
+\u{1F3AC} cinematic -- widescreen, wide tiers, splashes used generously
+\u{1F9E9} mosaic -- restless, tier structure changes every page
+\u{1F4D6} classic -- house rhythm, wide establishing then tighter beats
+\u{1F512} chamber -- close and claustrophobic, paired tall panels
+\u26A1 staccato -- fast cutting, abrupt changes of size
+\u{1F4C1} documentary -- dense evidential grid, splashes rare`,
+      reply_markup: makeStyleKeyboard()
+    });
+    return;
+  }
+  if (action === "make_style") {
+    const style = token;
+    const raw = await env.PENDING.get(`awaiting_style:${chatId}`);
+    if (raw === null) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This /make request expired -- send /make again" });
+      return;
+    }
+    await env.PENDING.delete(`awaiting_style:${chatId}`);
+    const { case: caseName, pages, label } = JSON.parse(raw);
+    // "auto" is the pre-existing behaviour: pipeline.yml treats an empty profile as
+    // "derive it from the case id", which is exactly what the daily scheduled run passes.
+    const profile = style === "auto" ? "" : style;
+    const styleLabel = profile || "auto (from case name)";
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Building ${styleLabel}...` });
+    await tg(env, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: `\u{1F3AC} Building ${caseName ? `"${caseName}"` : "the next auto-picked case"} at ${label}, ${styleLabel} layout.
 This takes a while (script \u2192 art \u2192 OCR check \u2192 PDF). You'll get the draft here with buttons when it's done.`
     });
     try {
-      await dispatchPipeline(env, { case: caseName, target_pages: pages, dry_run: "false" });
+      await dispatchPipeline(env, { case: caseName, target_pages: pages, profile, dry_run: "false" });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start build: ${e.message}` });
     }
@@ -1090,7 +1145,7 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  \u2014 build a comic (asks how many pages first)\n/make <case name> | 50  \u2014 build now, explicit page count (skips the picker)\n/make  \u2014 auto-pick the next comic case (still asks pages)\n\n/gencode <slug> [cap]  \u2014 mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only \u2014 it stops working after their first use.\n/freeclaims <slug>  \u2014 check how many one-time codes have been issued so far\n\n/short  \u2014 auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  \u2014 same, for a specific case\n\n/day <N>  \u2014 get day N's hook still + Flow prompt from the batch\n(reply with the Flow video)  \u2014 commits it, renders + uploads to YouTube automatically\n/publish <N>  \u2014 render + upload day N now\n/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time\n/cancel <N>  \u2014 cancel an in-progress render/publish for day N (only runs dispatched after this shipped)\n/title <N>  \u2014 draft an alt title in a style (Shock/Curiosity/Open-loop/Direct), tap Apply to use it -- only works before this day uploads to YouTube\n\n/trending  \u2014 report-only scan for trending true-crime/horror stories not yet covered (nothing auto-built)\n/retention  \u2014 report-only digest: last 21 days' views/retention/drop-off per video, ranked by retention AND reach separately"
+        text: "Commands:\n/make <case name>  \u2014 build a comic (asks pages, then page style)\n/make <case name> | 50  \u2014 build now, explicit page count (skips both pickers, auto style)\n/make  \u2014 auto-pick the next comic case (still asks pages + style)\n\n/gencode <slug> [cap]  \u2014 mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only \u2014 it stops working after their first use.\n/freeclaims <slug>  \u2014 check how many one-time codes have been issued so far\n\n/short  \u2014 auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  \u2014 same, for a specific case\n\n/day <N>  \u2014 get day N's hook still + Flow prompt from the batch\n(reply with the Flow video)  \u2014 commits it, renders + uploads to YouTube automatically\n/publish <N>  \u2014 render + upload day N now\n/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time\n/cancel <N>  \u2014 cancel an in-progress render/publish for day N (only runs dispatched after this shipped)\n/title <N>  \u2014 draft an alt title in a style (Shock/Curiosity/Open-loop/Direct), tap Apply to use it -- only works before this day uploads to YouTube\n\n/trending  \u2014 report-only scan for trending true-crime/horror stories not yet covered (nothing auto-built)\n/retention  \u2014 report-only digest: last 21 days' views/retention/drop-off per video, ranked by retention AND reach separately"
       });
     }
     return;
