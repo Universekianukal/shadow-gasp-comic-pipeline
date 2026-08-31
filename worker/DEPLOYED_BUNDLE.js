@@ -219,11 +219,11 @@ async function dayPublishState(env, dayNum) {
   } catch (err) {
     return null;
   }
-  if (!entry || !entry.done) return null;
-  // state.json's `done` means "the build finished", NOT "it is live". A day can
-  // be done and still be parked in the queue -- day 53 is done:true but held
-  // for a hook-clip replacement, and refusing that would block the one thing
-  // it needs. Only treat a day as untouchable if the queue agrees it shipped.
+  if (!entry) return null;
+  // state.json's `done` is written by _batch_pregen.py the moment the 16 stills
+  // are committed -- it means PREGENERATED, not published, which is why 53 of 55
+  // days carry it. Never use it as the publish signal. Refuse only on positive
+  // evidence, so an unpublished day always stays workable.
   let queueStatus = null;
   try {
     const q = await (await ghRaw(env, "_pipeline/batch/queue.json")).json();
@@ -232,8 +232,20 @@ async function dayPublishState(env, dayNum) {
   } catch (err) {
     queueStatus = null;
   }
+  // Anything parked mid-flight (held, pending_render, ...) is explicitly NOT done.
   if (queueStatus && queueStatus !== "published") return null;
-  return { ...entry, queueStatus };
+  if (queueStatus === "published") return { ...entry, queueStatus };
+  // Otherwise the only real proof is a stamped videoId in the ledger, matched on
+  // case text. Note the id itself can be stale if a video was replaced by hand
+  // (days 33/34/35) -- it still proves the day published at least once, which is
+  // all this guard claims.
+  try {
+    const led = await (await ghRaw(env, "_pipeline/cases_used.json")).json();
+    const hit = (led.cases || []).find((c) => c && c.case === entry.case && c.videoId);
+    if (hit) return { ...entry, videoId: hit.videoId, publishedAt: hit.publishedAt, queueStatus };
+  } catch (err) {
+  }
+  return null;
 }
 __name(dayPublishState, "dayPublishState");
 __name2(dayPublishState, "dayPublishState");
@@ -1102,10 +1114,11 @@ Tip: replying directly to a day's hook-request message skips this question.`,
     const dd = String(dayNum).padStart(2, "0");
     if (!forced) {
       const st = await dayPublishState(env, dayNum);
-      if (st && st.done) {
+      if (st) {
         await tg(env, "sendMessage", {
           chat_id: chatId,
-          text: `✅ Day ${dayNum} is already published${st.case ? ` — "${st.case}"` : ""}.
+          text: `✅ Day ${dayNum} is already published${st.case ? ` — "${st.case}"` : ""}${st.videoId ? `
+https://youtu.be/${st.videoId}${st.publishedAt ? ` (${st.publishedAt})` : ""}` : ""}.
 
 I haven't armed a hook wait, so replying with a clip here can't re-render or re-upload it. If you really do want to replace its hook video, send \`/day ${dayNum} force\`.`
         });
@@ -1165,10 +1178,11 @@ Reply here with the finished Flow video when ready.`);
     }
     if (!publishForced) {
       const pst = await dayPublishState(env, dayNum);
-      if (pst && pst.done) {
+      if (pst) {
         await tg(env, "sendMessage", {
           chat_id: chatId,
-          text: `✅ Day ${dayNum} is already published${pst.case ? ` — "${pst.case}"` : ""}.
+          text: `✅ Day ${dayNum} is already published${pst.case ? ` — "${pst.case}"` : ""}${pst.videoId ? `
+https://youtu.be/${pst.videoId}${pst.publishedAt ? ` (${pst.publishedAt})` : ""}` : ""}.
 
 Publishing again would render it and upload a SECOND copy to YouTube. Nothing has been dispatched. If that's genuinely what you want, send \`/publish ${dayNum} force\` (the \`at <time>\` forms still work alongside it).`
         });
