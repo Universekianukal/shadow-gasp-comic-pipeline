@@ -211,6 +211,27 @@ async function hookStillUrl(env, dd) {
 __name(hookStillUrl, "hookStillUrl");
 __name2(hookStillUrl, "hookStillUrl");
 __name22(hookStillUrl, "hookStillUrl");
+async function sendHookStill(env, chatId, imgUrl, caption) {
+  const r = await fetch(imgUrl, { headers: { "User-Agent": "shadow-gasp-bot" } });
+  if (!r.ok) throw new Error(`couldn't fetch the still: ${r.status}`);
+  const bytes = await r.arrayBuffer();
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("caption", caption.length > 1024 ? caption.slice(0, 1021) + "..." : caption);
+  form.append("photo", new Blob([bytes], { type: "image/jpeg" }), "shot1.jpeg");
+  const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+    method: "POST",
+    body: form
+  });
+  const body = await resp.json();
+  if (!body.ok) {
+    throw new Error(`sendPhoto refused the upload: ${body.description || body.error_code}`);
+  }
+  return body;
+}
+__name(sendHookStill, "sendHookStill");
+__name2(sendHookStill, "sendHookStill");
+__name22(sendHookStill, "sendHookStill");
 __name222(hookStillUrl, "hookStillUrl");
 async function dispatchCrosspostDecision(env, inputs) {
   return dispatchWorkflowVerified(env, "crosspost_decision.yml", inputs);
@@ -1054,16 +1075,12 @@ Tip: replying directly to a day's hook-request message skips this question.`,
       const meta = await (await ghRaw(env, `_pipeline/batch/day${dd}/meta.json`)).json();
       const shot1Url = await hookStillUrl(env, dd);
       await env.PENDING.put(`awaiting_hook:${chatId}`, String(dayNum), { expirationTtl: 86400 });
-      await tg(env, "sendPhoto", {
-        chat_id: chatId,
-        photo: shot1Url,
-        caption: `Day ${dayNum}: "${meta.title_working}"
+      await sendHookStill(env, chatId, shot1Url, `Day ${dayNum}: "${meta.title_working}"
 
 Motion prompt for Google Flow:
 ${meta.hook_motion_prompt}
 
-Reply here with the finished Flow video when ready.`
-      });
+Reply here with the finished Flow video when ready.`);
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't load day ${dayNum}: ${e.message}` });
     }
@@ -1621,16 +1638,12 @@ ${run_url || ""}`
         const shot1Url = await hookStillUrl(env, dd);
         const deadline = Date.now() + 5 * 3600 * 1e3;
         await env.PENDING.put(`awaiting_short_hook:${chatId}`, JSON.stringify({ day: String(day), deadline }), { expirationTtl: 8 * 3600 });
-        await tg(env, "sendPhoto", {
-          chat_id: chatId,
-          photo: shot1Url,
-          caption: `Day ${dd}: "${meta.title_working}"${caseName ? ` (${caseName})` : ""}
+        await sendHookStill(env, chatId, shot1Url, `Day ${dd}: "${meta.title_working}"${caseName ? ` (${caseName})` : ""}
 
 Motion prompt for Google Flow:
 ${meta.hook_motion_prompt}
 
-Reply here with the finished Flow video within 5 hours, or I'll fall back to a static cut and schedule it for tomorrow 05:15 IST.`
-        });
+Reply here with the finished Flow video within 5 hours, or I'll fall back to a static cut and schedule it for tomorrow 05:15 IST.`);
       } catch (e) {
         await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Day ${dd} generated but I couldn't send the hook-video request: ${e.message}. Use /day ${day} to retry manually.` });
       }
