@@ -163,11 +163,17 @@ def telegram_send_document(token, chat_id, file_path, caption):
         return json.load(r)
 
 
-def register_with_worker(worker_url, shared_secret, token, case_name, product_id, title):
+def register_with_worker(worker_url, shared_secret, token, case_name, product_id, title,
+                         video_id="", product_url="", pages=""):
+    # video_id / product_url / pages are what the "Funnel to YouTube" button needs. They are
+    # carried here because the case folder is deleted at the end of the run, so by the time the
+    # button is tapped this KV record is the ONLY place the link between the comic and the
+    # published short it came from still exists.
     req = urllib.request.Request(
         f"{worker_url.rstrip('/')}/register",
         data=json.dumps({
             "token": token, "case": case_name, "product_id": product_id, "title": title,
+            "video_id": video_id, "product_url": product_url, "pages": str(pages),
         }).encode(),
         headers={"Content-Type": "application/json", "X-Shared-Secret": shared_secret},
         method="POST",
@@ -183,6 +189,9 @@ def main():
     ap.add_argument("--title", required=True)
     ap.add_argument("--target-pages", default="25")
     ap.add_argument("--price", default=None, help="Overrides the tier price derived from --target-pages")
+    ap.add_argument("--video-id", default="",
+                    help="YouTube id of the published short this case came from, if any. Enables "
+                         "the 'Funnel to YouTube' button on the Telegram draft.")
     args = ap.parse_args()
     if args.price is None:
         args.price = PAGE_PRICE_TIERS.get(int(args.target_pages), "2.99")
@@ -302,6 +311,12 @@ def main():
         case_name=args.title,
         product_id=product_id,
         title=args.title,
+        video_id=args.video_id,
+        # Same permalink stage_draft() just set, so this is the buyer-facing URL, not a
+        # random Gumroad slug. Still a DRAFT url at this point -- the funnel job refuses to
+        # put it in a public description until the product is actually published.
+        product_url=f"https://shadowgasp.gumroad.com/l/{slugify(script['title'])}",
+        pages=args.target_pages,
     )
     print(f"Registered with Worker, token={approval_token}")
 

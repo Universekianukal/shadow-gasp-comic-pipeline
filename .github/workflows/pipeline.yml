@@ -148,7 +148,8 @@ jobs:
             --case-dir cases/${{ env.slug }} \
             --case-id "${{ env.slug }}" \
             --title "${{ steps.case.outputs.case }}" \
-            --target-pages "${{ github.event.inputs.target_pages || '25' }}"
+            --target-pages "${{ github.event.inputs.target_pages || '25' }}" \
+            --video-id "${{ steps.pick.outputs.video_id }}"
 
       - name: Commit ONLY the dedup ledger back to repo (never the comic content)
         if: always()

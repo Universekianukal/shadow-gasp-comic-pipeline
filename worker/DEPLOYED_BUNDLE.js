@@ -77,6 +77,25 @@ __name(dispatchPipeline, "dispatchPipeline");
 __name2(dispatchPipeline, "dispatchPipeline");
 __name22(dispatchPipeline, "dispatchPipeline");
 __name222(dispatchPipeline, "dispatchPipeline");
+async function dispatchFunnelComicLink(env, inputs) {
+  // Lives in the VIDEO repo, not the comic repo: it edits a published YouTube video's
+  // description, so it needs that repo's YouTube OAuth secrets and GITHUB_TOKEN_VIDEO.
+  const r = await fetch(
+    `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/funnel_comic_link.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "shadow-gasp-bot"
+      },
+      body: JSON.stringify({ ref: "main", inputs })
+    }
+  );
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
+__name(dispatchFunnelComicLink, "dispatchFunnelComicLink");
+__name2(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 async function dispatchGenCode(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/gen_code.yml/dispatches`,
@@ -603,14 +622,18 @@ __name(hookGateKeyboard, "hookGateKeyboard");
 __name2(hookGateKeyboard, "hookGateKeyboard");
 __name22(hookGateKeyboard, "hookGateKeyboard");
 __name222(hookGateKeyboard, "hookGateKeyboard");
-function approvalKeyboard(token) {
-  return {
-    inline_keyboard: [[
-      { text: "\u2705 Approve", callback_data: `approve:${token}` },
-      { text: "\u274C Reject", callback_data: `reject:${token}` },
-      { text: "\u{1F4C4} Increase Pages", callback_data: `pages_menu:${token}` }
-    ]]
-  };
+function approvalKeyboard(token, videoId) {
+  const rows = [[
+    { text: "\u2705 Approve", callback_data: `approve:${token}` },
+    { text: "\u274C Reject", callback_data: `reject:${token}` },
+    { text: "\u{1F4C4} Increase Pages", callback_data: `pages_menu:${token}` }
+  ]];
+  // Only offered when the case came from a published short -- with no video there is nothing
+  // to funnel into, and a dead button is worse than no button.
+  if (videoId) {
+    rows.push([{ text: "\u{1F517} Funnel to YouTube", callback_data: `funnel:${token}` }]);
+  }
+  return { inline_keyboard: rows };
 }
 __name(approvalKeyboard, "approvalKeyboard");
 __name2(approvalKeyboard, "approvalKeyboard");
@@ -732,6 +755,37 @@ async function handleCallback(env, cq) {
       await dispatchBatchPregen(env, { days: String(n), notify_chat_id: String(chatId) });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start pregen: ${e.message}` });
+    }
+    return;
+  }
+  if (action === "funnel") {
+    const raw = await env.PENDING.get(`pending:${token}`);
+    if (!raw) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This draft has expired -- rebuild it with /make" });
+      return;
+    }
+    const rec = JSON.parse(raw);
+    if (!rec.video_id) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "No published short is linked to this case" });
+      return;
+    }
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Adding the comic link to YouTube..." });
+    try {
+      await dispatchFunnelComicLink(env, {
+        video_id: rec.video_id,
+        product_url: rec.product_url,
+        product_name: rec.title || rec.case,
+        pages: String(rec.pages || ""),
+        position: "top",
+        notify_chat_id: String(chatId)
+      });
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u{1F517} Adding "${rec.title || rec.case}" to https://youtu.be/${rec.video_id}'s description.
+The job refuses if the Gumroad product is still a draft -- tap Approve first so the link isn't a 404 for viewers. I'll report back here.`
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the funnel job: ${e.message}` });
     }
     return;
   }
@@ -1350,11 +1404,14 @@ __name(handleMessage, "handleMessage");
 __name2(handleMessage, "handleMessage");
 __name22(handleMessage, "handleMessage");
 __name222(handleMessage, "handleMessage");
-async function sendApprovalMessage(env, { token, caseName, productId, title }) {
+async function sendApprovalMessage(env, { token, caseName, productId, title, videoId }) {
+  const funnelLine = videoId
+    ? `\n\u{1F517} From published short: https://youtu.be/${videoId}`
+    : "";
   return tg(env, "sendMessage", {
     chat_id: env.TELEGRAM_CHAT_ID,
-    text: `${title} \u2014 draft ready for review (Gumroad draft: ${productId})`,
-    reply_markup: approvalKeyboard(token)
+    text: `${title} \u2014 draft ready for review (Gumroad draft: ${productId})${funnelLine}`,
+    reply_markup: approvalKeyboard(token, videoId)
   });
 }
 __name(sendApprovalMessage, "sendApprovalMessage");
@@ -1474,12 +1531,18 @@ var worker_default = {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { token, case: caseName, product_id, title } = body;
+      const { token, case: caseName, product_id, title, video_id, product_url, pages } = body;
       if (!token || !caseName || !product_id) {
         return new Response("missing fields", { status: 400 });
       }
-      await env.PENDING.put(`pending:${token}`, JSON.stringify({ case: caseName, product_id }));
-      await sendApprovalMessage(env, { token, caseName, productId: product_id, title: title || caseName });
+      await env.PENDING.put(`pending:${token}`, JSON.stringify({
+        case: caseName, product_id,
+        video_id: video_id || "", product_url: product_url || "", pages: pages || "",
+        title: title || caseName
+      }));
+      await sendApprovalMessage(env, {
+        token, caseName, productId: product_id, title: title || caseName, videoId: video_id || ""
+      });
       return new Response("ok", { status: 200 });
     }
     if (request.method === "POST" && url.pathname === "/script-cache/save") {
