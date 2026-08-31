@@ -33,7 +33,8 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import layout_profiles  # noqa: E402
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+# Read lazily inside call_claude, not here: with COMIC_LLM_PROVIDER=fireworks this module
+# must import and run with no Anthropic key present at all.
 MODEL = "claude-sonnet-5"
 
 
@@ -197,7 +198,7 @@ def call_claude(system, user, max_tokens=16000):
             "stream": True,
         }).encode(),
         headers={
-            "x-api-key": ANTHROPIC_API_KEY,
+            "x-api-key": os.environ["ANTHROPIC_API_KEY"],
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },
@@ -236,6 +237,31 @@ def extract_json(text):
     return json.loads(match.group(0))
 
 
+def call_model(system, user, max_tokens=16000):
+    """Route the script call to whichever provider is configured.
+
+    Anthropic stays the default because it wrote every issue so far. The escape hatch exists
+    because the API refused outright mid-build -- "Your credit balance is too low" -- and a
+    pipeline that can only ever use one billing account stops dead when that account does.
+
+    On the OpenAI-compatible providers this delegates to pipeline_lib/llm.py, which already
+    handles the failure mode this exact prompt provokes: a reasoning model spending its entire
+    token budget thinking and returning empty content. It caps reasoning_effort and escalates
+    the budget on truncation. Do not replace it with a bare requests.post.
+    """
+    provider = (os.environ.get("COMIC_LLM_PROVIDER") or "anthropic").strip().lower()
+    if provider in ("", "anthropic"):
+        return call_claude(system, user, max_tokens=max_tokens)
+
+    import llm as LLM  # local import so the Anthropic path needs no extra module
+    client = LLM.LLM(
+        provider=provider,
+        model=(os.environ.get("COMIC_LLM_MODEL") or "").strip() or None,
+    )
+    print(f"script provider: {client.provider} ({client.model})", flush=True)
+    return client.text(user, system=system, max_tokens=max_tokens)
+
+
 def generate(system, user, max_tokens=16000, attempts=3):
     """Call Claude and parse its JSON, retrying on malformed OR missing output.
 
@@ -254,7 +280,7 @@ def generate(system, user, max_tokens=16000, attempts=3):
     last_err = None
     for attempt in range(1, attempts + 1):
         try:
-            text = call_claude(system, user, max_tokens=max_tokens)
+            text = call_model(system, user, max_tokens=max_tokens)
             result = extract_json(text)
             missing = [k for k in ("script", "panel_prompts") if k not in result]
             if missing:

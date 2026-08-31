@@ -89,6 +89,12 @@ jobs:
       - name: Generate script + panel prompts
         if: github.event.inputs.dry_run != 'true'
         env:
+          # Anthropic ran out of credits mid-build and stopped the pipeline dead. Fireworks is
+          # the fallback: pipeline_lib/llm.py caps reasoning_effort and escalates the budget on
+          # truncation, which is what makes glm-5p2 terminate on this prompt. Set
+          # COMIC_LLM_PROVIDER to "anthropic" to switch back once credits are topped up.
+          COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER || 'fireworks' }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CASE: ${{ steps.case.outputs.case }}
           WORKER_URL: ${{ secrets.WORKER_URL }}
