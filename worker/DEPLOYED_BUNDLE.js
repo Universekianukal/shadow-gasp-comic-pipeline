@@ -211,6 +211,18 @@ async function hookStillUrl(env, dd) {
 __name(hookStillUrl, "hookStillUrl");
 __name2(hookStillUrl, "hookStillUrl");
 __name22(hookStillUrl, "hookStillUrl");
+async function dayPublishState(env, dayNum) {
+  try {
+    const st = await (await ghRaw(env, "_pipeline/batch/state.json")).json();
+    const e = st && st.days && st.days[String(dayNum)];
+    return e || null;
+  } catch (err) {
+    return null;
+  }
+}
+__name(dayPublishState, "dayPublishState");
+__name2(dayPublishState, "dayPublishState");
+__name22(dayPublishState, "dayPublishState");
 async function sendHookStill(env, chatId, imgUrl, caption) {
   const r = await fetch(imgUrl, { headers: { "User-Agent": "shadow-gasp-bot" } });
   if (!r.ok) throw new Error(`couldn't fetch the still: ${r.status}`);
@@ -1065,12 +1077,26 @@ Tip: replying directly to a day's hook-request message skips this question.`,
     return;
   }
   if (text.startsWith("/day")) {
-    const dayNum = parseInt(text.slice("/day".length).trim(), 10);
+    const dayArg = text.slice("/day".length).trim();
+    const dayNum = parseInt(dayArg, 10);
+    const forced = /\bforce\b/i.test(dayArg);
     if (!dayNum) {
       await tg(env, "sendMessage", { chat_id: chatId, text: "Usage: /day <N>, e.g. /day 1" });
       return;
     }
     const dd = String(dayNum).padStart(2, "0");
+    if (!forced) {
+      const st = await dayPublishState(env, dayNum);
+      if (st && st.done) {
+        await tg(env, "sendMessage", {
+          chat_id: chatId,
+          text: `✅ Day ${dayNum} is already published${st.case ? ` — "${st.case}"` : ""}.
+
+I haven't armed a hook wait, so replying with a clip here can't re-render or re-upload it. If you really do want to replace its hook video, send \`/day ${dayNum} force\`.`
+        });
+        return;
+      }
+    }
     try {
       const meta = await (await ghRaw(env, `_pipeline/batch/day${dd}/meta.json`)).json();
       const shot1Url = await hookStillUrl(env, dd);
@@ -1244,7 +1270,7 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  \u2014 build a comic (asks pages, then page style)\n/make <case name> | 50  \u2014 build now, explicit page count (skips both pickers, auto style)\n/make  \u2014 auto-pick the next comic case (still asks pages + style)\n\n/gencode <slug> [cap]  \u2014 mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only \u2014 it stops working after their first use.\n/freeclaims <slug>  \u2014 check how many one-time codes have been issued so far\n\n/short  \u2014 auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  \u2014 same, for a specific case\n\n/day <N>  \u2014 get day N's hook still + Flow prompt from the batch\n(reply with the Flow video)  \u2014 commits it, renders + uploads to YouTube automatically\n/publish <N>  \u2014 render + upload day N now\n/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time\n/cancel <N>  \u2014 cancel an in-progress render/publish for day N (only runs dispatched after this shipped)\n/title <N>  \u2014 draft an alt title in a style (Shock/Curiosity/Open-loop/Direct), tap Apply to use it -- only works before this day uploads to YouTube\n\n/trending  \u2014 report-only scan for trending true-crime/horror stories not yet covered (nothing auto-built)\n/retention  \u2014 report-only digest: last 21 days' views/retention/drop-off per video, ranked by retention AND reach separately"
+        text: "Commands:\n/make <case name>  \u2014 build a comic (asks pages, then page style)\n/make <case name> | 50  \u2014 build now, explicit page count (skips both pickers, auto style)\n/make  \u2014 auto-pick the next comic case (still asks pages + style)\n\n/gencode <slug> [cap]  \u2014 mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only \u2014 it stops working after their first use.\n/freeclaims <slug>  \u2014 check how many one-time codes have been issued so far\n\n/short  \u2014 auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  \u2014 same, for a specific case\n\n/day <N>  \u2014 get day N's hook still + Flow prompt from the batch (refuses days already published; add ' force' to override)\n(reply with the Flow video)  \u2014 commits it, renders + uploads to YouTube automatically\n/publish <N>  \u2014 render + upload day N now\n/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time\n/cancel <N>  \u2014 cancel an in-progress render/publish for day N (only runs dispatched after this shipped)\n/title <N>  \u2014 draft an alt title in a style (Shock/Curiosity/Open-loop/Direct), tap Apply to use it -- only works before this day uploads to YouTube\n\n/trending  \u2014 report-only scan for trending true-crime/horror stories not yet covered (nothing auto-built)\n/retention  \u2014 report-only digest: last 21 days' views/retention/drop-off per video, ranked by retention AND reach separately"
       });
     }
     return;
