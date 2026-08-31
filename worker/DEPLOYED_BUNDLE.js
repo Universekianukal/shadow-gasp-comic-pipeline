@@ -212,13 +212,28 @@ __name(hookStillUrl, "hookStillUrl");
 __name2(hookStillUrl, "hookStillUrl");
 __name22(hookStillUrl, "hookStillUrl");
 async function dayPublishState(env, dayNum) {
+  let entry = null;
   try {
     const st = await (await ghRaw(env, "_pipeline/batch/state.json")).json();
-    const e = st && st.days && st.days[String(dayNum)];
-    return e || null;
+    entry = st && st.days && st.days[String(dayNum)] || null;
   } catch (err) {
     return null;
   }
+  if (!entry || !entry.done) return null;
+  // state.json's `done` means "the build finished", NOT "it is live". A day can
+  // be done and still be parked in the queue -- day 53 is done:true but held
+  // for a hook-clip replacement, and refusing that would block the one thing
+  // it needs. Only treat a day as untouchable if the queue agrees it shipped.
+  let queueStatus = null;
+  try {
+    const q = await (await ghRaw(env, "_pipeline/batch/queue.json")).json();
+    const qe = q && q[String(dayNum)];
+    queueStatus = qe && qe.status || null;
+  } catch (err) {
+    queueStatus = null;
+  }
+  if (queueStatus && queueStatus !== "published") return null;
+  return { ...entry, queueStatus };
 }
 __name(dayPublishState, "dayPublishState");
 __name2(dayPublishState, "dayPublishState");
