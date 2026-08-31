@@ -2,3 +2,9 @@ cases/
 .wrangler/
 worker/.wrangler/
 node_modules/
+
+# LoRA training scratch. Untracked but explicitly ignored: several files here embed a LIVE
+# Hugging Face token (Kaggle kernels need it inline, the Secrets API does not work for
+# API-pushed kernels), and this repo is PUBLIC for the free Actions minutes. One stray
+# `git add -A` would publish the credential.
+lora-training/

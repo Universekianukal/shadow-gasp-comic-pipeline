@@ -4,6 +4,14 @@ permissions:
   contents: write
 
 on:
+  # Daily draft. 22:30 UTC = 04:00 IST next day, chosen so the Telegram draft is
+  # waiting in the morning. GitHub's scheduled runs are best-effort and this repo
+  # has seen ~75 minutes of queue lag, so treat the arrival time as "early morning",
+  # not a clock guarantee. Auto-picked case, default page count; a missed day is
+  # harmless because pick_case.py takes the next unused case from the ledger.
+  schedule:
+    - cron: "30 22 * * *"
+
   workflow_dispatch:
     inputs:
       case:
@@ -78,7 +86,21 @@ jobs:
           SLUG=$(echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40)
           mkdir -p cases/$SLUG/panels
           echo "slug=$SLUG" >> "$GITHUB_ENV"
-          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages }}"
+          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages || '25' }}"
+
+      # Solve the page layout BEFORE any art is generated, and write each panel's real
+      # target_px back onto its prompt. Without this, gen_flux_kaggle falls back to one fixed
+      # size per shape name (LANDSCAPE is always 1280x720), while the page solver derives a
+      # cell's actual aspect from its tier and neighbours. The mismatch is what leaves empty
+      # space in finished pages and forces panels to be regenerated on Kaggle -- the single
+      # biggest source of wasted GPU time on the Heaven's Gate build.
+      - name: Fit panel sizes to the page layout
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          python pipeline_lib/spec_panels.py \
+            --script cases/${{ env.slug }}/script_issue01.json \
+            --prompts cases/${{ env.slug }}/panel_prompts.json \
+            --sheet cases/${{ env.slug }}/spec_panels.md
 
       - name: Generate FLUX art on Kaggle
         if: github.event.inputs.dry_run != 'true'
@@ -115,7 +137,7 @@ jobs:
             --case-dir cases/${{ env.slug }} \
             --case-id "${{ env.slug }}" \
             --title "${{ steps.case.outputs.case }}" \
-            --target-pages "${{ github.event.inputs.target_pages }}"
+            --target-pages "${{ github.event.inputs.target_pages || '25' }}"
 
       - name: Commit ONLY the dedup ledger back to repo (never the comic content)
         if: always()

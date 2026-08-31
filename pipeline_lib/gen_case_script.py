@@ -4,9 +4,19 @@ SHADOW GASP issue 01 (NORJAK / D.B. Cooper):
 
   - 25+ genuinely substantive story pages (mix of "splash" and "grid" page
     types), not padding — each page should carry a real fact/beat.
-  - Every FLUX image prompt must explicitly forbid text/signage/newspapers/
-    posters/book titles, learned the hard way: FLUX hallucinates garbled
-    fake text whenever a scene implies anything readable exists in it.
+  - Every FLUX image prompt must OMIT text-bearing objects rather than forbid
+    them. ⚠️ REVERSED 2026-08-31 after measuring it: the old rule here said to
+    "explicitly forbid text/signage/newspapers/posters/book titles", and that
+    instruction was itself the cause of the garbled text it was meant to stop.
+    FLUX has no negative prompt, so the banned nouns were read as things to
+    draw. Proof: on Heaven's Gate, an A/B at fixed seed gave "MERSIOT" /
+    "R IACE UNISEJUTY" / "FRCFR" WITH the ban sentence and clean blank
+    surfaces WITHOUT it -- while 2000 steps of LoRA training aimed at the same
+    defect changed nothing. The ban also overflowed CLIP's 77-token limit, so
+    only T5 ever saw it. Same bug existed a second time in generate_panels.py's
+    anti-matte clause ("no frame, no border, no keyline, no matte"), which was
+    producing the mattes it banned: removing it took that book from 30 matted
+    panels to 0 exhausted re-rolls.
 
 Usage:
     CASE="..." python gen_case_script.py --out-dir path/to/case/comic
@@ -15,7 +25,13 @@ import argparse
 import json
 import os
 import re
+import sys
 import urllib.request
+
+# The workflow invokes this as `python pipeline_lib/gen_case_script.py` from the repo root, so
+# pipeline_lib is NOT on sys.path and a bare import would fail -- at 04:00, unattended.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import layout_profiles  # noqa: E402
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 MODEL = "claude-sonnet-5"
@@ -154,8 +170,10 @@ promo text, so it must read at a glance and not compete with type), each:
 REQUIREMENTS for every prompt:
 - Start with: "Noir true-crime comic panel, ink outlines, halftone shading, [era] palette."
 - Describe the scene concretely: named location type (INTERIOR/EXTERIOR + room/setting), who's in it, what's happening, matching the shape's framing.
-- NEVER include or imply any of: newspapers, headlines, signs, storefront signage, banners, posters, book titles, wanted posters, marquees, labels, gauges with markings, currency serial numbers, map annotations, dialogue bubbles, or any other element that implies readable text exists in the scene.
-- ALWAYS end with this exact sentence: "Absolutely no text, no letters, no writing, no readable words anywhere in the image — every surface is blank or too weathered/blurred to read."
+- NEVER include or imply any of: newspapers, headlines, signs, storefront signage, banners, posters, book titles, wanted posters, marquees, labels, gauges with markings, currency serial numbers, map annotations, dialogue bubbles, or any other element that implies readable text exists in the scene. (This rule is for YOU, when choosing what to put in the scene. Do not repeat the list inside the prompt itself -- see the next rule for why.)
+- ALWAYS end with this exact sentence: "All visible surfaces are smooth and unmarked."
+- NEVER write a negative instruction into the prompt -- no "no text", no "without lettering", no "avoid signs". FLUX has no negative prompt: the image model reads every noun you write as a thing to DRAW, so "no lettering on signs, banners, posters" reliably produces signs, banners and posters covered in garbled letters. This was measured, not assumed: an A/B on known-bad panels with the same seed produced "MERSIOT"/"FRCFR"/"CTIVPLIN" with the negation sentence and no letterforms at all without it. State what IS there, positively, and simply omit the objects you do not want.
+- KEEP EACH PROMPT UNDER ABOUT 60 WORDS. CLIP, one of FLUX's two text encoders, truncates at 77 tokens. Anything past that is seen only by T5 -- which is how the old trailing ban ended up invisible to half the model while still summoning the objects it named.
 """
 
 
@@ -282,13 +300,24 @@ def main():
         # not panel count, was ever enforced. +50 buffer on top of the bare
         # floor (user's call) so there's real surplus to cut weaker panels
         # from during art-directing, not just exactly enough.
-        target_panels = round(args.target_pages * 2.2) + 50
+        # Panel budget follows the issue's layout profile, floored at the original 2.2/page so a
+        # profile can never argue the book down below the density that floor was protecting.
+        _prof = layout_profiles.profile_for(args.case_id or args.case)
+        _per_page = max(2.2, layout_profiles.avg_panels_per_page(_prof))
+        target_panels = round(args.target_pages * _per_page) + 50
         schema_spec = (SCHEMA_SPEC_TEMPLATE
                         .replace("__TARGET_PAGES__", str(args.target_pages))
                         .replace("__TARGET_PANELS__", str(target_panels)))
+        # Per-issue page architecture. Without this every comic in the catalogue shares one
+        # rhythm and the series reads as a template -- the previous issue came out ~85%
+        # two-panel pages. The profile is derived from the case id, so it is stable across
+        # re-runs of the same case and different between neighbouring cases.
+        layout_block = layout_profiles.prompt_block(args.case_id or args.case)
+        print(layout_block, flush=True)
+
         user = (
             f"Case: {args.case}\nIssue number: {args.issue_no}\n\n"
-            f"{schema_spec}\n\nWrite the full comic now for this case."
+            f"{layout_block}\n{schema_spec}\n\nWrite the full comic now for this case."
         )
 
         # 16000 was sized for the 25pp default and silently starved a 75pp
@@ -310,6 +339,17 @@ def main():
         json.dump(result["panel_prompts"], f, indent=2, ensure_ascii=False)
 
     n_pages = len(result["script"]["pages"])
+    # Measure what actually came back against the profile. A distribution stated only in prose
+    # is not enforced anywhere -- that is exactly how "59% two-panel" became ~85% two-panel on
+    # the last issue. This does not block the build; it makes the drift visible in the log so a
+    # bad rhythm is caught before 25 pages of art get generated from it.
+    ok, report = layout_profiles.audit(result["script"], args.case_id or args.case)
+    print("\n".join(report), flush=True)
+    if not ok:
+        print("WARNING: page-type mix is off target for this profile (see above). The art will "
+              "still build; re-run the script step if the rhythm matters for this issue.",
+              flush=True)
+
     n_panels = len(result["panel_prompts"])
     print(f"Wrote {script_path} ({n_pages} story pages) and {prompts_path} ({n_panels} panels)")
     if n_pages < args.target_pages:

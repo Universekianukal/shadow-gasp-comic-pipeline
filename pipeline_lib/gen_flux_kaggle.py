@@ -68,10 +68,30 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     os.makedirs(kernel_dir, exist_ok=True)
     os.makedirs(panels_dir, exist_ok=True)
 
+    # ⚠️ Prefer the LAYOUT-DERIVED size over the nominal shape.
+    #
+    # DIMS is one fixed size per shape name -- LANDSCAPE is always 1280x720 (aspect 1.78). But
+    # the page solver in build_comic.py decides a cell's real aspect from the composition: how
+    # many panels share the tier, the neighbours' aspects, and how solve_rows water-filled the
+    # heights. A "LANDSCAPE" panel sharing a three-panel tier may need aspect ~1.1. When the art
+    # does not match its cell, build_comic crops (capped at MAX_CROP=0.10) or leaves the cell
+    # short -- the empty space that has repeatedly forced panels to be regenerated on Kaggle.
+    #
+    # spec_panels.py solves the layout first and writes target_px/target_aspect back onto each
+    # prompt entry. When that step has run, generate at exactly that size and the art fits the
+    # page by construction. DIMS stays as the fallback for prompts that were never annotated.
     panels_for_kernel = []
+    fitted = 0
     for p in panels:
-        w, h = DIMS[p["shape"]]
+        tp = p.get("target_px")
+        if isinstance(tp, (list, tuple)) and len(tp) == 2 and all(isinstance(v, int) for v in tp):
+            w, h = tp
+            fitted += 1
+        else:
+            w, h = DIMS[p["shape"]]
         panels_for_kernel.append({"out": p["file"].replace("/", "_"), "w": w, "h": h, "prompt": p["prompt"]})
+    print(f"panel sizing: {fitted}/{len(panels)} from layout (target_px), "
+          f"{len(panels) - fitted} from nominal shape", flush=True)
 
     hf_token = os.environ.get("HF_TOKEN", "")
     code = KERNEL_TEMPLATE.format(
@@ -82,6 +102,13 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         "id": kernel_id, "title": slug, "code_file": "gen_flux.py", "language": "python",
         "kernel_type": "script", "is_private": True, "enable_gpu": True, "enable_internet": True,
         "dataset_sources": [], "competition_sources": [], "kernel_sources": [],
+        # enable_gpu alone gets whatever card is free, which is usually a P100 (sm_60).
+        # This kernel loads the transformer and T5 in bitsandbytes NF4, and Pascal has no
+        # tensor cores -- every 4-bit matmul dequantises and runs unaccelerated, which is
+        # the difference between ~36s and several minutes per panel. Name the T4 explicitly.
+        # (Undocumented enum; "NvidiaTeslaT4" is the value that works, and a wrong value is
+        # silently ignored rather than erroring -- so verify the card in the kernel log.)
+        "machine_shape": "NvidiaTeslaT4",
     }, open(os.path.join(kernel_dir, "kernel-metadata.json"), "w"), indent=2)
 
     # No timeout here used to mean a stalled/hung `kaggle` CLI call (network
