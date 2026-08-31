@@ -6,6 +6,8 @@ var __defProp2 = Object.defineProperty;
 var __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, "name", { value, configurable: true }), "__name");
 var __defProp22 = Object.defineProperty;
 var __name22 = /* @__PURE__ */ __name2((target, value) => __defProp22(target, "name", { value, configurable: true }), "__name");
+var __defProp222 = Object.defineProperty;
+var __name222 = /* @__PURE__ */ __name22((target, value) => __defProp222(target, "name", { value, configurable: true }), "__name");
 var GITHUB_REPO = "Universekianukal/shadow-gasp-comic-pipeline";
 var VIDEO_REPO = "Universekianukal/shadow-gasp-pipeline";
 async function tg(env, method, params) {
@@ -24,7 +26,7 @@ async function tg(env, method, params) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `❌ Telegram refused ${method}: ${body.description || body.error_code}`
+          text: `\u274C Telegram refused ${method}: ${body.description || body.error_code}`
         })
       });
     }
@@ -34,6 +36,7 @@ async function tg(env, method, params) {
 __name(tg, "tg");
 __name2(tg, "tg");
 __name22(tg, "tg");
+__name222(tg, "tg");
 async function dispatchAction(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/action.yml/dispatches`,
@@ -54,6 +57,7 @@ async function dispatchAction(env, inputs) {
 __name(dispatchAction, "dispatchAction");
 __name2(dispatchAction, "dispatchAction");
 __name22(dispatchAction, "dispatchAction");
+__name222(dispatchAction, "dispatchAction");
 async function dispatchPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -72,6 +76,7 @@ async function dispatchPipeline(env, inputs) {
 __name(dispatchPipeline, "dispatchPipeline");
 __name2(dispatchPipeline, "dispatchPipeline");
 __name22(dispatchPipeline, "dispatchPipeline");
+__name222(dispatchPipeline, "dispatchPipeline");
 async function dispatchGenCode(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/gen_code.yml/dispatches`,
@@ -90,6 +95,7 @@ async function dispatchGenCode(env, inputs) {
 __name(dispatchGenCode, "dispatchGenCode");
 __name2(dispatchGenCode, "dispatchGenCode");
 __name22(dispatchGenCode, "dispatchGenCode");
+__name222(dispatchGenCode, "dispatchGenCode");
 async function dispatchVideoPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -108,9 +114,10 @@ async function dispatchVideoPipeline(env, inputs) {
 __name(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name2(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name22(dispatchVideoPipeline, "dispatchVideoPipeline");
-var sleep = /* @__PURE__ */ __name22((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
+__name222(dispatchVideoPipeline, "dispatchVideoPipeline");
+var sleep = /* @__PURE__ */ __name222((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
 async function dispatchWorkflowVerified(env, workflowFile, inputs) {
-  const dispatchOnce = /* @__PURE__ */ __name22(async () => {
+  const dispatchOnce = /* @__PURE__ */ __name222(async () => {
     const beforeMs2 = Date.now();
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/dispatches`,
@@ -127,7 +134,7 @@ async function dispatchWorkflowVerified(env, workflowFile, inputs) {
     if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
     return beforeMs2;
   }, "dispatchOnce");
-  const runAppeared = /* @__PURE__ */ __name22(async (afterMs) => {
+  const runAppeared = /* @__PURE__ */ __name222(async (afterMs) => {
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5`,
       { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
@@ -147,18 +154,21 @@ async function dispatchWorkflowVerified(env, workflowFile, inputs) {
 __name(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name2(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name22(dispatchWorkflowVerified, "dispatchWorkflowVerified");
+__name222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 async function dispatchFinishBatchDay(env, inputs) {
   return dispatchWorkflowVerified(env, "finish_batch_day.yml", inputs);
 }
 __name(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name2(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name22(dispatchFinishBatchDay, "dispatchFinishBatchDay");
+__name222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 async function dispatchBatchPregen(env, inputs) {
   return dispatchWorkflowVerified(env, "batch_pregen.yml", inputs);
 }
 __name(dispatchBatchPregen, "dispatchBatchPregen");
 __name2(dispatchBatchPregen, "dispatchBatchPregen");
 __name22(dispatchBatchPregen, "dispatchBatchPregen");
+__name222(dispatchBatchPregen, "dispatchBatchPregen");
 function pregenKeyboard() {
   return {
     inline_keyboard: [
@@ -170,6 +180,7 @@ function pregenKeyboard() {
 __name(pregenKeyboard, "pregenKeyboard");
 __name2(pregenKeyboard, "pregenKeyboard");
 __name22(pregenKeyboard, "pregenKeyboard");
+__name222(pregenKeyboard, "pregenKeyboard");
 async function ghRaw(env, path) {
   const r = await fetch(`https://raw.githubusercontent.com/${VIDEO_REPO}/main/${path}`, {
     headers: { "User-Agent": "shadow-gasp-bot" }
@@ -180,6 +191,7 @@ async function ghRaw(env, path) {
 __name(ghRaw, "ghRaw");
 __name2(ghRaw, "ghRaw");
 __name22(ghRaw, "ghRaw");
+__name222(ghRaw, "ghRaw");
 async function hookStillUrl(env, dd) {
   const candidates = [
     `_pipeline/batch/day${dd}/shot1.jpeg`,
@@ -199,12 +211,14 @@ async function hookStillUrl(env, dd) {
 __name(hookStillUrl, "hookStillUrl");
 __name2(hookStillUrl, "hookStillUrl");
 __name22(hookStillUrl, "hookStillUrl");
+__name222(hookStillUrl, "hookStillUrl");
 async function dispatchCrosspostDecision(env, inputs) {
   return dispatchWorkflowVerified(env, "crosspost_decision.yml", inputs);
 }
 __name(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name2(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name22(dispatchCrosspostDecision, "dispatchCrosspostDecision");
+__name222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 function fbIgDecisionKeyboard(day) {
   return {
     inline_keyboard: [
@@ -222,6 +236,7 @@ function fbIgDecisionKeyboard(day) {
 __name(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name2(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name22(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
+__name222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 async function dispatchGenerateTitleVariant(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/generate_title_variant.yml/dispatches`,
@@ -240,6 +255,7 @@ async function dispatchGenerateTitleVariant(env, inputs) {
 __name(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name2(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name22(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
+__name222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 async function dispatchRetitlePublished(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/retitle_published.yml/dispatches`,
@@ -258,6 +274,7 @@ async function dispatchRetitlePublished(env, inputs) {
 __name(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name2(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name22(dispatchRetitlePublished, "dispatchRetitlePublished");
+__name222(dispatchRetitlePublished, "dispatchRetitlePublished");
 function titleStyleKeyboard(day) {
   return {
     inline_keyboard: [
@@ -275,6 +292,7 @@ function titleStyleKeyboard(day) {
 __name(titleStyleKeyboard, "titleStyleKeyboard");
 __name2(titleStyleKeyboard, "titleStyleKeyboard");
 __name22(titleStyleKeyboard, "titleStyleKeyboard");
+__name222(titleStyleKeyboard, "titleStyleKeyboard");
 function titleDraftKeyboard(day, style) {
   return {
     inline_keyboard: [
@@ -292,6 +310,7 @@ function titleDraftKeyboard(day, style) {
 __name(titleDraftKeyboard, "titleDraftKeyboard");
 __name2(titleDraftKeyboard, "titleDraftKeyboard");
 __name22(titleDraftKeyboard, "titleDraftKeyboard");
+__name222(titleDraftKeyboard, "titleDraftKeyboard");
 async function getCurrentTitle(env, dayNum) {
   const dayDir = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}`;
   const overrideR = await fetch(
@@ -323,6 +342,7 @@ async function getCurrentTitle(env, dayNum) {
 __name(getCurrentTitle, "getCurrentTitle");
 __name2(getCurrentTitle, "getCurrentTitle");
 __name22(getCurrentTitle, "getCurrentTitle");
+__name222(getCurrentTitle, "getCurrentTitle");
 async function commitTitleOverride(env, dayNum, title, tags) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/TITLE_OVERRIDE.json`;
   let sha;
@@ -352,6 +372,7 @@ async function commitTitleOverride(env, dayNum, title, tags) {
 __name(commitTitleOverride, "commitTitleOverride");
 __name2(commitTitleOverride, "commitTitleOverride");
 __name22(commitTitleOverride, "commitTitleOverride");
+__name222(commitTitleOverride, "commitTitleOverride");
 async function commitHookVideo(env, dayNum, videoBytes) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/images/seq/01.mp4`;
   let sha;
@@ -386,6 +407,7 @@ async function commitHookVideo(env, dayNum, videoBytes) {
 __name(commitHookVideo, "commitHookVideo");
 __name2(commitHookVideo, "commitHookVideo");
 __name22(commitHookVideo, "commitHookVideo");
+__name222(commitHookVideo, "commitHookVideo");
 async function queueDayForScheduledPublish(env, dayNum, chatId) {
   const path = "_pipeline/batch/queue.json";
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -425,6 +447,7 @@ async function queueDayForScheduledPublish(env, dayNum, chatId) {
 __name(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name2(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name22(queueDayForScheduledPublish, "queueDayForScheduledPublish");
+__name222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 function describeNextIST(hh, mm) {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -442,6 +465,7 @@ function describeNextIST(hh, mm) {
 __name(describeNextIST, "describeNextIST");
 __name2(describeNextIST, "describeNextIST");
 __name22(describeNextIST, "describeNextIST");
+__name222(describeNextIST, "describeNextIST");
 function nextDayFiveFifteenIST() {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -459,6 +483,7 @@ function nextDayFiveFifteenIST() {
 __name(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name2(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name22(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
+__name222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 function istTimeToPublishAt(hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -482,6 +507,7 @@ function istTimeToPublishAt(hhmm) {
 __name(istTimeToPublishAt, "istTimeToPublishAt");
 __name2(istTimeToPublishAt, "istTimeToPublishAt");
 __name22(istTimeToPublishAt, "istTimeToPublishAt");
+__name222(istTimeToPublishAt, "istTimeToPublishAt");
 function istDateTimeToPublishAt(dd, mm, yyyy, hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return { error: `Couldn't parse time "${hhmm}" \u2014 use HH:MM` };
@@ -504,6 +530,7 @@ function istDateTimeToPublishAt(dd, mm, yyyy, hhmm) {
 __name(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name2(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name22(istDateTimeToPublishAt, "istDateTimeToPublishAt");
+__name222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 function hookGateKeyboard(runId) {
   return {
     inline_keyboard: [[
@@ -515,6 +542,7 @@ function hookGateKeyboard(runId) {
 __name(hookGateKeyboard, "hookGateKeyboard");
 __name2(hookGateKeyboard, "hookGateKeyboard");
 __name22(hookGateKeyboard, "hookGateKeyboard");
+__name222(hookGateKeyboard, "hookGateKeyboard");
 function approvalKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -527,6 +555,7 @@ function approvalKeyboard(token) {
 __name(approvalKeyboard, "approvalKeyboard");
 __name2(approvalKeyboard, "approvalKeyboard");
 __name22(approvalKeyboard, "approvalKeyboard");
+__name222(approvalKeyboard, "approvalKeyboard");
 var PAGE_PRICE_TIERS = { 20: "0", 25: "2.99", 35: "3.99", 50: "4.99", 75: "6.99", 100: "8.99" };
 function priceLabel(n) {
   return PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`;
@@ -534,6 +563,7 @@ function priceLabel(n) {
 __name(priceLabel, "priceLabel");
 __name2(priceLabel, "priceLabel");
 __name22(priceLabel, "priceLabel");
+__name222(priceLabel, "priceLabel");
 function makePageCountKeyboard() {
   return {
     inline_keyboard: [[20, 25, 35, 50, 75, 100].map((n) => ({
@@ -545,6 +575,7 @@ function makePageCountKeyboard() {
 __name(makePageCountKeyboard, "makePageCountKeyboard");
 __name2(makePageCountKeyboard, "makePageCountKeyboard");
 __name22(makePageCountKeyboard, "makePageCountKeyboard");
+__name222(makePageCountKeyboard, "makePageCountKeyboard");
 var STYLE_BUTTONS = [
   ["cinematic", "\u{1F3AC}"],
   ["mosaic", "\u{1F9E9}"],
@@ -554,7 +585,7 @@ var STYLE_BUTTONS = [
   ["documentary", "\u{1F4C1}"]
 ];
 function makeStyleKeyboard() {
-  const btn = /* @__PURE__ */ __name(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
+  const btn = /* @__PURE__ */ __name2(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
   return {
     inline_keyboard: [
       STYLE_BUTTONS.slice(0, 3).map(btn),
@@ -566,6 +597,7 @@ function makeStyleKeyboard() {
 __name(makeStyleKeyboard, "makeStyleKeyboard");
 __name2(makeStyleKeyboard, "makeStyleKeyboard");
 __name22(makeStyleKeyboard, "makeStyleKeyboard");
+__name222(makeStyleKeyboard, "makeStyleKeyboard");
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
@@ -577,6 +609,7 @@ function pageCountKeyboard(token) {
 __name(pageCountKeyboard, "pageCountKeyboard");
 __name2(pageCountKeyboard, "pageCountKeyboard");
 __name22(pageCountKeyboard, "pageCountKeyboard");
+__name222(pageCountKeyboard, "pageCountKeyboard");
 function confirmPublishKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -588,6 +621,7 @@ function confirmPublishKeyboard(token) {
 __name(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name2(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name22(confirmPublishKeyboard, "confirmPublishKeyboard");
+__name222(confirmPublishKeyboard, "confirmPublishKeyboard");
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -896,6 +930,7 @@ Confirm to go LIVE, or Cancel to back out.`,
 __name(handleCallback, "handleCallback");
 __name2(handleCallback, "handleCallback");
 __name22(handleCallback, "handleCallback");
+__name222(handleCallback, "handleCallback");
 async function acceptHookClip(env, chatId, dayNum, fileId) {
   dayNum = String(dayNum);
   await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it \u2014 committing as day ${dayNum}'s hook video, then queuing it for the scheduled 04:30/05:15 IST render+publish slot. I'll confirm here once it's live.` });
@@ -927,6 +962,7 @@ Want a different title than the AI-generated one? Tap below -- only works before
   }
 }
 __name(acceptHookClip, "acceptHookClip");
+__name2(acceptHookClip, "acceptHookClip");
 async function handleMessage(env, msg) {
   const text = (msg.text || "").trim();
   const chatId = msg.chat.id;
@@ -1227,6 +1263,7 @@ This takes a while (script \u2192 art \u2192 OCR check \u2192 PDF). You'll get t
 __name(handleMessage, "handleMessage");
 __name2(handleMessage, "handleMessage");
 __name22(handleMessage, "handleMessage");
+__name222(handleMessage, "handleMessage");
 async function sendApprovalMessage(env, { token, caseName, productId, title }) {
   return tg(env, "sendMessage", {
     chat_id: env.TELEGRAM_CHAT_ID,
@@ -1237,6 +1274,7 @@ async function sendApprovalMessage(env, { token, caseName, productId, title }) {
 __name(sendApprovalMessage, "sendApprovalMessage");
 __name2(sendApprovalMessage, "sendApprovalMessage");
 __name22(sendApprovalMessage, "sendApprovalMessage");
+__name222(sendApprovalMessage, "sendApprovalMessage");
 async function sweepExpiredHookWaits(env) {
   const list = await env.PENDING.list({ prefix: "awaiting_short_hook:" });
   for (const key of list.keys) {
@@ -1273,6 +1311,7 @@ async function sweepExpiredHookWaits(env) {
 __name(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name22(sweepExpiredHookWaits, "sweepExpiredHookWaits");
+__name222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
