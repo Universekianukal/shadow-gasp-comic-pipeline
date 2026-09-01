@@ -1555,7 +1555,11 @@ var worker_default = {
       if (!key || !script || !panel_prompts) {
         return new Response("missing fields", { status: 400 });
       }
-      await env.PENDING.put(`script_cache:${key}`, JSON.stringify({ script, panel_prompts }), { expirationTtl: 604800 });
+      // No TTL. This was 7 days, on the assumption the cache only had to survive a same-week
+      // retry -- but cases/ is deleted after every run and the repo is public, so KV is the
+      // ONLY durable copy of a script that costs real money to produce. An expiry here means
+      // silently losing it. A script is a few hundred KB against a 1GB namespace.
+      await env.PENDING.put(`script_cache:${key}`, JSON.stringify({ script, panel_prompts }));
       return new Response("ok", { status: 200 });
     }
     if (request.method === "POST" && url.pathname === "/script-cache/get") {

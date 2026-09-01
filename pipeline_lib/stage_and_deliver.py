@@ -307,6 +307,36 @@ def main():
         raise SystemExit(f"Telegram send failed: {result}")
     print(f"Delivered PDF to Telegram, message_id={result['result']['message_id']}")
 
+    # A second, independent copy of the script itself.
+    #
+    # The script is the expensive artefact -- it costs a real API call and it is what every
+    # rebuild and every art regeneration is derived from. Until now it lived in exactly two
+    # places, both of which lose it: cases/, which is rm -rf'd at the end of every run, and the
+    # Worker's KV, which is private but was expiring. It is never committed, because this repo
+    # is public and the script IS the product. Shipping it to the same private Telegram chat
+    # that already receives the PDF costs nothing and means a script can never be lost to an
+    # infrastructure failure.
+    try:
+        pp_path = os.path.join(comic_dir, "panel_prompts.json")
+        bundle = os.path.join(comic_dir, f"{args.case_id}_script_bundle.json")
+        with open(bundle, "w", encoding="utf-8") as f:
+            json.dump({"case": args.title, "case_id": args.case_id,
+                       "target_pages": args.target_pages, "video_id": args.video_id,
+                       "script": script,
+                       "panel_prompts": json.load(open(pp_path, encoding="utf-8"))
+                       if os.path.exists(pp_path) else None},
+                      f, ensure_ascii=False, indent=2)
+        r2 = telegram_send_document(
+            bot_token, chat_id, bundle,
+            caption=f"{args.title} — script + panel prompts (rebuild from this without paying "
+                    f"for generation again)")
+        print("Delivered script bundle to Telegram" if r2.get("ok")
+              else f"WARNING: script bundle send failed: {r2}")
+    except Exception as e:
+        # Never fatal: the comic itself already shipped, and losing the backup copy must not
+        # fail a build that otherwise succeeded.
+        print(f"WARNING: could not deliver the script bundle ({e}) -- not fatal")
+
     approval_token = secrets.token_urlsafe(8)
     register_with_worker(
         worker_url=os.environ["WORKER_URL"],
