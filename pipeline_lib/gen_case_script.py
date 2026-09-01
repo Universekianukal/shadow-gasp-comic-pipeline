@@ -256,6 +256,9 @@ def call_model(system, user, max_tokens=16000):
     import llm as LLM  # local import so the Anthropic path needs no extra module
     client = LLM.LLM(
         provider=provider,
+        # generate() already retries this call 3x. Leaving llm.py's own 4x in place made one
+        # timeout cost 12 attempts and ~2 hours of runner time before failing.
+        max_retries=1,
         model=(os.environ.get("COMIC_LLM_MODEL") or "").strip() or None,
     )
     print(f"script provider: {client.provider} ({client.model})", flush=True)

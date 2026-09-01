@@ -193,7 +193,9 @@ class LLM:
             f"{base}/chat/completions",
             headers={"Authorization": f"Bearer {key}",
                      "content-type": "application/json"},
-            json=payload, timeout=600)
+            # 600s was not enough for a 150-panel comic script: CI hit a read timeout on every
+            # attempt while the same call finished locally in under 20 minutes.
+            json=payload, timeout=1800)
         _raise_for_status(r)
         data = r.json()
         try:
