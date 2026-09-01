@@ -6,6 +6,7 @@ secrets) -- kaggle==2.2.2's CLI auths via KAGGLE_API_TOKEN, not the legacy
 KAGGLE_USERNAME/KAGGLE_KEY pair (see pipeline.yml's Kaggle-auth comment).
 """
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -44,6 +45,7 @@ pipe.enable_model_cpu_offload()
 print("PIPE READY", flush=True)
 
 PANELS = {panels_json}
+open("/kaggle/working/_prompts_fp.txt","w").write("{prompts_fp}")
 
 for i, p in enumerate(PANELS):
     name, w, h, prompt = p["out"], p["w"], p["h"], p["prompt"]
@@ -58,6 +60,37 @@ for i, p in enumerate(PANELS):
     torch.cuda.empty_cache()
 print("ALL DONE", flush=True)
 '''
+
+
+def build_panels_for_kernel(panels):
+    """The exact {out,w,h,prompt} list the kernel renders from.
+
+    Shared by run_batch and the recovery fingerprint so both sides agree byte for byte -- if
+    they disagree about a fallback size, the fingerprint never matches and recovery silently
+    never fires.
+    """
+    out = []
+    for p in panels:
+        tp = p.get("target_px")
+        if isinstance(tp, (list, tuple)) and len(tp) == 2 and all(isinstance(v, int) for v in tp):
+            w, h = tp
+        else:
+            w, h = DIMS[p["shape"]]
+        out.append({"out": p["file"].replace("/", "_"), "w": w, "h": h, "prompt": p["prompt"]})
+    return out
+
+
+def prompts_fingerprint(panels_for_kernel):
+    """Identity of the exact prompt set some art was rendered from.
+
+    Panel FILENAMES are positional (p04_1.jpg), so they collide across two different scripts for
+    the same case. Recovering art by filename alone would therefore drop script A's pictures
+    under script B's captions -- structurally valid, silently wrong, and invisible to the OCR
+    gate. The fingerprint is what makes recovery safe: art is only reused when it was rendered
+    from byte-identical prompts.
+    """
+    blob = json.dumps(panels_for_kernel, sort_keys=True).encode("utf-8")
+    return hashlib.sha1(blob).hexdigest()
 
 
 def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
@@ -97,6 +130,7 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     hf_token = os.environ.get("HF_TOKEN", "")
     code = KERNEL_TEMPLATE.format(
         panels_json=json.dumps(panels_for_kernel), hf_token=hf_token, seed_base=seed_base,
+        prompts_fp=prompts_fingerprint(panels_for_kernel),
     )
     open(os.path.join(kernel_dir, "gen_flux.py"), "w", encoding="utf-8").write(code)
     json.dump({
@@ -206,6 +240,15 @@ def recover_from_previous_kernel(user, slug, prompts, panels_dir):
                        check=True, timeout=1800)
     except Exception as e:
         print(f"  recovery download failed ({e}) -- generating from scratch", flush=True)
+        return
+
+    want = prompts_fingerprint(build_panels_for_kernel(prompts))
+    fp_path = os.path.join(out_dir, "_prompts_fp.txt")
+    got = open(fp_path).read().strip() if os.path.exists(fp_path) else ""
+    if got != want:
+        print("  previous kernel was rendered from a DIFFERENT script "
+              f"(fingerprint {got[:8] or 'absent'} != {want[:8]}) -- regenerating rather than "
+              "putting the old art under new captions", flush=True)
         return
 
     os.makedirs(panels_dir, exist_ok=True)
