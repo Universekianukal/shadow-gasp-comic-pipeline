@@ -204,6 +204,18 @@ REQUIREMENTS for every prompt:
 """
 
 
+# Sliced, not copied, so the art-direction rules can never drift between the one-call path and
+# the split path -- including the mandatory contrast clause the shipped books rely on.
+STYLE_RULES = SCHEMA_SPEC_TEMPLATE[SCHEMA_SPEC_TEMPLATE.index("REQUIREMENTS for every prompt:"):]
+
+PROMPT_SYSTEM = (
+    "You write FLUX image prompts for SHADOW GASP, a documentary true-crime comic series. "
+    "You are given a fixed list of panels with their shapes and the caption each will carry. "
+    "Write one prompt per panel, matching the panel's shape and depicting what its caption "
+    "describes. Return valid JSON only -- no markdown fences, no commentary."
+)
+
+
 def call_claude(system, user, max_tokens=16000):
     """Stream the response instead of waiting for one big blocking read.
 
@@ -304,7 +316,7 @@ def extract_json(text):
         raise
 
 
-def call_model(system, user, max_tokens=16000):
+def call_model(system, user, max_tokens=16000, provider=None):
     """Route the script call to whichever provider is configured.
 
     Anthropic stays the default because it wrote every issue so far. The escape hatch exists
@@ -316,7 +328,8 @@ def call_model(system, user, max_tokens=16000):
     token budget thinking and returning empty content. It caps reasoning_effort and escalates
     the budget on truncation. Do not replace it with a bare requests.post.
     """
-    provider = (os.environ.get("COMIC_LLM_PROVIDER") or "anthropic").strip().lower()
+    provider = (provider or os.environ.get("COMIC_LLM_PROVIDER")
+                or "anthropic").strip().lower()
     if provider in ("", "anthropic"):
         return call_claude(system, user, max_tokens=max_tokens)
 
@@ -330,6 +343,88 @@ def call_model(system, user, max_tokens=16000):
     )
     print(f"script provider: {client.provider} ({client.model})", flush=True)
     return client.text(user, system=system, max_tokens=max_tokens)
+
+
+EXTRA_FILES = [("promo_bg.jpg", "SQUARE"), ("store_banner.jpg", "LANDSCAPE"),
+               ("store_thumb.jpg", "SQUARE")]
+
+
+def panels_from_script(script):
+    """Every image the book needs, in page order, with the context a prompt writer needs.
+
+    This is the CONTRACT between the two calls. The prompt writer never invents a filename --
+    it is handed this list and must return exactly one entry per row. Panel filenames are
+    positional, so a prompt writer left to guess would silently pair art with the wrong caption.
+    """
+    out = [{"file": script.get("cover", {}).get("image", "cover.jpg"), "shape": "PORTRAIT",
+            "context": f"Front cover. {script.get('title','')} -- {script.get('tagline','')}"}]
+    for page in script.get("pages", []):
+        cells = ([page["panel"]] if page.get("type") == "splash" and page.get("panel")
+                 else [c for row in page.get("rows", []) for c in row])
+        for c in cells:
+            out.append({
+                "file": c["file"],
+                "shape": c.get("shape", "LANDSCAPE"),
+                "context": " ".join(x for x in [
+                    f"Page {page.get('page')} ({page.get('title','')}).",
+                    c.get("caption", ""), c.get("caption2", "")] if x).strip(),
+            })
+    for fn, shape in EXTRA_FILES:
+        out.append({"file": fn, "shape": shape,
+                    "context": f"Marketing image for {script.get('title','')}."})
+    # De-duplicate while preserving order: a file repeated in the script needs one prompt.
+    seen, uniq = set(), []
+    for p in out:
+        if p["file"] not in seen:
+            seen.add(p["file"])
+            uniq.append(p)
+    return uniq
+
+
+def generate_prompts(script, provider, chunk_size=80, attempts=2):
+    """Second call: one prompt per panel, in bounded chunks.
+
+    Split from the script call because a single response carrying both is ~100KB, and JSON
+    failure probability scales with length -- five whole-book generations were lost to one bad
+    character. A chunk that fails costs 80 prompts, not the book, and the script survives it.
+    """
+    panels = panels_from_script(script)
+    style = STYLE_RULES.replace("__TITLE__", script.get("title", ""))
+    collected, missing = {}, list(panels)
+
+    for start in range(0, len(panels), chunk_size):
+        batch = panels[start:start + chunk_size]
+        listing = "\n".join(
+            f'{i + 1}. file="{p["file"]}" shape={p["shape"]} :: {p["context"][:220]}'
+            for i, p in enumerate(batch))
+        user = (f"{style}\n\nWrite one FLUX image prompt for each of these {len(batch)} panels "
+                f"from the comic \"{script.get('title','')}\".\n\n{listing}\n\n"
+                'Return ONLY: {"panel_prompts": [{"file": "...", "shape": "...", '
+                '"prompt": "..."}]} with exactly one entry per numbered item above, in the same '
+                "order, using the EXACT file names given. No extra entries, none missing.")
+        want = {p["file"] for p in batch}
+        for attempt in range(1, attempts + 1):
+            try:
+                raw = call_model(PROMPT_SYSTEM, user, max_tokens=min(32000, len(batch) * 320),
+                                 provider=provider)
+                got = extract_json(raw).get("panel_prompts", [])
+                names = {g.get("file") for g in got}
+                if names != want:
+                    raise ValueError(
+                        f"panel set mismatch: {len(want - names)} missing, "
+                        f"{len(names - want)} unexpected")
+                for g in got:
+                    collected[g["file"]] = g
+                break
+            except (json.JSONDecodeError, ValueError, RuntimeError) as e:
+                print(f"  prompts chunk {start // chunk_size + 1} attempt {attempt}/{attempts} "
+                      f"failed ({e})", flush=True)
+                if attempt == attempts:
+                    raise
+        print(f"  prompts: {len(collected)}/{len(panels)} done", flush=True)
+
+    # Emit in the canonical panel order, not whatever order the model replied in.
+    return [collected[p["file"]] for p in panels if p["file"] in collected]
 
 
 def _dump_parse_failure(raw, err):
@@ -355,7 +450,8 @@ def _dump_parse_failure(raw, err):
 # 2, not 3. Every attempt is a full paid generation of a 50-page book, and all three attempts
 # have failed identically both times this misfired -- a third reroll of the same prompt buys
 # nothing but cost.
-def generate(system, user, max_tokens=16000, attempts=2):
+def generate(system, user, max_tokens=16000, attempts=2,
+             require=("script", "panel_prompts"), provider=None):
     """Call Claude and parse its JSON, retrying on malformed OR missing output.
 
     Two distinct failure modes, both retried here:
@@ -373,9 +469,9 @@ def generate(system, user, max_tokens=16000, attempts=2):
     last_err = None
     for attempt in range(1, attempts + 1):
         try:
-            text = call_model(system, user, max_tokens=max_tokens)
+            text = call_model(system, user, max_tokens=max_tokens, provider=provider)
             result = extract_json(text)
-            missing = [k for k in ("script", "panel_prompts") if k not in result]
+            missing = [k for k in require if k not in result]
             if missing:
                 raise ValueError(f"JSON parsed but missing key(s): {missing}")
             return result
@@ -455,7 +551,35 @@ def main():
         # panel-density fix means panel count can run ~2x page count, so
         # sizing off pages alone would under-budget again.
         max_tokens = min(64000, max(16000, target_panels * 500))
-        result = generate(system, user, max_tokens=max_tokens)
+
+        split = (os.environ.get("COMIC_SPLIT_GENERATION", "true").lower() != "false")
+        if split:
+            # TWO sequential calls instead of one.
+            #
+            # A combined response is ~100KB and JSON has no partial validity, so one stray
+            # character destroys the whole book -- five paid whole-book generations were lost
+            # that way at 35pp and 50pp. Splitting halves each payload and, more importantly,
+            # means a failure in the prompts leaves the script intact to retry against.
+            #
+            # Strictly sequential, never concurrent: the prompt writer is HANDED the script's
+            # finished panel list. Generating both at once would let it invent prompts for
+            # panels the script had not settled, and panel filenames are positional, so the
+            # mismatch would surface as art sitting silently under the wrong caption.
+            script_provider = os.environ.get("COMIC_SCRIPT_PROVIDER") or None
+            prompts_provider = os.environ.get("COMIC_PROMPTS_PROVIDER") or None
+            script_user = user + (
+                "\n\nIMPORTANT: return ONLY the \"script\" key this time. Do NOT include "
+                "\"panel_prompts\" -- the image prompts are written in a separate pass from "
+                "the panel list you produce here."
+            )
+            print(f"[1/2] script  (provider: {script_provider or 'default'})", flush=True)
+            script_only = generate(system, script_user, max_tokens=max_tokens,
+                                   require=("script",), provider=script_provider)
+            print(f"[2/2] prompts (provider: {prompts_provider or 'default'})", flush=True)
+            prompts = generate_prompts(script_only["script"], prompts_provider)
+            result = {"script": script_only["script"], "panel_prompts": prompts}
+        else:
+            result = generate(system, user, max_tokens=max_tokens)
         cache_save(cache_key, result)
 
     script_path = os.path.join(args.out_dir, f"script_issue{args.issue_no}.json")
