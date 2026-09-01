@@ -94,6 +94,12 @@ jobs:
           # truncation, which is what makes glm-5p2 terminate on this prompt. Set
           # COMIC_LLM_PROVIDER to "anthropic" to switch back once credits are topped up.
           COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER || 'fireworks' }}
+          # Per-call overrides. Both blank = both calls use COMIC_LLM_PROVIDER above. Set these
+          # only to split the work, e.g. the model that reliably returns valid JSON writing the
+          # script while the one with better art direction writes the prompts.
+          COMIC_SCRIPT_PROVIDER: ${{ vars.COMIC_SCRIPT_PROVIDER }}
+          COMIC_PROMPTS_PROVIDER: ${{ vars.COMIC_PROMPTS_PROVIDER }}
+          COMIC_SPLIT_GENERATION: ${{ vars.COMIC_SPLIT_GENERATION || 'true' }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CASE: ${{ steps.case.outputs.case }}
