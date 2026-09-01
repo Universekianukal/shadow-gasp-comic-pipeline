@@ -248,11 +248,47 @@ def call_claude(system, user, max_tokens=16000):
     return text
 
 
+def repair_json(raw, max_fixes=200):
+    """Parse model JSON, repairing the one defect that actually happens: a bare quote.
+
+    A 50-page script is ~100KB of JSON containing hundreds of captions and lines of dialogue.
+    One unescaped " inside any of them ends its string early, and the parser then fails on the
+    next token with "Expecting ',' delimiter". That is what killed the 50pp run at char 96369
+    after three full attempts -- roughly 30 minutes and three paid generations thrown away over
+    a single character.
+
+    Rather than reroll the whole book, escape the offending quote and re-parse. The quote that
+    broke it is the last one before the error position, because the parser reads right up to the
+    premature end of string and only then sees something it cannot use. Bounded, and falls back
+    to raising the original error so a genuinely broken response is never silently accepted.
+    """
+    try:
+        return json.loads(raw, strict=False)
+    except json.JSONDecodeError as e:
+        # Bind it out of the except block: Python unbinds the `as` name on exit, so keeping the
+        # original error for the give-up path needs an explicit reference.
+        first = e
+
+    text, fixes = raw, 0
+    while fixes < max_fixes:
+        try:
+            obj = json.loads(text, strict=False)
+            print(f"repaired {fixes} unescaped quote(s) in the model's JSON", flush=True)
+            return obj
+        except json.JSONDecodeError as e:
+            j = text.rfind('"', 0, e.pos)
+            if j <= 0:
+                break
+            text = text[:j] + '\\"' + text[j + 1:]
+            fixes += 1
+    raise first
+
+
 def extract_json(text):
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError("No JSON object found in Claude's response")
-    return json.loads(match.group(0))
+    return repair_json(match.group(0))
 
 
 def call_model(system, user, max_tokens=16000):
