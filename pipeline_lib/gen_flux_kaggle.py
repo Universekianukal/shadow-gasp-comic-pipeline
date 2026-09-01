@@ -80,6 +80,24 @@ def build_panels_for_kernel(panels):
     return out
 
 
+def fingerprint_from_kernel_source(kernel_id):
+    """Fingerprint a legacy kernel by reading the prompt list baked into its source."""
+    import re
+    try:
+        d = tempfile.mkdtemp(prefix="kaggle_src_")
+        subprocess.run(["kaggle", "kernels", "pull", kernel_id, "-p", d],
+                       check=True, capture_output=True, timeout=240)
+        src = ""
+        for fn in os.listdir(d):
+            if fn.endswith(".py"):
+                src = open(os.path.join(d, fn), encoding="utf-8").read()
+                break
+        m = re.search(r"PANELS = (\[.*?\])" + chr(10), src, re.S)
+        return prompts_fingerprint(json.loads(m.group(1))) if m else ""
+    except Exception:
+        return ""
+
+
 def prompts_fingerprint(panels_for_kernel):
     """Identity of the exact prompt set some art was rendered from.
 
@@ -245,6 +263,11 @@ def recover_from_previous_kernel(user, slug, prompts, panels_dir):
     want = prompts_fingerprint(build_panels_for_kernel(prompts))
     fp_path = os.path.join(out_dir, "_prompts_fp.txt")
     got = open(fp_path).read().strip() if os.path.exists(fp_path) else ""
+    if not got:
+        # Kernels pushed before the fingerprint existed carry no stamp, but the kernel SOURCE
+        # embeds the exact PANELS list it rendered from -- a stronger check than a stamp we
+        # wrote ourselves, and it works retroactively.
+        got = fingerprint_from_kernel_source(kernel_id)
     if got != want:
         print("  previous kernel was rendered from a DIFFERENT script "
               f"(fingerprint {got[:8] or 'absent'} != {want[:8]}) -- regenerating rather than "
