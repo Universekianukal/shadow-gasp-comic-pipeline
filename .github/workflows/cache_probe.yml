@@ -25,12 +25,12 @@ jobs:
           sec = os.environ["WORKER_SHARED_SECRET"]
           print("worker url host:", urllib.parse.urlparse(url).netloc)
 
-          def post(path, payload):
+          def post(path, payload, ua=None):
+              h = {"Content-Type": "application/json", "X-Shared-Secret": sec}
+              if ua:
+                  h["User-Agent"] = ua
               req = urllib.request.Request(
-                  f"{url}{path}",
-                  data=json.dumps(payload).encode(),
-                  headers={"Content-Type": "application/json", "X-Shared-Secret": sec},
-                  method="POST")
+                  f"{url}{path}", data=json.dumps(payload).encode(), headers=h, method="POST")
               try:
                   with urllib.request.urlopen(req, timeout=60) as r:
                       return r.status, r.read()[:200]
@@ -40,14 +40,16 @@ jobs:
                   return "EXC", repr(e)[:300]
 
           tiny = {"script": {"pages": [1]}, "panel_prompts": [{"file": "a.jpg"}]}
-          print("tiny  save:", post("/script-cache/save", {"key": "probe:tiny", **tiny}))
-          print("tiny  get :", post("/script-cache/get", {"key": "probe:tiny"}))
+          UA = "shadow-gasp-comic-pipeline"
+          print("noUA  save:", post("/script-cache/save", {"key": "probe:tiny", **tiny}))
+          print("withUA save:", post("/script-cache/save", {"key": "probe:tiny", **tiny}, ua=UA))
+          print("withUA get :", post("/script-cache/get", {"key": "probe:tiny"}, ua=UA))
 
           # Realistic size: a 154-panel script is a few hundred KB.
           big = {"script": {"pages": [{"n": i, "text": "x" * 400} for i in range(200)]},
                  "panel_prompts": [{"file": f"p{i}.jpg", "prompt": "y" * 300} for i in range(160)]}
           payload = json.dumps({"key": "probe:big", **big})
           print("big payload bytes:", len(payload))
-          print("big   save:", post("/script-cache/save", {"key": "probe:big", **big}))
-          print("big   get :", post("/script-cache/get", {"key": "probe:big"}))
+          print("big   save:", post("/script-cache/save", {"key": "probe:big", **big}, ua=UA))
+          print("big   get :", post("/script-cache/get", {"key": "probe:big"}, ua=UA))
           PY
