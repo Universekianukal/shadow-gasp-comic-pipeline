@@ -216,6 +216,15 @@ PROMPT_SYSTEM = (
 )
 
 
+class Truncated(RuntimeError):
+    """The model stopped because it ran out of output budget, not because it finished.
+
+    Distinct from a malformed response because it is recoverable: the same prompt with more room
+    (or split into smaller calls) succeeds. Never swallow it -- truncated JSON parses as valid
+    right up to the point it stops, which is exactly how this hid for five generations.
+    """
+
+
 def call_claude(system, user, max_tokens=16000):
     """Stream the response instead of waiting for one big blocking read.
 
@@ -244,6 +253,7 @@ def call_claude(system, user, max_tokens=16000):
     )
     block_types = {}
     text_parts = []
+    stop_reason = None
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             for raw_line in r:
@@ -258,13 +268,25 @@ def call_claude(system, user, max_tokens=16000):
                     delta = event.get("delta", {})
                     if block_types.get(event["index"]) == "text" and delta.get("type") == "text_delta":
                         text_parts.append(delta.get("text", ""))
-                elif etype == "error":
-                    raise RuntimeError(f"Anthropic API streaming error: {event}")
+                elif etype == "message_delta":
+                    # WHY the model stopped, which nothing here used to look at.
+                    #
+                    # When the response hits the token ceiling the API says so, plainly, in
+                    # this event. Ignoring it meant a truncated response was returned as if it
+                    # were complete, and the failure surfaced hundreds of lines later as
+                    # "Expecting ',' delimiter" from json.loads -- an error that points at
+                    # punctuation and says nothing about running out of room. Five whole-book
+                    # generations were spent chasing a stray quote that was never there.
+                    stop_reason = (event.get("delta") or {}).get("stop_reason")
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Anthropic API HTTP {e.code}: {e.read().decode()}") from e
     text = "".join(text_parts)
     if not text:
         raise RuntimeError(f"No text content in streamed response (block types seen: {block_types})")
+    if stop_reason == "max_tokens":
+        raise Truncated(
+            f"response hit the {max_tokens:,}-token ceiling after {len(text):,} characters, so "
+            "the JSON is cut off mid-structure. Raise max_tokens or ask for less in one call.")
     return text
 
 
