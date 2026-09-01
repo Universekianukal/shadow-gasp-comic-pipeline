@@ -176,6 +176,14 @@ lots of empty space (it gets darkened and used as a background behind large
 promo text, so it must read at a glance and not compete with type), each:
 {"file": "p02_1.jpg", "shape": "LANDSCAPE", "prompt": "..."}
 
+JSON VALIDITY -- this breaks whole builds, so treat it as a hard rule:
+- NEVER put a double quote (") inside any string value: no captions, no dialogue, no taglines,
+  no quotes-within-quotes. Use single quotes for quoted speech inside a caption, e.g.
+  'We're just changing vehicles.' -- never "We're just changing vehicles."
+  A single stray " ends its string early and makes the ENTIRE response unparseable. Three
+  separate 50-page generations were lost to exactly this, each one a full paid call.
+- Do not use literal newlines, tabs or backslashes inside string values either.
+
 REQUIREMENTS for every prompt:
 - Start with EXACTLY this, filling in the era: "Noir true-crime comic panel, ink outlines,
   halftone shading, [era] palette. Heavy black ink and deep shadow retained even in bright
@@ -288,7 +296,12 @@ def extract_json(text):
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError("No JSON object found in Claude's response")
-    return repair_json(match.group(0))
+    blob = match.group(0)
+    try:
+        return repair_json(blob)
+    except json.JSONDecodeError as e:
+        _dump_parse_failure(blob, e)
+        raise
 
 
 def call_model(system, user, max_tokens=16000):
@@ -319,7 +332,30 @@ def call_model(system, user, max_tokens=16000):
     return client.text(user, system=system, max_tokens=max_tokens)
 
 
-def generate(system, user, max_tokens=16000, attempts=3):
+def _dump_parse_failure(raw, err):
+    """Show the actual bad characters, and keep the response.
+
+    Three 50-page generations were spent discovering only that the JSON was invalid -- the error
+    said WHERE but never WHAT, and the raw response was discarded each time, so every diagnosis
+    cost another paid call. Print a window around the failure and save the text.
+    """
+    pos = getattr(err, "pos", 0) or 0
+    lo, hi = max(0, pos - 220), min(len(raw), pos + 220)
+    print(f"--- JSON parse failed at char {pos}: {err} ---", flush=True)
+    print(f"...{raw[lo:pos]}>>>HERE>>>{raw[pos:hi]}...", flush=True)
+    try:
+        path = os.path.join(os.environ.get("RUNNER_TEMP", "."), "bad_script_response.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(raw)
+        print(f"raw response saved to {path} ({len(raw)} chars)", flush=True)
+    except Exception:
+        pass
+
+
+# 2, not 3. Every attempt is a full paid generation of a 50-page book, and all three attempts
+# have failed identically both times this misfired -- a third reroll of the same prompt buys
+# nothing but cost.
+def generate(system, user, max_tokens=16000, attempts=2):
     """Call Claude and parse its JSON, retrying on malformed OR missing output.
 
     Two distinct failure modes, both retried here:
