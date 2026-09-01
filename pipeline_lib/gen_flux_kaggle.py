@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import subprocess
+import tempfile
 import sys
 import time
 
@@ -173,6 +174,51 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     return failed
 
 
+def recover_from_previous_kernel(user, slug, prompts, panels_dir):
+    """Pull art from an earlier run's kernel instead of paying for the GPU twice.
+
+    cases/ is rm -rf'd at the end of EVERY run (the repo is public and the art is the paid
+    product), so a failure anywhere after art generation used to throw the finished panels away.
+    That is exactly what happened on 2026-09-01: all 154 panels generated, the optional OCR
+    retry errored, and ~90 minutes of T4 time was deleted.
+
+    Kaggle keeps a completed kernel's output, so the art outlives the runner. Downloading it
+    costs nothing but bandwidth and lets the "All panels already present" check below do its
+    job. Best-effort by design: no previous kernel, a failed download, or a partial one just
+    means the normal generation path fills in whatever is still missing.
+    """
+    if not user:
+        return
+    kernel_id = f"{user}/{slug}"
+    try:
+        r = subprocess.run(["kaggle", "kernels", "status", kernel_id],
+                           capture_output=True, text=True, timeout=120)
+        if "COMPLETE" not in (r.stdout or ""):
+            return
+    except Exception:
+        return
+
+    print(f"found a completed kernel {kernel_id} -- recovering its art before generating",
+          flush=True)
+    out_dir = os.path.join(tempfile.mkdtemp(prefix="kaggle_recover_"), "out")
+    try:
+        subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir],
+                       check=True, timeout=1800)
+    except Exception as e:
+        print(f"  recovery download failed ({e}) -- generating from scratch", flush=True)
+        return
+
+    os.makedirs(panels_dir, exist_ok=True)
+    recovered = 0
+    for p in prompts:
+        src = os.path.join(out_dir, p["file"].replace("/", "_"))
+        dst = os.path.join(panels_dir, p["file"])
+        if os.path.exists(src) and not os.path.exists(dst):
+            os.replace(src, dst)
+            recovered += 1
+    print(f"  recovered {recovered}/{len(prompts)} panels from the previous run", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case-dir", required=True, help="directory containing panel_prompts.json and panels/")
@@ -182,6 +228,7 @@ def main():
 
     panels_dir = os.path.join(args.case_dir, "panels")
     prompts = json.load(open(os.path.join(args.case_dir, "panel_prompts.json"), encoding="utf-8"))
+    recover_from_previous_kernel(args.kaggle_user, args.slug, prompts, panels_dir)
     missing = [p for p in prompts if not os.path.exists(os.path.join(panels_dir, p["file"]))]
     if not missing:
         print("All panels already present, skipping")
