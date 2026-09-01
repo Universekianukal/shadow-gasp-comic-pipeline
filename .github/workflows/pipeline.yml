@@ -129,6 +129,13 @@ jobs:
 
       - name: OCR check + one auto-fix retry
         if: github.event.inputs.dry_run != 'true'
+        # NEVER fatal. This step is optional polish that re-rolls flagged panels on a second
+        # Kaggle kernel, and it is blind to the garbled text it exists to catch anyway -- the
+        # human reading the Telegram draft is the real gate. On 2026-09-01 that second kernel
+        # errored AFTER all 154 panels had generated successfully, and because the cleanup step
+        # rm -rf's cases/ unconditionally, two hours of GPU and a complete book were deleted by
+        # a failed retry. Build the PDF from the art we have instead.
+        continue-on-error: true
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
