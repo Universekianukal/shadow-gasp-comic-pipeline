@@ -177,8 +177,18 @@ promo text, so it must read at a glance and not compete with type), each:
 {"file": "p02_1.jpg", "shape": "LANDSCAPE", "prompt": "..."}
 
 REQUIREMENTS for every prompt:
-- Start with: "Noir true-crime comic panel, ink outlines, halftone shading, [era] palette."
+- Start with EXACTLY this, filling in the era: "Noir true-crime comic panel, ink outlines,
+  halftone shading, [era] palette. Heavy black ink and deep shadow retained even in bright
+  daylight, strong tonal contrast, never washed out or high-key."
+  The second sentence is NOT optional. It is the difference between the shipped 80-page
+  Heaven's Gate art and the Hanford run, whose prompts omitted it and produced flat pale grey
+  pages -- one splash measured 0.04 saturation, effectively a blank sheet. Without an explicit
+  floor on contrast the model drifts to washed-out mid-grey across a whole book.
 - Describe the scene concretely: named location type (INTERIOR/EXTERIOR + room/setting), who's in it, what's happening, matching the shape's framing.
+- The composition MUST match the panel's real shape. A SPLASH is a TALL full page, so never
+  describe one as a "wide establishing vista" -- Hanford did exactly that and FLUX drew a wide
+  scene across the top third and left two-thirds of the page empty. Tall shapes get vertical
+  compositions; wide shapes get horizontal ones.
 - NEVER include or imply any of: newspapers, headlines, signs, storefront signage, banners, posters, book titles, wanted posters, marquees, labels, gauges with markings, currency serial numbers, map annotations, dialogue bubbles, or any other element that implies readable text exists in the scene. (This rule is for YOU, when choosing what to put in the scene. Do not repeat the list inside the prompt itself -- see the next rule for why.)
 - ALWAYS end with this exact sentence: "All visible surfaces are smooth and unmarked."
 - NEVER write a negative instruction into the prompt -- no "no text", no "without lettering", no "avoid signs". FLUX has no negative prompt: the image model reads every noun you write as a thing to DRAW, so "no lettering on signs, banners, posters" reliably produces signs, banners and posters covered in garbled letters. This was measured, not assumed: an A/B on known-bad panels with the same seed produced "MERSIOT"/"FRCFR"/"CTIVPLIN" with the negation sentence and no letterforms at all without it. State what IS there, positively, and simply omit the objects you do not want.
