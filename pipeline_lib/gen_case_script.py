@@ -58,7 +58,11 @@ def cache_get(key):
         req = urllib.request.Request(
             f"{worker_url.rstrip('/')}/script-cache/get",
             data=json.dumps({"key": key}).encode(),
-            headers={"Content-Type": "application/json", "X-Shared-Secret": secret},
+            headers={"Content-Type": "application/json", "X-Shared-Secret": secret,
+                     # Cloudflare answers 403 "error code: 1010" to urllib's default
+                     # Python-urllib/3.x agent, so the request never reaches the Worker at
+                     # all. Same bug already fixed twice on the notify path.
+                     "User-Agent": "shadow-gasp-comic-pipeline"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -80,7 +84,11 @@ def cache_save(key, result):
         req = urllib.request.Request(
             f"{worker_url.rstrip('/')}/script-cache/save",
             data=json.dumps({"key": key, "script": result["script"], "panel_prompts": result["panel_prompts"]}).encode(),
-            headers={"Content-Type": "application/json", "X-Shared-Secret": secret},
+            headers={"Content-Type": "application/json", "X-Shared-Secret": secret,
+                     # Cloudflare answers 403 "error code: 1010" to urllib's default
+                     # Python-urllib/3.x agent, so the request never reaches the Worker at
+                     # all. Same bug already fixed twice on the notify path.
+                     "User-Agent": "shadow-gasp-comic-pipeline"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=30):

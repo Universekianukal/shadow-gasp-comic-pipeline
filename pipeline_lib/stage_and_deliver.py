@@ -175,7 +175,11 @@ def register_with_worker(worker_url, shared_secret, token, case_name, product_id
             "token": token, "case": case_name, "product_id": product_id, "title": title,
             "video_id": video_id, "product_url": product_url, "pages": str(pages),
         }).encode(),
-        headers={"Content-Type": "application/json", "X-Shared-Secret": shared_secret},
+        headers={"Content-Type": "application/json", "X-Shared-Secret": shared_secret,
+                     # Cloudflare answers 403 "error code: 1010" to urllib's default
+                     # Python-urllib/3.x agent, so the request never reaches the Worker at
+                     # all. Same bug already fixed twice on the notify path.
+                     "User-Agent": "shadow-gasp-comic-pipeline"},
         method="POST",
     )
     with urllib.request.urlopen(req) as r:
