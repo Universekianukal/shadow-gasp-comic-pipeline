@@ -318,6 +318,19 @@ def main():
         subprocess.run([sys.executable, build_comic, "--script", os.path.abspath(script_path)],
                        cwd=comic_dir, check=True)
 
+    # Read the price back OUT of the finished PDF, so the caption reports what the file actually
+    # renders rather than what the code believes it set. Six near-identical drafts went out
+    # differing only in small details, with no way to tell them apart at a glance.
+    rendered_price = "?"
+    try:
+        import fitz
+        with fitz.open(pdf_path) as _doc:
+            _m = re.search(r"\$\s?\d+(?:\.\d{2})?", _doc[_doc.page_count - 1].get_text())
+            rendered_price = _m.group(0) if _m else "none found"
+        print(f"back cover renders: {rendered_price}", flush=True)
+    except Exception as e:
+        print(f"WARNING: could not read the price back from the PDF ({e})", flush=True)
+
     cover_path = os.path.join(comic_dir, "panels", "cover.jpg")
 
     description = script.get("subject", "")
@@ -422,7 +435,9 @@ def main():
 
     result = telegram_send_document(
         bot_token, chat_id, send_path,
-        caption=f"{args.title} — {note} (see next message for approval buttons)",
+        caption=(f"{args.title} — issue {script.get('issue_no', '?')} — {note}\n"
+                 f"back cover prints {rendered_price} · Gumroad ${args.price}\n"
+                 "(approval buttons in the next message)"),
     )
     if not result.get("ok"):
         raise SystemExit(f"Telegram send failed: {result}")
