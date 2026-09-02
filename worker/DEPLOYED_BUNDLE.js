@@ -1112,6 +1112,7 @@ var COMMAND_LIST = [
   "/make <case> | 50  \u2014 build straight away at 50pp, skipping both pickers",
   "/regen p05_3 p06_1  \u2014 re-roll specific panels on the MOST RECENT book, after checking the OCR contact sheets. Panel names are the gold labels on those sheets. Everything else is reused, so it takes minutes not an hour.",
   "/regen <token> p05_3  \u2014 same, but for an older book (the token is in that book's sheet captions)",
+  "/links  - every comic with its Gumroad URL, the short it came from, and the command to link them",
   "/funnel  - put the most recent comic's link into the description of the short it was made from (published products only)",
   "/funnel <videoId>  - same, naming the video explicitly",
   "/gencode <slug> [cap]  \u2014 mint a ONE-TIME free download code for a published comic (default cap 50)",
@@ -1424,6 +1425,32 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     await tg(env, "sendMessage", { chat_id: chatId, text: COMMAND_LIST });
     return;
   }
+  if (text.startsWith("/links")) {
+    const list = await env.PENDING.list({ prefix: "comic:" });
+    if (!list.keys.length) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "No comics indexed yet. They are recorded as they are built." });
+      return;
+    }
+    const rows = [];
+    for (const k of list.keys) {
+      const raw = await env.PENDING.get(k.name);
+      if (!raw) continue;
+      const c = JSON.parse(raw);
+      rows.push(
+        (c.issue ? "#" + c.issue + " " : "") + (c.title || c.case) + "\n" +
+        "  store: " + (c.product_url || "(not staged)") + "\n" +
+        "  short: " + (c.video_id ? "https://youtu.be/" + c.video_id : "(none recorded)") + "\n" +
+        "  link it: " + (c.video_id ? "/funnel " + c.video_id : "/funnel <videoId>")
+      );
+    }
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: "\u{1F4DA} COMICS\n\n" + rows.join("\n\n") +
+            "\n\n/funnel reports ALREADY_LINKED if the description already carries the link, so it " +
+            "is also how you check without changing anything."
+    });
+    return;
+  }
   if (text.startsWith("/funnel")) {
     // Put a published comic's link into the description of the short it was made from.
     //
@@ -1572,6 +1599,13 @@ __name(handleMessage, "handleMessage");
 __name2(handleMessage, "handleMessage");
 __name22(handleMessage, "handleMessage");
 __name222(handleMessage, "handleMessage");
+function b_case_id(b) {
+  // The slug the pipeline uses for a case; falls back to deriving one from the case name so an
+  // older caller that does not send it still lands in the index.
+  return b.case_id || (b.case || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+}
+__name(b_case_id, "b_case_id");
+
 async function sendApprovalMessage(env, { token, caseName, productId, title, videoId }) {
   const funnelLine = videoId
     ? `\n\u{1F517} From published short: https://youtu.be/${videoId}`
@@ -1729,6 +1763,16 @@ var worker_default = {
       // The token is only ever shown in a contact-sheet caption, so it is unfindable once the
       // chat scrolls. Remember the newest book too and let /regen default to it.
       await env.PENDING.put("latest_pending", token);
+      // A DURABLE record per comic, separate from the approval token which expires. This is
+      // what /links reads: without it there was no way to answer "which video goes with which
+      // comic" except grepping cases_used.json by hand.
+      if (b_case_id(body)) {
+        await env.PENDING.put("comic:" + b_case_id(body), JSON.stringify({
+          title: body.title || body.case, case: body.case,
+          product_url: body.product_url || "", video_id: body.video_id || "",
+          issue: body.issue_no || "", pages: body.pages || ""
+        }));
+      }
       await env.PENDING.put(`pending:${token}`, JSON.stringify({
         case: caseName, product_id,
         video_id: video_id || "", product_url: product_url || "", pages: pages || "",

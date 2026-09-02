@@ -228,7 +228,8 @@ def _form_field(boundary, name, value):
 
 
 def register_with_worker(worker_url, shared_secret, token, case_name, product_id, title,
-                         video_id="", product_url="", pages="", flagged=None):
+                         video_id="", product_url="", pages="", flagged=None,
+                         case_id="", issue_no=""):
     # video_id / product_url / pages are what the "Funnel to YouTube" button needs. They are
     # carried here because the case folder is deleted at the end of the run, so by the time the
     # button is tapped this KV record is the ONLY place the link between the comic and the
@@ -238,6 +239,8 @@ def register_with_worker(worker_url, shared_secret, token, case_name, product_id
         data=json.dumps({
             "token": token, "case": case_name, "product_id": product_id, "title": title,
             "video_id": video_id, "product_url": product_url, "pages": str(pages),
+            # Also feeds the durable per-comic index the Worker keeps for /links.
+            "case_id": case_id, "issue_no": issue_no,
             # Which panels OCR flagged, so /regen can check the names typed against reality
             # instead of dispatching a Kaggle kernel for a filename that does not exist.
             "flagged": flagged or [],
@@ -556,6 +559,8 @@ def main():
         title=args.title,
         video_id=args.video_id,
         flagged=flagged,
+        case_id=args.case_id,
+        issue_no=script.get("issue_no", ""),
         # Same permalink stage_draft() just set, so this is the buyer-facing URL, not a
         # random Gumroad slug. Still a DRAFT url at this point -- the funnel job refuses to
         # put it in a public description until the product is actually published.
