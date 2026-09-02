@@ -280,12 +280,24 @@ def main():
     # target_pages is a floor plus a +50 panel buffer, so a request for 35 came back as 51 --
     # and the price was still taken from 35, selling a 51-page comic at the 35-page tier. Charge
     # for the highest tier the delivered page count actually reaches.
+    # Count the PDF, not the script. The buyer downloads a 51-page file; the script's 46 "story
+    # pages" exclude the cover, title page and back matter, and pricing off that number sold a
+    # 51-page book at the 35-page tier. Whatever the buyer can page through is what they paid
+    # for. Falls back to the story count if the PDF cannot be read.
     if args.price is None:
         delivered = len(script.get("pages", [])) or int(args.target_pages)
+        source = "story pages"
+        try:
+            import fitz
+            with fitz.open(pdf_path) as _d:
+                delivered, source = _d.page_count, "PDF pages"
+        except Exception as e:
+            print(f"WARNING: could not count PDF pages ({e}); pricing off the script",
+                  flush=True)
         tier = max((n for n in PAGE_PRICE_TIERS if n <= delivered),
                    default=min(PAGE_PRICE_TIERS))
         args.price = PAGE_PRICE_TIERS[tier]
-        print(f"pricing: {delivered} story pages delivered (asked {args.target_pages}) "
+        print(f"pricing: {delivered} {source} delivered (asked {args.target_pages}) "
               f"-> {tier}pp tier -> ${args.price}", flush=True)
     cover_path = os.path.join(comic_dir, "panels", "cover.jpg")
 
