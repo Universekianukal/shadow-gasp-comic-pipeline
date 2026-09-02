@@ -51,16 +51,46 @@ def main():
 
     print(f"{len(flagged)} panels flagged, rewriting prompts and regenerating once...")
     by_file = {p["file"]: p for p in prompts}
+
+    # Move aside, never delete.
+    #
+    # This used to os.remove() each flagged panel before regenerating it, which was survivable
+    # only while a failed fix-kernel aborted the whole build. Once that step was made
+    # non-fatal -- so an optional retry could not destroy a finished book -- the delete became
+    # SILENT DATA LOSS instead: the fix kernel errored, 59 panels stayed gone, and the run
+    # reported success while shipping a 51-page comic full of "art pending" placeholders.
+    # The original art is imperfect but real, and it always beats a placeholder.
+    backup_dir = os.path.join(panels_dir, "_ocr_backup")
+    os.makedirs(backup_dir, exist_ok=True)
     for p in flagged:
         by_file[p["file"]]["prompt"] = p["prompt"] + GENERIC_REINFORCEMENT
-        os.remove(os.path.join(panels_dir, p["file"]))
+        live = os.path.join(panels_dir, p["file"])
+        if os.path.exists(live):
+            os.replace(live, os.path.join(backup_dir, os.path.basename(p["file"])))
 
     json.dump(prompts, open(prompts_path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
 
     retry_panels = [by_file[p["file"]] for p in flagged]
-    failed = gk.run_batch(args.kaggle_user, f"{args.slug}-ocrfix", retry_panels, panels_dir, seed_base=9000)
+    try:
+        failed = gk.run_batch(args.kaggle_user, f"{args.slug}-ocrfix", retry_panels, panels_dir,
+                              seed_base=9000)
+    except Exception as e:
+        print(f"WARNING: the OCR fix kernel failed ({e}) -- restoring the originals",
+              file=sys.stderr)
+        failed = [p["file"] for p in retry_panels]
     if failed:
-        print(f"WARNING: {len(failed)} panels still failed after retry: {failed}", file=sys.stderr)
+        print(f"WARNING: {len(failed)} panels not regenerated: {failed}", file=sys.stderr)
+
+    # Restore anything the retry did not actually replace, whatever went wrong above.
+    restored = 0
+    for p in retry_panels:
+        live = os.path.join(panels_dir, p["file"])
+        keep = os.path.join(backup_dir, os.path.basename(p["file"]))
+        if not os.path.exists(live) and os.path.exists(keep):
+            os.replace(keep, live)
+            restored += 1
+    if restored:
+        print(f"restored {restored} original panel(s) the retry failed to replace", flush=True)
 
     still_flagged = []
     for p in retry_panels:
