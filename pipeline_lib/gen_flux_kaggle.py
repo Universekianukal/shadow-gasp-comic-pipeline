@@ -42,6 +42,29 @@ te=T5EncoderModel.from_pretrained(repo, subfolder="text_encoder_2",
      quantization_config=TBnb(**nf4), torch_dtype=torch.float16)
 pipe=FluxPipeline.from_pretrained(repo, transformer=tf, text_encoder_2=te, torch_dtype=torch.float16)
 pipe.enable_model_cpu_offload()
+
+# House style from trained weights rather than from prompt wording.
+#
+# The prompt writer can drift -- one book came out flat pale grey because its prompts omitted
+# the contrast clause -- but a LoRA applies the look regardless of how the prompt is phrased.
+# Loaded BEFORE cpu offload matters: diffusers wants the adapter on the assembled pipeline.
+#
+# Deliberately non-fatal. bitsandbytes 4-bit quantisation and PEFT adapters do not always
+# compose, and a book with the base FLUX look is worth far more than a run that dies at panel
+# zero. If it fails to load, the log says so loudly and generation continues unstyled.
+LORA_REPO = "{lora_repo}"
+LORA_TRIGGER = "{lora_trigger}"
+LORA_OK = False
+if LORA_REPO:
+    try:
+        from huggingface_hub import hf_hub_download
+        _p = hf_hub_download(LORA_REPO, "sgnoir_lora_v1.safetensors",
+                             token=os.environ.get("HF_TOKEN", "{hf_token}"))
+        pipe.load_lora_weights(_p)
+        LORA_OK = True
+        print("LORA LOADED", LORA_REPO, flush=True)
+    except Exception as e:
+        print("LORA LOAD FAILED, continuing with base FLUX:", repr(e), flush=True)
 print("PIPE READY", flush=True)
 
 PANELS = {panels_json}
@@ -50,7 +73,10 @@ open("/kaggle/working/_prompts_fp.txt","w").write("{prompts_fp}")
 for i, p in enumerate(PANELS):
     name, w, h, prompt = p["out"], p["w"], p["h"], p["prompt"]
     try:
-        img=pipe(prompt, num_inference_steps=4, guidance_scale=0.0, height=h, width=w,
+        # Trigger only when the adapter is really in memory -- appending it to a base-model
+        # run just wastes CLIP tokens on a phrase that means nothing.
+        p_text = prompt + (", " + LORA_TRIGGER if (LORA_OK and LORA_TRIGGER) else "")
+        img=pipe(p_text, num_inference_steps=4, guidance_scale=0.0, height=h, width=w,
                  max_sequence_length=256, generator=torch.Generator("cpu").manual_seed({seed_base}+i)).images[0]
         img.save(f"/kaggle/working/{{name}}", quality=92)
         m=float(np.asarray(img).mean())
@@ -149,6 +175,8 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     code = KERNEL_TEMPLATE.format(
         panels_json=json.dumps(panels_for_kernel), hf_token=hf_token, seed_base=seed_base,
         prompts_fp=prompts_fingerprint(panels_for_kernel),
+        lora_repo=os.environ.get("SGNOIR_LORA_REPO", ""),
+        lora_trigger=os.environ.get("SGNOIR_LORA_TRIGGER", "sgnoir style"),
     )
     open(os.path.join(kernel_dir, "gen_flux.py"), "w", encoding="utf-8").write(code)
     json.dump({

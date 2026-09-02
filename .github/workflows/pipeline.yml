@@ -131,6 +131,12 @@ jobs:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          # Blank = base FLUX. Set the repo variable to a private HF repo holding
+          # sgnoir_lora_v1.safetensors to render in the trained house style instead. Loading is
+          # non-fatal in the kernel: bitsandbytes 4-bit and PEFT adapters do not always compose,
+          # and a book in the base look beats a run that dies at panel zero.
+          SGNOIR_LORA_REPO: ${{ vars.SGNOIR_LORA_REPO }}
+          SGNOIR_LORA_TRIGGER: ${{ vars.SGNOIR_LORA_TRIGGER || 'sgnoir style' }}
         run: python pipeline_lib/gen_flux_kaggle.py --case-dir cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}-flux"
 
       - name: OCR check + one auto-fix retry
