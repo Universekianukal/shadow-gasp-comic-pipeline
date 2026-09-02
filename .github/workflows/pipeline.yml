@@ -4,13 +4,18 @@ permissions:
   contents: write
 
 on:
-  # Daily draft. 22:30 UTC = 04:00 IST next day, chosen so the Telegram draft is
-  # waiting in the morning. GitHub's scheduled runs are best-effort and this repo
-  # has seen ~75 minutes of queue lag, so treat the arrival time as "early morning",
-  # not a clock guarantee. Auto-picked case, default page count; a missed day is
-  # harmless because pick_case.py takes the next unused case from the ledger.
-  schedule:
-    - cron: "30 22 * * *"
+  # ⛔ MANUAL ONLY -- the daily schedule is deliberately OFF (2026-09-02, user's call).
+  #
+  # Every unattended run spends real money and quota: a Fireworks script call, ~2 hours of the
+  # weekly Kaggle GPU budget, and a Gumroad draft. The art still needs a human to look at it --
+  # the OCR gate cannot see the defect it exists for -- so a book nobody reviews is cost without
+  # product. Build on demand instead: /make in Telegram, or
+  #   gh workflow run "Comic Pipeline" -f case="..." -f target_pages=35
+  #
+  # To turn the daily draft back on, uncomment these two lines. 22:30 UTC = 04:00 IST next day,
+  # so the draft is waiting in the morning; expect ~75 minutes of GitHub queue lag on this repo.
+  # schedule:
+  #   - cron: "30 22 * * *"
 
   workflow_dispatch:
     inputs:
