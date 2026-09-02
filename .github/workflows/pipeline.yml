@@ -33,6 +33,10 @@ on:
       # Plain string, not `type: choice`: a choice list needs a non-empty default, and "no
       # override" has to be expressible. An unknown name is rejected by layout_profiles with
       # the list of valid ones, before any Anthropic or Kaggle spend.
+      regen_panels:
+        description: "Panel files to force re-roll, e.g. 'p05_3 p06_1' (from the OCR contact sheets)"
+        required: false
+        default: ""
       profile:
         description: "Page layout style: chamber|cinematic|classic|documentary|mosaic|staccato (blank = auto, derived from the case id)"
         required: false
@@ -137,7 +141,7 @@ jobs:
           # and a book in the base look beats a run that dies at panel zero.
           SGNOIR_LORA_REPO: ${{ vars.SGNOIR_LORA_REPO }}
           SGNOIR_LORA_TRIGGER: ${{ vars.SGNOIR_LORA_TRIGGER || 'sgnoir style' }}
-        run: python pipeline_lib/gen_flux_kaggle.py --case-dir cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}-flux"
+        run: python pipeline_lib/gen_flux_kaggle.py --case-dir cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}-flux" --regen "${{ github.event.inputs.regen_panels }}"
 
       - name: OCR check + one auto-fix retry
         if: github.event.inputs.dry_run != 'true'

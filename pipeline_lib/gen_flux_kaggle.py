@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import sys
@@ -318,17 +319,38 @@ def main():
     ap.add_argument("--case-dir", required=True, help="directory containing panel_prompts.json and panels/")
     ap.add_argument("--kaggle-user", default=os.environ.get("KAGGLE_USERNAME"))
     ap.add_argument("--slug", required=True)
+    ap.add_argument("--regen", default="",
+                    help="Comma/space separated panel files to force re-rolling, e.g. "
+                         "'p05_3.jpg p06_1.jpg'. They are removed after recovery so the normal "
+                         "missing-panel path regenerates them, on a different seed.")
     args = ap.parse_args()
 
     panels_dir = os.path.join(args.case_dir, "panels")
     prompts = json.load(open(os.path.join(args.case_dir, "panel_prompts.json"), encoding="utf-8"))
     recover_from_previous_kernel(args.kaggle_user, args.slug, prompts, panels_dir)
+
+    # Forced re-rolls, requested per panel from Telegram after a human looked at the OCR contact
+    # sheets. Deleting AFTER recovery is what makes this work: recovery restores the full set,
+    # then these few are dropped so the missing-panel path below regenerates exactly them.
+    forced = [f for f in re.split(r"[,\s]+", args.regen.strip()) if f]
+    for f in forced:
+        f = f if f.endswith(".jpg") else f + ".jpg"
+        path = os.path.join(panels_dir, f)
+        if os.path.exists(path):
+            os.remove(path)
+        else:
+            print(f"  /regen: {f} is not a panel of this book, ignoring", flush=True)
+    if forced:
+        print(f"forced re-roll of {len(forced)} panel(s): {forced}", flush=True)
     missing = [p for p in prompts if not os.path.exists(os.path.join(panels_dir, p["file"]))]
     if not missing:
         print("All panels already present, skipping")
         return
     print(f"{len(missing)}/{len(prompts)} panels need generation")
-    failed = run_batch(args.kaggle_user, args.slug, missing, panels_dir)
+    # A different seed base for a forced re-roll -- re-rendering the same prompt at the same
+    # seed reproduces the same picture, which is not a fix.
+    seed = 3000 + (7000 if forced else 0)
+    failed = run_batch(args.kaggle_user, args.slug, missing, panels_dir, seed_base=seed)
     if failed:
         print(f"WARNING: {len(failed)} panels failed to generate: {failed}", file=sys.stderr)
 

@@ -191,8 +191,37 @@ def telegram_send_document(token, chat_id, file_path, caption):
         return json.load(r)
 
 
+def telegram_send_photo(token, chat_id, file_path, caption):
+    """Same multipart shape as telegram_send_document, but as a photo so it renders inline.
+
+    A contact sheet is only useful if it appears in the chat -- sent as a document it is just
+    another attachment to open, which defeats the point of glancing at 12 panels at once.
+    """
+    boundary = "----shadowgaspphoto"
+    parts = [_form_field(boundary, "chat_id", str(chat_id))]
+    if caption:
+        parts.append(_form_field(boundary, "caption", caption))
+    parts.append(
+        "--" + boundary + "\r\n"
+        'Content-Disposition: form-data; name="photo"; filename="'
+        + os.path.basename(file_path) + '"\r\n'
+        "Content-Type: image/jpeg\r\n\r\n")
+    with open(file_path, "rb") as f:
+        body = "".join(parts).encode() + f.read() + ("\r\n--" + boundary + "--\r\n").encode()
+    req = urllib.request.Request(
+        "https://api.telegram.org/bot" + token + "/sendPhoto", data=body, method="POST",
+        headers={"Content-Type": "multipart/form-data; boundary=" + boundary})
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)
+
+
+def _form_field(boundary, name, value):
+    return ("--" + boundary + "\r\n"
+            'Content-Disposition: form-data; name="' + name + '"\r\n\r\n' + value + "\r\n")
+
+
 def register_with_worker(worker_url, shared_secret, token, case_name, product_id, title,
-                         video_id="", product_url="", pages=""):
+                         video_id="", product_url="", pages="", flagged=None):
     # video_id / product_url / pages are what the "Funnel to YouTube" button needs. They are
     # carried here because the case folder is deleted at the end of the run, so by the time the
     # button is tapped this KV record is the ONLY place the link between the comic and the
@@ -202,6 +231,9 @@ def register_with_worker(worker_url, shared_secret, token, case_name, product_id
         data=json.dumps({
             "token": token, "case": case_name, "product_id": product_id, "title": title,
             "video_id": video_id, "product_url": product_url, "pages": str(pages),
+            # Which panels OCR flagged, so /regen can check the names typed against reality
+            # instead of dispatching a Kaggle kernel for a filename that does not exist.
+            "flagged": flagged or [],
         }).encode(),
         headers={"Content-Type": "application/json", "X-Shared-Secret": shared_secret,
                      # Cloudflare answers 403 "error code: 1010" to urllib's default
@@ -395,7 +427,30 @@ def main():
         # fail a build that otherwise succeeded.
         print(f"WARNING: could not deliver the script bundle ({e}) -- not fatal")
 
+    # Minted before the sheets are sent, because the /regen instruction in their caption has to
+    # quote it -- it is how the Worker knows which book a re-roll request belongs to.
     approval_token = secrets.token_urlsafe(8)
+
+    # OCR contact sheets: which panels the scan thinks carry text, for eyeballing against the
+    # PDF. Nothing has been regenerated -- the decision is the reviewer's, sent back as /regen.
+    flagged = []
+    try:
+        fp = os.path.join(comic_dir, "ocr_flagged.json")
+        if os.path.exists(fp):
+            flagged = json.load(open(fp, encoding="utf-8"))
+        sheets = sorted(glob.glob(os.path.join(comic_dir, "ocr_flagged_sheet*.jpg")))
+        for n, sheet in enumerate(sheets, 1):
+            if n == 1:
+                cap = (f"\U0001f50d OCR flagged {len(flagged)} panel(s) — sheet 1/{len(sheets)}."
+                       "\nNothing was regenerated; these are the originals. Re-roll any of them"
+                       f" with:\n/regen {approval_token} p05_3 p06_1")
+            else:
+                cap = f"sheet {n}/{len(sheets)}"
+            telegram_send_photo(bot_token, chat_id, sheet, caption=cap)
+        if sheets:
+            print(f"sent {len(sheets)} OCR contact sheet(s) to Telegram", flush=True)
+    except Exception as e:
+        print(f"WARNING: could not send OCR contact sheets ({e}) -- not fatal", flush=True)
     register_with_worker(
         worker_url=os.environ["WORKER_URL"],
         shared_secret=os.environ["WORKER_SHARED_SECRET"],
@@ -404,6 +459,7 @@ def main():
         product_id=product_id,
         title=args.title,
         video_id=args.video_id,
+        flagged=flagged,
         # Same permalink stage_draft() just set, so this is the buyer-facing URL, not a
         # random Gumroad slug. Still a DRAFT url at this point -- the funnel job refuses to
         # put it in a public description until the product is actually published.

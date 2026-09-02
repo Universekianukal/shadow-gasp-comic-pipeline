@@ -1363,6 +1363,47 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     });
     return;
   }
+  if (text.startsWith("/regen")) {
+    // Re-roll specific panels after a human looked at the OCR contact sheets. The pipeline no
+    // longer regenerates anything on its own: the detector misses the defect it exists for and
+    // its fix-kernel has never succeeded, so the judgement belongs here.
+    const parts = text.trim().split(/\s+/).slice(1);
+    const token = parts.shift();
+    const panels = parts.map((p) => (p.endsWith(".jpg") ? p : p + ".jpg"));
+    if (!token || !panels.length) {
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: "Usage: /regen <token> p05_3 p06_1\nThe token is in the caption of the first OCR contact sheet."
+      });
+      return;
+    }
+    const raw = await env.PENDING.get(`pending:${token}`);
+    if (!raw) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That token has expired or is not a book I know about." });
+      return;
+    }
+    const rec = JSON.parse(raw);
+    const known = new Set(rec.flagged || []);
+    const unknown = known.size ? panels.filter((p) => !known.has(p)) : [];
+    try {
+      await dispatchPipeline(env, {
+        case: rec.case,
+        target_pages: String(rec.pages || "35"),
+        regen_panels: panels.join(" "),
+        dry_run: "false"
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the re-roll: ${e.message}` });
+      return;
+    }
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: `\u{1F3A8} Re-rolling ${panels.length} panel(s) on a fresh seed: ${panels.join(", ")}` +
+            (unknown.length ? `\n⚠️ not in this book's flagged list, will be ignored: ${unknown.join(", ")}` : "") +
+            `\nEverything else is recovered, so only these are rendered. You'll get the rebuilt PDF here.`
+    });
+    return;
+  }
   if (!text.startsWith("/make")) {
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
