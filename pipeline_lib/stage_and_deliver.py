@@ -225,8 +225,6 @@ def main():
                     help="YouTube id of the published short this case came from, if any. Enables "
                          "the 'Funnel to YouTube' button on the Telegram draft.")
     args = ap.parse_args()
-    if args.price is None:
-        args.price = PAGE_PRICE_TIERS.get(int(args.target_pages), "2.99")
 
     comic_dir = args.case_dir
     scripts = glob.glob(os.path.join(comic_dir, "script_issue*.json"))
@@ -244,6 +242,19 @@ def main():
                    cwd=comic_dir, check=True)
 
     pdf_path = os.path.join(comic_dir, script["output"])
+
+    # Price the book that was actually DELIVERED, not the one that was asked for.
+    #
+    # target_pages is a floor plus a +50 panel buffer, so a request for 35 came back as 51 --
+    # and the price was still taken from 35, selling a 51-page comic at the 35-page tier. Charge
+    # for the highest tier the delivered page count actually reaches.
+    if args.price is None:
+        delivered = len(script.get("pages", [])) or int(args.target_pages)
+        tier = max((n for n in PAGE_PRICE_TIERS if n <= delivered),
+                   default=min(PAGE_PRICE_TIERS))
+        args.price = PAGE_PRICE_TIERS[tier]
+        print(f"pricing: {delivered} story pages delivered (asked {args.target_pages}) "
+              f"-> {tier}pp tier -> ${args.price}", flush=True)
     cover_path = os.path.join(comic_dir, "panels", "cover.jpg")
 
     description = script.get("subject", "")

@@ -32,6 +32,7 @@ import urllib.request
 # pipeline_lib is NOT on sys.path and a bare import would fail -- at 04:00, unattended.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import layout_profiles  # noqa: E402
+import issue_registry  # noqa: E402
 
 # Read lazily inside call_claude, not here: with COMIC_LLM_PROVIDER=fireworks this module
 # must import and run with no Anthropic key present at all.
@@ -508,7 +509,8 @@ def main():
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--case", default=os.environ.get("CASE"))
     ap.add_argument("--case-id", default=None, help="Slug used as the script-cache key (falls back to --case if omitted)")
-    ap.add_argument("--issue-no", default="01")
+    ap.add_argument("--issue-no", default="auto",
+                    help="Issue number, or 'auto' (default) to take the next one from issues.json. Defaulting to 01 shipped every book as issue 01.")
     ap.add_argument("--target-pages", type=int, default=25)
     ap.add_argument("--profile", default="",
                     help="Layout profile to force (chamber/cinematic/classic/documentary/"
@@ -517,6 +519,12 @@ def main():
     args = ap.parse_args()
     if not args.case:
         raise SystemExit("Provide --case or set CASE env var")
+
+    # Resolve BEFORE the cache key is built: the issue number is written into four strings in
+    # the script and printed on page 2, so a book generated as 01 and renumbered later needs a
+    # full PDF rebuild. Idempotent -- rebuilding a case returns the number it already has.
+    if (args.issue_no or "auto").lower() == "auto":
+        args.issue_no = issue_registry.assign(args.case_id or args.case)
 
     os.makedirs(os.path.join(args.out_dir, "panels"), exist_ok=True)
 
