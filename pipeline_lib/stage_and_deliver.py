@@ -178,8 +178,13 @@ def prune_stale_files(product_id):
 
     `products update --file` APPENDS. This is the same trap the covers hit four lines up, and it
     went unnoticed far longer for one reason: a failed cover upload breaks the build loudly,
-    while a surplus download is completely invisible from the build log. Every rebuild quietly
-    added another copy -- NORJAK reached 5, HEAVEN'S GATE 2 and POISONED GROUND 10.
+    while a surplus download is completely invisible from the build log.
+
+    Two different counts matter here and they are easy to confuse -- I confused them, and argued
+    from the wrong one. `product["files"]` is the ASSET STORE, which retains orphaned uploads
+    after their download rows are gone; NORJAK holds 5 and HEAVEN'S GATE 2 purely as leftovers.
+    What a buyer actually sees is the fileEmbed list in the CONTENT document, and only POISONED
+    GROUND ever accumulated those, reaching 10. Check content, never files, to judge this.
 
     Ten identical-looking rows would be merely untidy. What makes it a real defect is that the
     copies are NOT identical: they are separate builds, so they disagree. POISONED GROUND's older
