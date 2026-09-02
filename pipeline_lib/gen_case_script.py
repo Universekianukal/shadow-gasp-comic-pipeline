@@ -111,6 +111,7 @@ Return a single JSON object with exactly two top-level keys: "script" and
   "panels_dir": "panels",
   "output": "TITLE_issue.pdf",
   "subject": "one sentence, what this comic covers",
+  "store_description": "THREE short paragraphs of sales copy for the product page, 500-900 characters total, written for someone who has NOT watched the video. Para 1: the hook -- the single most arresting fact, stated plainly. Para 2: what the book actually walks through, naming real people, places and dates. Para 3: what makes it worth reading -- the documents, the timeline, the detail. Never say it covers the same ground as a video; never pad with adjectives.",
   "promo_badge": "ONE or TWO words in caps for a gold badge on the promo graphic, stating the single most striking factual angle of the case — e.g. \"UNSOLVED\", \"COVER-UP\", \"17,000 DEAD\", \"STILL MISSING\". Never invent; must be literally true.",
   "promo_inside": ["FOUR short all-caps phrases naming what the issue actually covers, e.g. \"6 NAMED SUSPECTS\", \"FBI CASE FILES\", \"FORENSIC EVIDENCE\", \"THE RANSOM MONEY\""],
   "promo_hook": "ONE scroll-stopping sentence (max ~90 chars) stating the real hook of the case in plain language, aimed at someone who has never heard of it. State the mystery, do not tease vaguely. Example: \"He jumped from a plane with $200,000. Nobody ever found him.\"",

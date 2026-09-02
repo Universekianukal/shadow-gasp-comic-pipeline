@@ -60,6 +60,46 @@ def pick_preview_panels(comic_dir, script, limit=3):
     return [os.path.join(panels_dir, f) for f in chosen[:limit]]
 
 
+def build_store_description(script):
+    """The Gumroad product page copy.
+
+    This used to be script["subject"], which the schema defines as ONE SENTENCE. POISONED GROUND
+    therefore went on sale behind 141 characters while HEAVEN'S GATE -- written by hand before
+    the pipeline existed -- had 1,103. The product page is where somebody decides whether to buy,
+    and one sentence is not a decision.
+
+    Uses the model's own store_description when it wrote one; otherwise composes from material
+    the script already carries: the hook, the subject, what the issue covers, and the first
+    factual paragraphs of the back matter.
+    """
+    authored = (script.get("store_description") or "").strip()
+    if len(authored) > 300:
+        return authored
+
+    paras = []
+    hook = (script.get("promo_hook") or "").strip()
+    subject = (script.get("subject") or "").strip()
+    if hook:
+        paras.append(hook)
+    if subject and subject != hook:
+        paras.append(subject)
+
+    facts = [ln.strip() for ln in (script.get("back_matter") or {}).get("lines", [])
+             if ln.strip() and len(ln.strip()) > 60]
+    if facts:
+        paras.append(" ".join(facts[:2]))
+
+    inside = [x.strip() for x in (script.get("promo_inside") or []) if x.strip()]
+    if inside:
+        paras.append("Inside: " + " · ".join(inside) + ".")
+
+    pages = len(script.get("pages", []))
+    paras.append(
+        (f"{pages} story pages of documentary comics. " if pages else "")
+        + "Based on real events and the public record. Dialogue is dramatized.")
+    return "<p>" + "</p><p>".join(paras) + "</p>"
+
+
 def slugify(title):
     """Title -> URL slug, so the product lives at /l/norjak rather than /l/vkzul.
 
@@ -375,7 +415,7 @@ def main():
 
     cover_path = os.path.join(comic_dir, "panels", "cover.jpg")
 
-    description = script.get("subject", "")
+    description = build_store_description(script)
     # Gumroad rejects any tag of 20 characters or more, and the whole product create call fails
     # with it -- a finished 51-page book was refused over one keyword. The model writes these
     # freely ("hanford nuclear reservation"), so they have to be trimmed here rather than
