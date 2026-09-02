@@ -96,6 +96,7 @@ jobs:
           exit 0
 
       - name: Generate script + panel prompts
+        id: script
         if: github.event.inputs.dry_run != 'true'
         env:
           # Anthropic ran out of credits mid-build and stopped the pipeline dead. Fireworks is
@@ -127,6 +128,7 @@ jobs:
       # space in finished pages and forces panels to be regenerated on Kaggle -- the single
       # biggest source of wasted GPU time on the Heaven's Gate build.
       - name: Fit panel sizes to the page layout
+        id: spec
         if: github.event.inputs.dry_run != 'true'
         run: |
           # Find the script rather than assuming issue 01. Issue numbers are assigned
@@ -141,6 +143,7 @@ jobs:
             --sheet cases/${{ env.slug }}/spec_panels.md
 
       - name: Generate FLUX art on Kaggle
+        id: flux
         if: github.event.inputs.dry_run != 'true'
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
@@ -155,6 +158,7 @@ jobs:
         run: python pipeline_lib/gen_flux_kaggle.py --case-dir cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}-flux" --regen "${{ github.event.inputs.regen_panels }}"
 
       - name: OCR check + one auto-fix retry
+        id: ocr
         if: github.event.inputs.dry_run != 'true'
         # NEVER fatal. This step is optional polish that re-rolls flagged panels on a second
         # Kaggle kernel, and it is blind to the garbled text it exists to catch anyway -- the
@@ -177,6 +181,7 @@ jobs:
           cp -r fonts cases/${{ env.slug }}/fonts
 
       - name: Build PDF, stage Gumroad draft, deliver to Telegram
+        id: deliver
         if: github.event.inputs.dry_run != 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -190,6 +195,39 @@ jobs:
             --title "${{ steps.case.outputs.case }}" \
             --target-pages "${{ github.event.inputs.target_pages || vars.COMIC_DAILY_PAGES || '25' }}" \
             --video-id "${{ steps.pick.outputs.video_id }}"
+
+      # Tell the user WHICH step broke, and offer a one-tap retry.
+      #
+      # A failed run used to be silent -- you found out by not receiving a comic. Retrying is
+      # cheap by design: the script comes back from the Worker's KV cache and the art from the
+      # completed Kaggle kernel, so a retry resumes at the first thing that actually failed
+      # instead of re-paying for everything before it.
+      - name: Report failure to Telegram
+        if: failure()
+        continue-on-error: true
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          CASE: ${{ steps.case.outputs.case }}
+          PAGES: ${{ github.event.inputs.target_pages || vars.COMIC_DAILY_PAGES || '25' }}
+          PROFILE: ${{ github.event.inputs.profile || vars.COMIC_DAILY_PROFILE }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          C_PICK: ${{ steps.pick.conclusion }}
+          C_SCRIPT: ${{ steps.script.conclusion }}
+          C_SPEC: ${{ steps.spec.conclusion }}
+          C_FLUX: ${{ steps.flux.conclusion }}
+          C_OCR: ${{ steps.ocr.conclusion }}
+          C_DELIVER: ${{ steps.deliver.conclusion }}
+        run: |
+          STEP="an unknown step"
+          [ "$C_PICK" = "failure" ]    && STEP="picking the case"
+          [ "$C_SCRIPT" = "failure" ]  && STEP="script + panel prompts"
+          [ "$C_SPEC" = "failure" ]    && STEP="fitting panel sizes"
+          [ "$C_FLUX" = "failure" ]    && STEP="FLUX art on Kaggle"
+          [ "$C_OCR" = "failure" ]     && STEP="OCR check"
+          [ "$C_DELIVER" = "failure" ] && STEP="building the PDF / Gumroad / Telegram"
+          echo "failed at: $STEP"
+          curl -sS -X POST "${WORKER_URL%/}/build-failed"             -H "Content-Type: application/json"             -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}"             -H "User-Agent: shadow-gasp-comic-pipeline"             --data "$(python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"step":os.environ["STEP"],"target_pages":os.environ["PAGES"],"profile":os.environ["PROFILE"],"run_url":os.environ["RUN_URL"]}))' )"             || echo "WARNING: could not report the failure"
 
       - name: Commit ONLY the dedup ledger back to repo (never the comic content)
         if: always()

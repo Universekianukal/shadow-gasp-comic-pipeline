@@ -758,6 +758,32 @@ async function handleCallback(env, cq) {
     }
     return;
   }
+  if (action === "retry") {
+    const raw = await env.PENDING.get("retry:" + token);
+    if (!raw) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This retry has expired -- use /make" });
+      return;
+    }
+    const b = JSON.parse(raw);
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Retrying..." });
+    try {
+      await dispatchPipeline(env, {
+        case: b.case || "",
+        target_pages: String(b.target_pages || "25"),
+        profile: b.profile || "",
+        dry_run: "false"
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't restart the build: " + e.message });
+      return;
+    }
+    await tg(env, "editMessageText", {
+      chat_id: chatId, message_id: messageId,
+      text: "\u{1F501} Retrying \"" + (b.case || "auto-picked case") + "\" after the failure at " + b.step +
+            ".\nCached script, recovered art \u2014 only what broke is redone."
+    });
+    return;
+  }
   if (action === "funnel") {
     const raw = await env.PENDING.get(`pending:${token}`);
     if (!raw) {
@@ -1608,6 +1634,29 @@ var worker_default = {
         remaining: Math.max(0, cap - claimed),
         sold_out: claimed >= cap
       }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (request.method === "POST" && url.pathname === "/build-failed") {
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
+      const b = await request.json();
+      // A failed build used to be silent -- you learned about it by not receiving a comic.
+      // Retrying is cheap: the script comes back from the KV cache and the art from the
+      // completed Kaggle kernel, so a retry resumes at whatever actually broke.
+      const token = "r" + Math.random().toString(36).slice(2, 10);
+      await env.PENDING.put("retry:" + token, JSON.stringify(b), { expirationTtl: 604800 });
+      await tg(env, "sendMessage", {
+        chat_id: env.TELEGRAM_CHAT_ID,
+        text: "\u274C Build FAILED at: " + b.step + "\n\n" +
+              "Case: " + (b.case || "(auto-picked)") + "\n" +
+              "Pages: " + (b.target_pages || "default") + (b.profile ? " \u00b7 style " + b.profile : "") + "\n" +
+              "Log: " + b.run_url + "\n\n" +
+              "Retrying skips what already succeeded \u2014 the script is cached and the art is " +
+              "recovered from the Kaggle kernel, so it picks up at the step that broke.",
+        reply_markup: { inline_keyboard: [[
+          { text: "\u{1F501} Retry from here", callback_data: "retry:" + token }
+        ]]}
+      });
+      return new Response("ok", { status: 200 });
     }
     if (request.method === "POST" && url.pathname === "/register") {
       const auth = request.headers.get("X-Shared-Secret");
