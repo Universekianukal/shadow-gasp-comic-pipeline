@@ -466,7 +466,12 @@ def main():
     # Product-page hero: the comic shown as an object, not a mood image.
     try:
         import gen_store_hero
-        cover_path = gen_store_hero.build(pdf_path, os.path.join(comic_dir, "store_hero.jpg"))
+        # Pass the script through: the hero's side panel carries the issue number, format and
+        # hook -- the things the cover art cannot say at gallery size.
+        cover_path = gen_store_hero.build(
+            pdf_path, os.path.join(comic_dir, "store_hero.jpg"),
+            meta={"series": script.get("series"), "title": script.get("title"),
+                  "issue_no": script.get("issue_no"), "hook": script.get("promo_hook")})
     except Exception as e:
         print(f"WARNING: store hero build failed ({e}) — falling back")
         if banner_path and os.path.exists(banner_path):
