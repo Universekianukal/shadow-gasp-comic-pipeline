@@ -14,6 +14,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
 
@@ -168,7 +169,59 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
         # taking a finished book down with it. The draft already carries the covers the first
         # staging gave it; a rebuild is here to replace the FILE, not to add more images.
         gumroad(upd)
+        prune_stale_files(existing["id"])
         return existing["id"]
+
+
+def prune_stale_files(product_id):
+    """Leave exactly ONE downloadable file on the product: the newest upload.
+
+    `products update --file` APPENDS. This is the same trap the covers hit four lines up, and it
+    went unnoticed far longer for one reason: a failed cover upload breaks the build loudly,
+    while a surplus download is completely invisible from the build log. Every rebuild quietly
+    added another copy -- NORJAK reached 5, HEAVEN'S GATE 2 and POISONED GROUND 10.
+
+    Ten identical-looking rows would be merely untidy. What makes it a real defect is that the
+    copies are NOT identical: they are separate builds, so they disagree. POISONED GROUND's older
+    copies carry '$2.99' on the back cover while the product sells for $4.99 -- same 51 pages,
+    same art, one substituted string. A buyer paying $4.99 could open a book that prints a
+    different price, and would have no way to tell which of the ten was the real one.
+
+    Keeping the LAST entry is what makes this correct rather than arbitrary: Gumroad returns
+    files in upload order, so the last is the one this run just uploaded.
+
+    Best-effort. A staged, priced, uploaded comic must not be lost to a tidying step, so every
+    failure here warns and returns instead of raising.
+    """
+    try:
+        product = gumroad(["products", "view", product_id])
+        files = (product.get("product", product) or {}).get("files") or []
+        if len(files) < 2:
+            return
+        keep = files[-1]["id"]
+
+        pages = gumroad(["products", "content", "get", product_id])
+        if isinstance(pages, dict):
+            pages = pages.get("pages", [pages])
+        for page in pages:
+            body = page.get("description") or {}
+            body["content"] = [
+                node for node in body.get("content", [])
+                if node.get("type") != "fileEmbed"
+                or (node.get("attrs") or {}).get("id") == keep
+            ]
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                         encoding="utf-8") as fh:
+            json.dump(pages, fh)
+            path = fh.name
+        try:
+            gumroad(["products", "content", "set", product_id, path, "--yes"])
+        finally:
+            os.unlink(path)
+        print(f"pruned {len(files) - 1} stale file(s) from {product_id}, kept {keep}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - tidying must never sink a finished build
+        print(f"WARNING: could not prune stale files from {product_id}: {exc}", flush=True)
 
 
 # Telegram bot API hard limit for sendDocument. Not configurable, not raisable by any plan.
