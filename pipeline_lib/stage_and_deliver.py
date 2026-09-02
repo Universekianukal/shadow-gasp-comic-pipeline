@@ -208,7 +208,12 @@ def main():
     script = json.load(open(script_path, encoding="utf-8"))
 
     build_comic = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_comic.py")
-    subprocess.run([sys.executable, build_comic, "--script", script_path], cwd=comic_dir, check=True)
+    # ABSOLUTE path. script_path is built from --case-dir, which the workflow passes relative to
+    # the repo root ("cases/<slug>/..."), but this runs with cwd=comic_dir -- so the relative
+    # form resolved to cases/<slug>/cases/<slug>/script_issue01.json and the build died on a
+    # missing file. Never surfaced before because no run had ever reached this step.
+    subprocess.run([sys.executable, build_comic, "--script", os.path.abspath(script_path)],
+                   cwd=comic_dir, check=True)
 
     pdf_path = os.path.join(comic_dir, script["output"])
     cover_path = os.path.join(comic_dir, "panels", "cover.jpg")
