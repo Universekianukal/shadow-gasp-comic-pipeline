@@ -129,8 +129,14 @@ jobs:
       - name: Fit panel sizes to the page layout
         if: github.event.inputs.dry_run != 'true'
         run: |
+          # Find the script rather than assuming issue 01. Issue numbers are assigned
+          # automatically now, so the file is script_issue<NN>.json -- hardcoding 01 broke the
+          # moment POISONED GROUND became issue 03. stage_and_deliver already globs for it;
+          # this was the last place that did not.
+          SCRIPT=$(ls cases/${{ env.slug }}/script_issue*.json | head -1)
+          echo "using script: $SCRIPT"
           python pipeline_lib/spec_panels.py \
-            --script cases/${{ env.slug }}/script_issue01.json \
+            --script "$SCRIPT" \
             --prompts cases/${{ env.slug }}/panel_prompts.json \
             --sheet cases/${{ env.slug }}/spec_panels.md
 
