@@ -37,15 +37,25 @@ def main():
 
     ocr = RapidOCR()
     flagged = []
+    scanned = 0
     for p in prompts:
         path = os.path.join(panels_dir, p["file"])
         if not os.path.exists(path):
             continue
+        scanned += 1
         result, _ = ocr(path)
         texts = [r[1] for r in result if len(r[1].strip()) >= 2] if result else []
         if texts:
             flagged.append(p)
             print(f"FLAGGED {p['file']}: {texts}")
+
+    # A step that silently does nothing is worse than one that fails: this whole script once
+    # ran for 0.3s and reported success because an edit dropped its __main__ block, and
+    # continue-on-error hid it. Say what was actually looked at.
+    print(f"OCR scanned {scanned}/{len(prompts)} panels", flush=True)
+    if prompts and not scanned:
+        print(f"WARNING: scanned NOTHING -- no panel files found under {panels_dir}",
+              file=sys.stderr, flush=True)
 
     if not flagged:
         print("OCR check clean, no panels flagged")
@@ -113,3 +123,7 @@ def build_contact_sheets(panels_dir, names, out_dir, per_sheet=12, cols=4, cell=
         sheet.save(out, "JPEG", quality=88)
         sheets.append(out)
     return sheets
+
+
+if __name__ == "__main__":
+    main()
