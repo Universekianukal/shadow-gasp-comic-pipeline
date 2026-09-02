@@ -18,11 +18,15 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(os.path.dirname(HERE), "issues.json")
 
+# Only books that actually reached the storefront hold a number.
+#
+# PARADISE and NIMROD were seeded at 3 and 4 from their local script files, but neither is on
+# Gumroad -- they are unfinished drafts on disk. Reserving numbers for books that may never ship
+# pushes every real issue further out and is why POISONED GROUND was heading for #05 when it is
+# the third thing on the shelf. They get a number when they ship, like anything else.
 SEED = {
     "norjak": 1,
     "heavens-gate": 2,
-    "jonestown-massacre-peoples-temple-1978": 3,
-    "iranian-embassy-siege": 4,
 }
 
 
