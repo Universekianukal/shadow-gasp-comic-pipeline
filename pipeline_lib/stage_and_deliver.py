@@ -322,12 +322,21 @@ def main():
     # renders rather than what the code believes it set. Six near-identical drafts went out
     # differing only in small details, with no way to tell them apart at a glance.
     rendered_price = "?"
+    back_cover_png = None
     try:
         import fitz
         with fitz.open(pdf_path) as _doc:
-            _m = re.search(r"\$\s?\d+(?:\.\d{2})?", _doc[_doc.page_count - 1].get_text())
+            last = _doc[_doc.page_count - 1]
+            text = last.get_text()
+            _m = re.search(r"\$\s?\d+(?:\.\d{2})?", text)
             rendered_price = _m.group(0) if _m else "none found"
+            # Rasterise the back cover and ship it too. Extracted text can disagree with what a
+            # reader actually sees -- a stale copy, a second price drawn elsewhere, a glyph that
+            # does not extract -- and the only way to settle that is to look at the page.
+            back_cover_png = os.path.join(comic_dir, "_back_cover_check.png")
+            last.get_pixmap(dpi=110).save(back_cover_png)
         print(f"back cover renders: {rendered_price}", flush=True)
+        print(f"all $ amounts on the last page: {re.findall(r'[$]s?[0-9.]+', text)}", flush=True)
     except Exception as e:
         print(f"WARNING: could not read the price back from the PDF ({e})", flush=True)
 
@@ -442,6 +451,15 @@ def main():
     if not result.get("ok"):
         raise SystemExit(f"Telegram send failed: {result}")
     print(f"Delivered PDF to Telegram, message_id={result['result']['message_id']}")
+
+    # The back cover as an IMAGE, straight after the PDF, so the price on the page can be
+    # checked at a glance without opening a 40MB file or trusting a log line.
+    if back_cover_png and os.path.exists(back_cover_png):
+        try:
+            telegram_send_photo(bot_token, chat_id, back_cover_png,
+                                caption=f"back cover of the PDF just sent — reads {rendered_price}")
+        except Exception as e:
+            print(f"WARNING: could not send the back-cover check image ({e})", flush=True)
 
     # A second, independent copy of the script itself.
     #
