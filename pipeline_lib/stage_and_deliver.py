@@ -219,7 +219,21 @@ def main():
     cover_path = os.path.join(comic_dir, "panels", "cover.jpg")
 
     description = script.get("subject", "")
-    tags = [t.strip() for t in script.get("keywords", "").split(",") if t.strip()][:5]
+    # Gumroad rejects any tag of 20 characters or more, and the whole product create call fails
+    # with it -- a finished 51-page book was refused over one keyword. The model writes these
+    # freely ("hanford nuclear reservation"), so they have to be trimmed here rather than
+    # trusted. Shorten on a word boundary where possible, then drop anything still too long,
+    # de-duplicated and case-insensitive so trimming cannot produce two identical tags.
+    tags, seen = [], set()
+    for raw in script.get("keywords", "").split(","):
+        t = raw.strip()
+        while len(t) >= 20 and " " in t:
+            t = t.rsplit(" ", 1)[0].strip()
+        if t and len(t) < 20 and t.lower() not in seen:
+            seen.add(t.lower())
+            tags.append(t)
+    tags = tags[:5]
+    print(f"gumroad tags: {tags}", flush=True)
 
     # Purpose-built social promo graphic (hook-led, not a comic page). Built
     # here at build time because the case folder is deleted after this run --
