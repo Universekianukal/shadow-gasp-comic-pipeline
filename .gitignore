@@ -8,3 +8,6 @@ node_modules/
 # API-pushed kernels), and this repo is PUBLIC for the free Actions minutes. One stray
 # `git add -A` would publish the credential.
 lora-training/
+
+__pycache__/
+*.pyc
