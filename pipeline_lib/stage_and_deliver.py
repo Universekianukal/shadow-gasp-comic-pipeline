@@ -122,8 +122,11 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
                "--file", pdf_path, "--file-name", os.path.basename(pdf_path)]
         if description:
             upd += ["--description", description]
-        if cover_path and os.path.exists(cover_path):
-            upd += ["--cover-image", cover_path]
+        # Deliberately NO --cover-image on the update path. Gumroad counts covers as previews
+        # and caps them at 8, and each rebuild APPENDS rather than replacing -- so after a few
+        # rebuilds the update itself started failing with "we have a limit of 8 previews",
+        # taking a finished book down with it. The draft already carries the covers the first
+        # staging gave it; a rebuild is here to replace the FILE, not to add more images.
         gumroad(upd)
         return existing["id"]
 
@@ -299,6 +302,22 @@ def main():
         args.price = PAGE_PRICE_TIERS[tier]
         print(f"pricing: {delivered} {source} delivered (asked {args.target_pages}) "
               f"-> {tier}pp tier -> ${args.price}", flush=True)
+
+    # The back cover PRINTS a price, and nothing was syncing it with what Gumroad charges: the
+    # script writer invented "$2.99" from the schema example while the storefront sold the book
+    # at $4.99. A buyer sees both. The tier price is only knowable after the PDF exists (it
+    # depends on the page count), so patch the script and rebuild once -- the rebuild is
+    # assembly only, no GPU and no API call.
+    printed = (script.get("back_cover") or {}).get("price")
+    wanted = f"${args.price}" if not str(args.price).startswith("$") else str(args.price)
+    if printed and printed != wanted:
+        script.setdefault("back_cover", {})["price"] = wanted
+        with open(script_path, "w", encoding="utf-8") as fh:
+            json.dump(script, fh, indent=2, ensure_ascii=False)
+        print(f"back cover price {printed} -> {wanted}; rebuilding the PDF", flush=True)
+        subprocess.run([sys.executable, build_comic, "--script", os.path.abspath(script_path)],
+                       cwd=comic_dir, check=True)
+
     cover_path = os.path.join(comic_dir, "panels", "cover.jpg")
 
     description = script.get("subject", "")
