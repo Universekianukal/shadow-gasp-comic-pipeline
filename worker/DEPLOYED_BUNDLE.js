@@ -1506,9 +1506,10 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     }
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: "\u{1F517} Adding \"" + (rec.title || rec.case) + "\" to https://youtu.be/" + videoId +
-            "\nIt refuses if the product is still a draft \u2014 a draft URL 404s for viewers \u2014 and it is " +
-            "idempotent, so running it twice cannot double-post. I'll report back here."
+      text: "\u{1F50E} Checking \"" + (rec.title || rec.case) + "\" against https://youtu.be/" + videoId +
+            "\nIf the link is already there it changes nothing and says so; otherwise it adds it. " +
+            "Refuses while the product is a draft, since a draft URL 404s for viewers. " +
+            "Result follows in under a minute."
     });
     return;
   }

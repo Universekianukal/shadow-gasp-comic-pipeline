@@ -429,8 +429,13 @@ def main():
             cover_path = banner_path
 
     previews = ([promo_path] if promo_path else []) + pick_preview_panels(comic_dir, script)
+    # The buyer-facing name, used for the Gumroad product AND for the line written into the
+    # video description. Registering args.title instead put the CASE name into both -- /funnel
+    # was about to write "READ THE COMIC: Hanford Nuclear Reservation contamination cover-up"
+    # into a public description instead of the comic's actual title.
+    product_name = f"{script['series']} #{script['issue_no']}: {script['title']}"
     product_id = stage_draft(
-        name=f"{script['series']} #{script['issue_no']}: {script['title']}",
+        name=product_name,
         pdf_path=pdf_path, cover_path=cover_path, price=args.price,
         description=description, tags=tags, category=DEFAULT_CATEGORY,
         preview_paths=previews, thumbnail_path=thumb_path,
@@ -556,7 +561,7 @@ def main():
         token=approval_token,
         case_name=args.title,
         product_id=product_id,
-        title=args.title,
+        title=product_name,
         video_id=args.video_id,
         flagged=flagged,
         case_id=args.case_id,
