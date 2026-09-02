@@ -1112,6 +1112,8 @@ var COMMAND_LIST = [
   "/make <case> | 50  \u2014 build straight away at 50pp, skipping both pickers",
   "/regen p05_3 p06_1  \u2014 re-roll specific panels on the MOST RECENT book, after checking the OCR contact sheets. Panel names are the gold labels on those sheets. Everything else is reused, so it takes minutes not an hour.",
   "/regen <token> p05_3  \u2014 same, but for an older book (the token is in that book's sheet captions)",
+  "/funnel  - put the most recent comic's link into the description of the short it was made from (published products only)",
+  "/funnel <videoId>  - same, naming the video explicitly",
   "/gencode <slug> [cap]  \u2014 mint a ONE-TIME free download code for a published comic (default cap 50)",
   "/freeclaims <slug>  \u2014 how many one-time codes have been issued",
   "",
@@ -1420,6 +1422,62 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
   }
   if (text.startsWith("/help") || text.startsWith("/commands") || text.trim() === "/") {
     await tg(env, "sendMessage", { chat_id: chatId, text: COMMAND_LIST });
+    return;
+  }
+  if (text.startsWith("/funnel")) {
+    // Put a published comic's link into the description of the short it was made from.
+    //
+    // Manual counterpart to the draft's Funnel button. Args are all optional and order does not
+    // matter: a YouTube id looks like 11 chars of [A-Za-z0-9_-], a book token starts with the
+    // letters we mint, so they can be told apart without asking the user to remember an order.
+    // Position, not pattern. An approval token from secrets.token_urlsafe(8) is 11 base64url
+    // characters -- exactly the shape of a YouTube id -- so guessing which is which reads one as
+    // the other. One argument means the video; two mean token then video.
+    const args = text.trim().split(/\s+/).slice(1);
+    let token = null, vid = null;
+    if (args.length === 1) vid = args[0];
+    else if (args.length >= 2) { token = args[0]; vid = args[1]; }
+    if (!token) token = await env.PENDING.get("latest_pending");
+    const raw = token ? await env.PENDING.get("pending:" + token) : null;
+    if (!raw) {
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: "Usage: /funnel [videoId]\n\nLinks the most recent comic into its short's description. Pass a video id if the book has none recorded:\n/funnel ula5Affft-w"
+      });
+      return;
+    }
+    const rec = JSON.parse(raw);
+    const videoId = vid || rec.video_id;
+    if (!videoId) {
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: "\u274C No short is recorded for \"" + (rec.title || rec.case) + "\".\nPass the video id: /funnel <videoId>"
+      });
+      return;
+    }
+    if (!rec.product_url) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C No Gumroad URL recorded for that book." });
+      return;
+    }
+    try {
+      await dispatchFunnelComicLink(env, {
+        video_id: videoId,
+        product_url: rec.product_url,
+        product_name: rec.title || rec.case,
+        pages: String(rec.pages || ""),
+        position: "top",
+        notify_chat_id: String(chatId)
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't start the funnel job: " + e.message });
+      return;
+    }
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: "\u{1F517} Adding \"" + (rec.title || rec.case) + "\" to https://youtu.be/" + videoId +
+            "\nIt refuses if the product is still a draft \u2014 a draft URL 404s for viewers \u2014 and it is " +
+            "idempotent, so running it twice cannot double-post. I'll report back here."
+    });
     return;
   }
   if (text.startsWith("/regen")) {
