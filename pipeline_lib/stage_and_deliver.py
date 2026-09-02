@@ -440,12 +440,12 @@ def main():
             flagged = json.load(open(fp, encoding="utf-8"))
         sheets = sorted(glob.glob(os.path.join(comic_dir, "ocr_flagged_sheet*.jpg")))
         for n, sheet in enumerate(sheets, 1):
-            if n == 1:
-                cap = (f"\U0001f50d OCR flagged {len(flagged)} panel(s) — sheet 1/{len(sheets)}."
-                       "\nNothing was regenerated; these are the originals. Re-roll any of them"
-                       f" with:\n/regen {approval_token} p05_3 p06_1")
-            else:
-                cap = f"sheet {n}/{len(sheets)}"
+            # The command goes on EVERY sheet, not just the first: you scroll to sheet 4, spot a
+            # bad panel there, and the instruction has to be under your thumb, not 3 messages up.
+            cap = (f"\U0001f50d OCR flagged {len(flagged)} panel(s) — sheet {n}/{len(sheets)}. "
+                   "These are the originals; nothing was regenerated.\n"
+                   "Re-roll the bad ones (labels are the panel names):\n"
+                   f"/regen {approval_token} p05_3 p06_1")
             telegram_send_photo(bot_token, chat_id, sheet, caption=cap)
         if sheets:
             print(f"sent {len(sheets)} OCR contact sheet(s) to Telegram", flush=True)

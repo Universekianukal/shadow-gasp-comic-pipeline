@@ -1077,6 +1077,34 @@ Want a different title than the AI-generated one? Tap below -- only works before
 }
 __name(acceptHookClip, "acceptHookClip");
 __name2(acceptHookClip, "acceptHookClip");
+var COMMAND_LIST = [
+  "\u{1F4D6} SHADOW GASP BOT \u2014 all commands",
+  "",
+  "\u{1F4DA} COMICS",
+  "/make  \u2014 auto-pick the next case that already has a published short, then ask pages + style",
+  "/make <case>  \u2014 same, for a specific case",
+  "/make <case> | 50  \u2014 build straight away at 50pp, skipping both pickers",
+  "/regen <token> p05_3 p06_1  \u2014 re-roll specific panels after checking the OCR contact sheets. Everything else is reused, so it takes minutes not an hour. The token is in the sheet caption.",
+  "/gencode <slug> [cap]  \u2014 mint a ONE-TIME free download code for a published comic (default cap 50)",
+  "/freeclaims <slug>  \u2014 how many one-time codes have been issued",
+  "",
+  "\u{1F3AC} SHORTS / VIDEO",
+  "/short  \u2014 auto-pick a case, generate script + stills, DM the hook still and Flow prompt",
+  "/short <case>  \u2014 same, for a specific case",
+  "/day <N>  \u2014 hook still + Flow prompt for batch day N (add ' force' to override a published day)",
+  "(reply to that with the Flow video)  \u2014 commits it, renders and uploads automatically",
+  "/publish <N>  \u2014 render + upload day N now",
+  "/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time",
+  "/cancel <N>  \u2014 cancel an in-progress render/publish for day N",
+  "/title <N>  \u2014 draft an alt title (Shock/Curiosity/Open-loop/Direct), tap Apply to use it",
+  "",
+  "\u{1F4CA} REPORTS (nothing is built)",
+  "/trending  \u2014 trending true-crime stories not yet covered",
+  "/retention  \u2014 last 21 days views/retention/drop-off, ranked by retention and by reach",
+  "",
+  "/help  \u2014 this list"
+].join("\n");
+
 async function handleMessage(env, msg) {
   const text = (msg.text || "").trim();
   const chatId = msg.chat.id;
@@ -1363,6 +1391,10 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     });
     return;
   }
+  if (text.startsWith("/help") || text.startsWith("/commands") || text.trim() === "/") {
+    await tg(env, "sendMessage", { chat_id: chatId, text: COMMAND_LIST });
+    return;
+  }
   if (text.startsWith("/regen")) {
     // Re-roll specific panels after a human looked at the OCR contact sheets. The pipeline no
     // longer regenerates anything on its own: the detector misses the defect it exists for and
@@ -1408,7 +1440,7 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     if (text.startsWith("/")) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Commands:\n/make <case name>  \u2014 build a comic (asks pages, then page style)\n/make <case name> | 50  \u2014 build now, explicit page count (skips both pickers, auto style)\n/make  \u2014 auto-pick the next comic case (still asks pages + style)\n\n/gencode <slug> [cap]  \u2014 mint a ONE-TIME free code for a published comic, DM'd here (default cap 50). Send the code to one person only \u2014 it stops working after their first use.\n/freeclaims <slug>  \u2014 check how many one-time codes have been issued so far\n\n/short  \u2014 auto-pick + generate a new true-crime short's script+stills, then DM the hook still + Flow prompt (5h reply window, else auto-falls-back to a static cut scheduled for 05:15 IST)\n/short <case>  \u2014 same, for a specific case\n\n/day <N>  \u2014 get day N's hook still + Flow prompt from the batch (refuses days already published; add ' force' to override)\n(reply with the Flow video)  \u2014 commits it, renders + uploads to YouTube automatically\n/publish <N>  \u2014 render + upload day N now (refuses days already published; add ' force' to override)\n/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time\n/cancel <N>  \u2014 cancel an in-progress render/publish for day N (only runs dispatched after this shipped)\n/title <N>  \u2014 draft an alt title in a style (Shock/Curiosity/Open-loop/Direct), tap Apply to use it -- only works before this day uploads to YouTube\n\n/trending  \u2014 report-only scan for trending true-crime/horror stories not yet covered (nothing auto-built)\n/retention  \u2014 report-only digest: last 21 days' views/retention/drop-off per video, ranked by retention AND reach separately"
+        text: COMMAND_LIST
       });
     }
     return;

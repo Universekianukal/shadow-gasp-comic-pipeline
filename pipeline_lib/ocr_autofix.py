@@ -10,6 +10,8 @@ import json
 import os
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
 from rapidocr_onnxruntime import RapidOCR
 
 import gen_flux_kaggle as gk
@@ -73,16 +75,27 @@ def build_contact_sheets(panels_dir, names, out_dir, per_sheet=12, cols=4, cell=
     type into /regen.
     """
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageDraw, ImageFont
     except ImportError:
         print("WARNING: Pillow missing, no contact sheets", flush=True)
         return []
+
+    # PIL's default bitmap font is ~11px and unreadable once Telegram scales a 1700px sheet down
+    # to phone width -- the label is the whole point, since it is what gets typed into /regen.
+    font = None
+    for cand in (os.path.join(os.path.dirname(HERE), "fonts", "Montserrat-Bold.ttf"),
+                 os.path.join(HERE, "fonts", "Montserrat-Bold.ttf")):
+        try:
+            font = ImageFont.truetype(cand, 30)
+            break
+        except Exception:
+            continue
 
     sheets = []
     for idx in range(0, len(names), per_sheet):
         batch = names[idx:idx + per_sheet]
         rows = (len(batch) + cols - 1) // cols
-        label_h = 26
+        label_h = 44
         sheet = Image.new("RGB", (cols * cell, rows * (cell + label_h)), (18, 18, 18))
         draw = ImageDraw.Draw(sheet)
         for i, fn in enumerate(batch):
@@ -94,7 +107,8 @@ def build_contact_sheets(panels_dir, names, out_dir, per_sheet=12, cols=4, cell=
                 sheet.paste(im, (x + 4, y + 4))
             except Exception:
                 draw.rectangle([x + 4, y + 4, x + cell - 4, y + cell - 4], outline=(90, 90, 90))
-            draw.text((x + 6, y + cell + 4), fn, fill=(235, 235, 235))
+            draw.text((x + 8, y + cell + 6), fn.replace(".jpg", ""),
+                      fill=(255, 214, 90), font=font)
         out = os.path.join(out_dir, f"ocr_flagged_sheet{idx // per_sheet + 1}.jpg")
         sheet.save(out, "JPEG", quality=88)
         sheets.append(out)
