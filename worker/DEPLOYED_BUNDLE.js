@@ -1084,7 +1084,8 @@ var COMMAND_LIST = [
   "/make  \u2014 auto-pick the next case that already has a published short, then ask pages + style",
   "/make <case>  \u2014 same, for a specific case",
   "/make <case> | 50  \u2014 build straight away at 50pp, skipping both pickers",
-  "/regen <token> p05_3 p06_1  \u2014 re-roll specific panels after checking the OCR contact sheets. Everything else is reused, so it takes minutes not an hour. The token is in the sheet caption.",
+  "/regen p05_3 p06_1  \u2014 re-roll specific panels on the MOST RECENT book, after checking the OCR contact sheets. Panel names are the gold labels on those sheets. Everything else is reused, so it takes minutes not an hour.",
+  "/regen <token> p05_3  \u2014 same, but for an older book (the token is in that book's sheet captions)",
   "/gencode <slug> [cap]  \u2014 mint a ONE-TIME free download code for a published comic (default cap 50)",
   "/freeclaims <slug>  \u2014 how many one-time codes have been issued",
   "",
@@ -1399,14 +1400,24 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     // Re-roll specific panels after a human looked at the OCR contact sheets. The pipeline no
     // longer regenerates anything on its own: the detector misses the defect it exists for and
     // its fix-kernel has never succeeded, so the judgement belongs here.
+    // The token is OPTIONAL. It only ever appears in a contact-sheet caption, so it is
+    // unfindable once the chat scrolls -- and "re-roll these panels" almost always means the
+    // book that just arrived. A panel name always looks like p<digits>_<something>, so anything
+    // that does not is taken as a token; with none given, fall back to the newest book.
     const parts = text.trim().split(/\s+/).slice(1);
-    const token = parts.shift();
+    let token = null;
+    if (parts.length && !/^p\d+[_-]/i.test(parts[0])) token = parts.shift();
+    if (!token) token = await env.PENDING.get("latest_pending");
     const panels = parts.map((p) => (p.endsWith(".jpg") ? p : p + ".jpg"));
-    if (!token || !panels.length) {
+    if (!panels.length) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "Usage: /regen <token> p05_3 p06_1\nThe token is in the caption of the first OCR contact sheet."
+        text: "Usage: /regen p05_3 p06_1\n\nPanel names are the gold labels on the OCR contact sheets. This re-rolls on the most recent book; to target an older one, add the token from its sheet caption:\n/regen <token> p05_3"
       });
+      return;
+    }
+    if (!token) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ No recent book to re-roll. Build one with /make first." });
       return;
     }
     const raw = await env.PENDING.get(`pending:${token}`);
@@ -1608,6 +1619,9 @@ var worker_default = {
       if (!token || !caseName || !product_id) {
         return new Response("missing fields", { status: 400 });
       }
+      // The token is only ever shown in a contact-sheet caption, so it is unfindable once the
+      // chat scrolls. Remember the newest book too and let /regen default to it.
+      await env.PENDING.put("latest_pending", token);
       await env.PENDING.put(`pending:${token}`, JSON.stringify({
         case: caseName, product_id,
         video_id: video_id || "", product_url: product_url || "", pages: pages || "",
