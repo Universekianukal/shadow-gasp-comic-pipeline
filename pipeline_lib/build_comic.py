@@ -1120,8 +1120,17 @@ def main():
     with open(args.script, encoding="utf-8") as fh:
         doc = json.load(fh)
 
-    panels_dir = os.path.normpath(os.path.join(HERE, doc.get("panels_dir", "../panels")))
-    out = args.out or os.path.join(HERE, doc.get("output", "comic.pdf"))
+    # Resolve against the SCRIPT, not this module.
+    #
+    # HERE is pipeline_lib/, and this builder historically ran as a copy sitting inside the case
+    # directory, so HERE and the case dir were the same place. Running it from pipeline_lib made
+    # every data path point into the library folder instead: panels were looked for in
+    # pipeline_lib/panels and the finished PDF was written to pipeline_lib/, which is why
+    # Gumroad then failed with "could not stat file: cases/<slug>/<TITLE>_issue01.pdf".
+    # The script's own directory is the case directory by definition, so anchor there.
+    base = os.path.dirname(os.path.abspath(args.script))
+    panels_dir = os.path.normpath(os.path.join(base, doc.get("panels_dir", "../panels")))
+    out = args.out or os.path.join(base, doc.get("output", "comic.pdf"))
 
     archive_existing(out)
 
