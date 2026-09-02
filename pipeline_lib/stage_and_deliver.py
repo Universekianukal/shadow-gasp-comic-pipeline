@@ -265,6 +265,28 @@ def main():
                          "the 'Funnel to YouTube' button on the Telegram draft.")
     args = ap.parse_args()
 
+    # Resolve the short this case came from, if the workflow did not pass one.
+    #
+    # --video-id is filled from pick_case's output, but pick_case is SKIPPED whenever a case is
+    # named explicitly -- which is every manual /make. So POISONED GROUND arrived with no
+    # 🔗 Funnel button even though its short (ula5Affft-w) has been live all along, and the
+    # comic had nothing pointing at it. The ledger already knows; just look it up.
+    if not args.video_id:
+        try:
+            ledger = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "cases_used.json")
+            entries = json.load(open(ledger, encoding="utf-8"))["cases"]
+            want = (args.title or "").strip().lower()
+            hit = next((c for c in entries
+                        if c.get("videoId") and c.get("case", "").strip().lower() == want), None)
+            if hit:
+                args.video_id = hit["videoId"]
+                print(f"video for this case found in the ledger: {args.video_id}", flush=True)
+            else:
+                print("no published short recorded for this case -- no funnel button", flush=True)
+        except Exception as e:
+            print(f"WARNING: could not look up the case's video ({e})", flush=True)
+
     comic_dir = args.case_dir
     scripts = glob.glob(os.path.join(comic_dir, "script_issue*.json"))
     if not scripts:
