@@ -802,6 +802,7 @@ async function handleCallback(env, cq) {
         product_url: rec.product_url,
         product_name: rec.title || rec.case,
         pages: String(rec.pages || ""),
+        hook: rec.hook || "",
         position: "top",
         notify_chat_id: String(chatId)
       });
@@ -1497,6 +1498,9 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
         product_url: rec.product_url,
         product_name: rec.title || rec.case,
         pages: String(rec.pages || ""),
+        // Without the hook the description falls back to generic copy that sells the comic as
+        // the same material the viewer just watched for free.
+        hook: rec.hook || "",
         position: "top",
         notify_chat_id: String(chatId)
       });
@@ -1776,7 +1780,7 @@ var worker_default = {
         await env.PENDING.put("comic:" + b_case_id(body), JSON.stringify({
           title: body.title || body.case, case: body.case,
           product_url: body.product_url || "", video_id: body.video_id || "",
-          issue: body.issue_no || "", pages: body.pages || ""
+          issue: body.issue_no || "", pages: body.pages || "", hook: body.hook || ""
         }));
       }
       await env.PENDING.put(`pending:${token}`, JSON.stringify({
