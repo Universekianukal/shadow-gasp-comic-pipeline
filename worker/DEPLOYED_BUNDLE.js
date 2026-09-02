@@ -1436,11 +1436,16 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       const raw = await env.PENDING.get(k.name);
       if (!raw) continue;
       const c = JSON.parse(raw);
+      // Only claim a link when one was actually recorded. Saying "link it" beside a video that
+      // already carries the link reads as outstanding work when there is none.
+      const state = c.linked_at
+        ? "  \u2705 linked " + c.linked_at + "  (re-check: /funnel " + c.video_id + ")"
+        : "  \u{1F517} not linked yet \u2014 " + (c.video_id ? "/funnel " + c.video_id : "/funnel <videoId>");
       rows.push(
         (c.issue ? "#" + c.issue + " " : "") + (c.title || c.case) + "\n" +
         "  store: " + (c.product_url || "(not staged)") + "\n" +
         "  short: " + (c.video_id ? "https://youtu.be/" + c.video_id : "(none recorded)") + "\n" +
-        "  link it: " + (c.video_id ? "/funnel " + c.video_id : "/funnel <videoId>")
+        state
       );
     }
     await tg(env, "sendMessage", {
