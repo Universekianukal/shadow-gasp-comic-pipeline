@@ -72,7 +72,7 @@ jobs:
         if: github.event.inputs.case == ''
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python pipeline_lib/pick_case.py --source "${{ github.event.inputs.case_source || 'published' }}"
+        run: python pipeline_lib/pick_case.py --source "${{ github.event.inputs.case_source || vars.COMIC_DAILY_SOURCE || 'published' }}"
 
       - name: Set case variable
         id: case
@@ -113,7 +113,7 @@ jobs:
           SLUG=$(echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40)
           mkdir -p cases/$SLUG/panels
           echo "slug=$SLUG" >> "$GITHUB_ENV"
-          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages || '25' }}" --profile "${{ github.event.inputs.profile }}"
+          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages || vars.COMIC_DAILY_PAGES || '25' }}" --profile "${{ github.event.inputs.profile || vars.COMIC_DAILY_PROFILE }}"
 
       # Solve the page layout BEFORE any art is generated, and write each panel's real
       # target_px back onto its prompt. Without this, gen_flux_kaggle falls back to one fixed
@@ -177,7 +177,7 @@ jobs:
             --case-dir cases/${{ env.slug }} \
             --case-id "${{ env.slug }}" \
             --title "${{ steps.case.outputs.case }}" \
-            --target-pages "${{ github.event.inputs.target_pages || '25' }}" \
+            --target-pages "${{ github.event.inputs.target_pages || vars.COMIC_DAILY_PAGES || '25' }}" \
             --video-id "${{ steps.pick.outputs.video_id }}"
 
       - name: Commit ONLY the dedup ledger back to repo (never the comic content)
