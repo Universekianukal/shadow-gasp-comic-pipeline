@@ -76,26 +76,35 @@ def build(pdf_path, out, meta=None, W=1280, H=720):
     d = ImageDraw.Draw(bg)
     tx = fg_x + fg.width + int(W * 0.06)
     tw = W - tx - pad
-    y = int(H * 0.20)
+    y = int(H * 0.235)
 
     series = (meta.get("series") or "SHADOW GASP").upper()
-    d.text((tx, y), series, font=_font("Montserrat-Bold.ttf", 40), fill=(238, 238, 238))
-    y += 60
+    d.text((tx, y), series, font=_font("Montserrat-Bold.ttf", 30), fill=(232, 232, 232))
+    y += 46
 
     strap = "TRUE CRIME  ·  DOCUMENTARY COMIC"
-    f_strap = _font("Montserrat-Bold.ttf", 20)
-    bar_h = 40
-    d.rectangle([tx, y, tx + min(tw, int(d.textlength(strap, font=f_strap)) + 36), y + bar_h],
+    f_strap = _font("Montserrat-Bold.ttf", 15)
+    bar_h = 30
+    d.rectangle([tx, y, tx + min(tw, int(d.textlength(strap, font=f_strap)) + 28), y + bar_h],
                 fill=(196, 40, 40))
-    d.text((tx + 18, y + 9), strap, font=f_strap, fill=(255, 255, 255))
-    y += bar_h + 34
+    d.text((tx + 14, y + 7), strap, font=f_strap, fill=(255, 255, 255))
+    y += bar_h + 30
 
     title = (meta.get("title") or "").upper()
     if title:
-        f_title = _font("Montserrat-ExtraBold.ttf", 68)
-        for line in _wrap(d, title, f_title, tw)[:2]:
+        # Fit to a ceiling instead of using one fixed size. At a flat 68px, NORJAK filled 46% of
+        # the panel and HEAVEN'S GATE 88% while POISONED GROUND overflowed to 111% and wrapped --
+        # so the same layout made short titles look modest and long ones look stretched. Shrink
+        # to fit, never grow: a short title stays at the design size rather than ballooning.
+        f_title, size = None, 0
+        for size in range(68, 33, -2):
+            f_title = _font("Montserrat-ExtraBold.ttf", size)
+            if d.textlength(title, font=f_title) <= tw * 0.86:
+                break
+        lines = _wrap(d, title, f_title, tw)[:2]
+        for line in lines:
             d.text((tx, y), line, font=f_title, fill=(255, 255, 255))
-            y += 78
+            y += int(size * 1.15)
         y += 12
 
     # The part the cover cannot carry.
@@ -106,16 +115,16 @@ def build(pdf_path, out, meta=None, W=1280, H=720):
     # and the script says 75, and pricing already settled on what the buyer actually receives.
     bits.append(f"{doc.page_count} pages")
     bits.append("Instant PDF download")
-    d.text((tx, y), "  ·  ".join(bits), font=_font("Montserrat-Bold.ttf", 26),
-           fill=(200, 200, 200))
-    y += 48
+    d.text((tx, y), "  ·  ".join(bits), font=_font("Montserrat-Bold.ttf", 20),
+           fill=(196, 196, 196))
+    y += 38
 
     hook = (meta.get("hook") or "").strip()
     if hook:
-        f_hook = _font("Montserrat-Bold.ttf", 24)
+        f_hook = _font("Montserrat-Bold.ttf", 19)
         for line in _wrap(d, hook, f_hook, tw)[:3]:
             d.text((tx, y), line, font=f_hook, fill=(228, 228, 228))
-            y += 34
+            y += 27
 
     bg.save(out, quality=95)
     try:
