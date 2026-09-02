@@ -186,13 +186,21 @@ JSON VALIDITY -- this breaks whole builds, so treat it as a hard rule:
 - Do not use literal newlines, tabs or backslashes inside string values either.
 
 REQUIREMENTS for every prompt:
-- Start with EXACTLY this, filling in the era: "Noir true-crime comic panel, ink outlines,
+- Start with EXACTLY this, filling in the era: "Noir true-crime comic artwork, ink outlines,
   halftone shading, [era] palette. Heavy black ink and deep shadow retained even in bright
-  daylight, strong tonal contrast, never washed out or high-key."
-  The second sentence is NOT optional. It is the difference between the shipped 80-page
-  Heaven's Gate art and the Hanford run, whose prompts omitted it and produced flat pale grey
-  pages -- one splash measured 0.04 saturation, effectively a blank sheet. Without an explicit
-  floor on contrast the model drifts to washed-out mid-grey across a whole book.
+  daylight, strong tonal contrast, never washed out or high-key. The illustration fills the
+  whole image, running to all four edges."
+  All three sentences are required, and each exists because of a measured defect:
+  * "artwork", NEVER "comic panel". A comic panel IS a bordered box, so asking for one gets you
+    the border drawn into the picture: 91 of 224 panels on the Hanford run came back with a
+    baked-in matte that had to be auto-trimmed, costing real image area on every one. This is
+    the same mechanism as the negation bug below -- FLUX draws the nouns you write -- except the
+    noun was one we wrote on purpose.
+  * The contrast sentence is what separates the shipped 80-page Heaven's Gate art from the
+    Hanford run, whose prompts omitted it and produced flat pale grey pages; one splash measured
+    0.04 saturation, effectively a blank sheet.
+  * The full-bleed sentence states positively what the frame should contain, instead of banning
+    borders -- banning them is what produced them last time.
 - Describe the scene concretely: named location type (INTERIOR/EXTERIOR + room/setting), who's in it, what's happening, matching the shape's framing.
 - The composition MUST match the panel's real shape. A SPLASH is a TALL full page, so never
   describe one as a "wide establishing vista" -- Hanford did exactly that and FLUX drew a wide
