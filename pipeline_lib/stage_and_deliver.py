@@ -96,8 +96,36 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
         args += ["--category", category]
     if permalink:
         args += ["--custom-permalink", permalink]
-    data = gumroad(args)
-    return data.get("product", data)["id"]
+    try:
+        data = gumroad(args)
+        return data.get("product", data)["id"]
+    except RuntimeError as e:
+        if "permalink is already used" not in str(e):
+            raise
+        # Rebuilding a case reuses its permalink, so the second attempt collides with the draft
+        # the first one left behind and the whole run dies at the last step. Update that draft
+        # in place instead: a rebuild is meant to REPLACE the previous attempt, not to fail or
+        # to litter the store with poisoned-ground-2.
+        existing = next((p for p in gumroad(["products", "list"]).get("products", [])
+                         if p.get("custom_permalink") == permalink
+                         or (p.get("short_url") or "").rstrip("/").endswith("/" + permalink)), None)
+        if not existing:
+            raise
+        if existing.get("published") or (existing.get("sales_count") or 0) > 0:
+            # Never silently overwrite something buyers can already see.
+            raise RuntimeError(
+                f"permalink '{permalink}' belongs to a PUBLISHED product ({existing['id']}); "
+                "refusing to overwrite it automatically")
+        print(f"permalink '{permalink}' already on draft {existing['id']} -- updating it",
+              flush=True)
+        upd = ["products", "update", existing["id"], "--name", name, "--price", price,
+               "--file", pdf_path, "--file-name", os.path.basename(pdf_path)]
+        if description:
+            upd += ["--description", description]
+        if cover_path and os.path.exists(cover_path):
+            upd += ["--cover-image", cover_path]
+        gumroad(upd)
+        return existing["id"]
 
 
 # Telegram bot API hard limit for sendDocument. Not configurable, not raisable by any plan.
