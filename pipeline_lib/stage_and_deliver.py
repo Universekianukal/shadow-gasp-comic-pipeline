@@ -175,13 +175,17 @@ def make_review_copy(pdf_path, target_mb=45):
         return None
 
 
-def telegram_send_document(token, chat_id, file_path, caption):
+def telegram_send_document(token, chat_id, file_path, caption, filename=None):
     boundary = "----shadowgaspboundary"
     url = f"https://api.telegram.org/bot{token}/sendDocument"
     parts = [f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat_id}\r\n"]
     if caption:
         parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}\r\n")
-    filename = os.path.basename(file_path)
+    # Caller may override the name. Every rebuild produced a file called
+    # <TITLE>_issue03.pdf, and a viewer that caches by filename then showed a stale
+    # copy: the back-cover IMAGE from the same run read $4.99 while the document
+    # opened at $2.99. A unique name per build removes the collision.
+    filename = filename or os.path.basename(file_path)
     mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; "
                  f"filename=\"{filename}\"\r\nContent-Type: {mime}\r\n\r\n")
@@ -442,8 +446,14 @@ def main():
         else:
             note = "PREVIEW BUILD FAILED - read it on Gumroad"
 
+    import hashlib as _hl, time as _t
+    _digest = _hl.sha1(open(send_path, "rb").read()).hexdigest()[:8]
+    _stamp = _t.strftime("%H%M%S")
+    _unique = f"{os.path.splitext(os.path.basename(send_path))[0]}_{_stamp}_{_digest}.pdf"
+    print(f"sending {send_path} as {_unique} "
+          f"({os.path.getsize(send_path)/1e6:.1f}MB, sha1 {_digest})", flush=True)
     result = telegram_send_document(
-        bot_token, chat_id, send_path,
+        bot_token, chat_id, send_path, filename=_unique,
         caption=(f"{args.title} — issue {script.get('issue_no', '?')} — {note}\n"
                  f"back cover prints {rendered_price} · Gumroad ${args.price}\n"
                  "(approval buttons in the next message)"),
