@@ -311,8 +311,9 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     # A FRESH kernel every time -- never a new version of an existing one, which would replace
     # the only surviving copy of everything that kernel holds. See next_kernel_id.
     kernel_id = next_kernel_id(kaggle_user, slug)
+    kernel_name = kernel_id.split("/", 1)[-1]
     print(f"generating into a new kernel: {kernel_id}", flush=True)
-    kernel_dir = "/tmp/kaggle_kernel_" + kernel_id.split("/", 1)[-1]
+    kernel_dir = "/tmp/kaggle_kernel_" + kernel_name
     os.makedirs(kernel_dir, exist_ok=True)
     os.makedirs(panels_dir, exist_ok=True)
 
@@ -350,7 +351,11 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     )
     open(os.path.join(kernel_dir, "gen_flux.py"), "w", encoding="utf-8").write(code)
     json.dump({
-        "id": kernel_id, "title": slug, "code_file": "gen_flux.py", "language": "python",
+        # ⚠️ TITLE MUST SLUGIFY TO THE ID. Kaggle rejects a push whose title does not resolve to
+        # the kernel id with "title does not resolve to the specified id" + 409 Conflict. This
+        # was harmless while the id was always <slug>, and broke the moment append-only naming
+        # started producing <slug>-2 against a title still reading <slug>.
+        "id": kernel_id, "title": kernel_name, "code_file": "gen_flux.py", "language": "python",
         "kernel_type": "script", "is_private": True, "enable_gpu": True, "enable_internet": True,
         "dataset_sources": [], "competition_sources": [], "kernel_sources": [],
         # enable_gpu alone gets whatever card is free, which is usually a P100 (sm_60).
