@@ -622,10 +622,26 @@ def main():
     _unique = f"{os.path.splitext(os.path.basename(send_path))[0]}_{_stamp}_{_digest}.pdf"
     print(f"sending {send_path} as {_unique} "
           f"({os.path.getsize(send_path)/1e6:.1f}MB, sha1 {_digest})", flush=True)
+    # build_comic's bounds audit, surfaced where the reviewing actually happens. It already
+    # prints to the Actions log, and nobody reads the Actions log -- the same reason the OCR
+    # gate's findings had to be turned into contact sheets in this chat.
+    _bounds = ""
+    try:
+        _br = sorted(glob.glob(os.path.join(comic_dir, "*_bounds.json")))
+        _off = json.load(open(_br[0], encoding="utf-8")) if _br else []
+        if _off:
+            _pages = sorted({o["page"] for o in _off})
+            _bounds = (f"\n⚠️ {len(_off)} line(s) print OFF THE PAGE on p"
+                       + ", p".join(str(p) for p in _pages[:6])
+                       + (" …" if len(_pages) > 6 else ""))
+    except Exception as e:
+        print(f"WARNING: could not read the bounds report ({e})", flush=True)
+
     result = telegram_send_document(
         bot_token, chat_id, send_path, filename=_unique,
         caption=(f"{args.title} — issue {script.get('issue_no', '?')} — {note}\n"
-                 f"back cover prints {rendered_price} · Gumroad ${args.price}\n"
+                 f"back cover prints {rendered_price} · Gumroad ${args.price}"
+                 f"{_bounds}\n"
                  "(approval buttons in the next message)"),
     )
     if not result.get("ok"):
