@@ -13,6 +13,7 @@ per entry, cropped square at build time. No new generation.
 
 import io
 import os
+import sys
 
 from PIL import Image
 from reportlab.lib.colors import Color
@@ -388,28 +389,75 @@ def _sources(c, g, sources, y):
     the cover price: the back of the book is where a reader decides whether the
     front of it was serious. It doubles as the answer to "where did you get
     this?" when a reviewer asks.
+
+    ⚠️ This block is drawn into WHATEVER SPACE THE LAST PAGE HAS LEFT, and the number of
+    back-matter pages comes from the script (`back_matter.pages`, default 2) -- a figure the
+    model guesses before any of this is measured. So the space is never guaranteed. Unbounded,
+    it simply kept decrementing y past the foot of the sheet: OVERBOARD (issue 05) printed its
+    last citation at y=737.5 on a 733.5pt page -- "Gregson v. Gilbert, Court of King's Bench
+    (1783)" sliced in half by the page edge, with the entry above it overlapping the folio.
+
+    So: measure first, shrink to fit, and never draw below BOTTOM. Shrinking is the right
+    trade here because the alternative is losing a citation, and a citation list exists
+    precisely so a reader can check the claims.
     """
     if not sources:
         return y
 
+    # Clear of the folio, which sits at 0.155in with an 8.2pt disc behind it.
+    BOTTOM = g.MARGIN + 0.12 * inch
+    max_w = g.PAGE_W - 2 * g.MARGIN - 0.16 * inch
+
+    def metrics(shrink):
+        """Sizes at a given tightness, and the height they need.
+
+        The heading's own spacing shrinks too. It is a fixed 24.5pt otherwise, and on the run
+        this was written for that fixed block was the whole shortfall -- the entries fit at the
+        floor while the gap above them did not, which would have cost a citation to save
+        whitespace.
+        """
+        size, lead, gap = 7.4 * shrink, 10.6 * shrink, 4.6 * shrink
+        head = (0.14 * inch + 0.20 * inch) * shrink
+        h = head
+        for src in sources:
+            h += len(LT.wrap(src, g.FONT_BODY, size, max_w)) * lead + gap
+        return size, lead, gap, head, h
+
+    avail = y - BOTTOM
+    for shrink in (1.0, 0.94, 0.88, 0.82, 0.76, 0.70):
+        size, lead, gap, head, need = metrics(shrink)
+        if need <= avail:
+            break
+    else:
+        # Even the floor does not fit. Say so -- a silently dropped source is exactly the kind
+        # of quiet loss that makes the citation list worthless.
+        print(f"WARNING: {len(sources)} sources need {need:.0f}pt but only {avail:.0f}pt is "
+              f"left on the last back-matter page; raise back_matter.pages",
+              file=sys.stderr, flush=True)
+
     c.setFillColor(ACCENT)
     c.setFont(g.FONT_HEAVY, 9.0)
     c.drawString(g.MARGIN, y, "PRINCIPAL SOURCES")
-    y -= 0.14 * inch
+    y -= head * (0.14 / 0.34)
 
     c.setStrokeColor(RULE)
     c.setLineWidth(0.5)
     c.line(g.MARGIN, y, g.PAGE_W - g.MARGIN, y)
-    y -= 0.20 * inch
+    y -= head * (0.20 / 0.34)
 
-    max_w = g.PAGE_W - 2 * g.MARGIN - 0.16 * inch
     for src in sources:
+        lines = LT.wrap(src, g.FONT_BODY, size, max_w)
+        # Hard guard: never start an entry that cannot finish on the sheet.
+        if y - len(lines) * lead < BOTTOM:
+            print(f"WARNING: no room left for source {src[:60]!r} -- dropped from the printed "
+                  "list", file=sys.stderr, flush=True)
+            break
         c.setFillColor(ACCENT)
         c.rect(g.MARGIN, y + 2.4, 0.07 * inch, 2.0, stroke=0, fill=1)
         c.setFillColor(DIM)
-        for k, ln in enumerate(LT.wrap(src, g.FONT_BODY, 7.4, max_w)):
-            c.setFont(g.FONT_BODY, 7.4)
+        for ln in lines:
+            c.setFont(g.FONT_BODY, size)
             c.drawString(g.MARGIN + 0.16 * inch, y, ln)
-            y -= 10.6
-        y -= 4.6
+            y -= lead
+        y -= gap
     return y
