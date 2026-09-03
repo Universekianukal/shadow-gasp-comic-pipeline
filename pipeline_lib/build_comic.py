@@ -1024,12 +1024,28 @@ def render_back_cover(c, spec):
     c.setFont(FONT_HEAVY, 30)
     c.drawCentredString(PAGE_W / 2, PAGE_H - 2.2 * inch, spec["logo"])
 
+    # ⚠️ WRAP IT. This split on "\n" and drew each piece as one centred line, which is only a
+    # wrap if something upstream inserted the newlines -- and nothing can. gen_case_script's
+    # JSON-validity rules explicitly forbid literal newlines inside string values (a stray one
+    # breaks the whole generation), so spec["quote"] is ALWAYS a single line by construction and
+    # this loop could never once have wrapped anything. The Princes Gate back cover drew its
+    # hook 487pt wide on a 477pt page, clipped off both edges mid-word.
+    #
+    # The blurb twelve lines below already wraps through LT.wrap against real glyph widths. The
+    # display line just never used it.
     c.setFillColor(ink(1, 1, 1))
     y = PAGE_H / 2 + 0.4 * inch
-    for line in spec["quote"].split("\n"):
-        c.setFont(FONT_HEAVY, 15)
+    quote = " ".join(spec["quote"].split())
+    measure = PAGE_W - 2.4 * inch          # same centred column as the blurb
+    # Step the display size down rather than let a long hook march into the blurb beneath it.
+    for size in (15, 13.5, 12, 10.5):
+        lines = LT.wrap(quote, FONT_HEAVY, size, measure)
+        if len(lines) <= 4:
+            break
+    for line in lines:
+        c.setFont(FONT_HEAVY, size)
         c.drawCentredString(PAGE_W / 2, y, line)
-        y -= 24
+        y -= size * 1.6
 
     # crimson rule, so the lower third is composed rather than simply empty
     c.setStrokeColor(ACCENT)
