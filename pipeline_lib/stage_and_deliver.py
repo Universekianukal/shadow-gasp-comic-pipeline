@@ -358,6 +358,18 @@ def register_with_worker(worker_url, shared_secret, token, case_name, product_id
         return r.status
 
 
+
+def _case_head(name):
+    """A case's leading name: everything before a " / " qualifier or a trailing parenthetical.
+
+    "Operation Nimrod / Iranian Embassy Siege 1980 (full long-form documentary)" and the
+    "Operation Nimrod" a human types at /make are the same case; only this reduction sees that.
+    """
+    head = name.split("/")[0]
+    head = re.sub(r"\(.*?\)", "", head)
+    return " ".join(head.split()).strip().lower()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case-dir", required=True)
@@ -376,19 +388,40 @@ def main():
     # named explicitly -- which is every manual /make. So POISONED GROUND arrived with no
     # 🔗 Funnel button even though its short (ula5Affft-w) has been live all along, and the
     # comic had nothing pointing at it. The ledger already knows; just look it up.
+    # ⚠️ The match CANNOT be string equality. The ledger stores a descriptive case name --
+    # "Operation Nimrod / Iranian Embassy Siege 1980 (full long-form documentary)" -- while a
+    # build is dispatched with the short name a human types, "Operation Nimrod". Those are never
+    # equal, so this lookup reported "no published short recorded" with BOTH Nimrod videos
+    # sitting in the file. It only ever worked when the name happened to be typed identically,
+    # which is why POISONED GROUND got a funnel button and Nimrod did not.
+    #
+    # So: exact first, then compare the case HEAD -- the leading name, before any " / " qualifier
+    # or trailing parenthetical. Verified against all 74 videos in the ledger: no two DIFFERENT
+    # cases share a head, so this cannot bind a comic to the wrong video. Two heads do carry
+    # several videos each (Nimrod and David Koresh), and in both the entries are the same case's
+    # teaser and its long-form -- take the most recently published, which is the fuller video and
+    # the better thing to send a reader to.
     if not args.video_id:
         try:
             ledger = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                   "cases_used.json")
-            entries = json.load(open(ledger, encoding="utf-8"))["cases"]
-            want = (args.title or "").strip().lower()
-            hit = next((c for c in entries
-                        if c.get("videoId") and c.get("case", "").strip().lower() == want), None)
-            if hit:
-                args.video_id = hit["videoId"]
-                print(f"video for this case found in the ledger: {args.video_id}", flush=True)
+            entries = [c for c in json.load(open(ledger, encoding="utf-8"))["cases"]
+                       if c.get("videoId")]
+            want = " ".join((args.title or "").split()).strip().lower()
+            hits = [c for c in entries if c.get("case", "").strip().lower() == want]
+            how = "exact name"
+            if not hits:
+                hits = [c for c in entries if _case_head(c.get("case", "")) == _case_head(want)]
+                how = "case name"
+            if hits:
+                pick = max(hits, key=lambda c: c.get("publishedAt", ""))
+                args.video_id = pick["videoId"]
+                extra = f", newest of {len(hits)}" if len(hits) > 1 else ""
+                print(f"video for this case found in the ledger by {how}{extra}: "
+                      f"{args.video_id} ({pick.get('publishedAt', '?')})", flush=True)
             else:
-                print("no published short recorded for this case -- no funnel button", flush=True)
+                print(f"no published video recorded for {args.title!r} -- no funnel button",
+                      flush=True)
         except Exception as e:
             print(f"WARNING: could not look up the case's video ({e})", flush=True)
 
