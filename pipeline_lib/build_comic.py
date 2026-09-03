@@ -616,6 +616,9 @@ def render_grid_page(c, page, panels_dir, missing):
         for ci in range(len(row)):
             p = placed[idx]
             free = (ci == 0, ri == 0, ci == len(row) - 1, ri == len(rows) - 1)
+            # Recorded so the draw loop below frames the panel according to the bleed that was
+            # actually applied, not the one the script asked for.
+            p[0]["_bleed_applied"] = effective_bleed(p[0], free)
             p[1:] = break_out(p[0], *p[1:], free=free)
             idx += 1
 
@@ -626,7 +629,7 @@ def render_grid_page(c, page, panels_dir, missing):
         # A panel running off the trim gets no border on any side, and its
         # lettering is held inside the safe band — same rule as a splash.
         render_panel(c, panel, px, py, pw, ph, panels_dir, missing,
-                     bleed=bool(panel.get("bleed")),
+                     bleed=bool(panel.get("_bleed_applied")),
                      tilt=panel.get("tilt", 0))
 
 
@@ -658,10 +661,24 @@ def break_out(panel, x, y, w, h, free=(True, True, True, True)):
         x, y = x - w * l, y - h * b
         w, h = w * (1 + l + r), h * (1 + t + b)
 
-    edges = panel.get("bleed")
+    # ⚠️ A BLEED IS SUBJECT TO `free` EXACTLY AS A GROW IS.
+    #
+    # This block used to run off the trim on any edge the script named, whether or not that edge
+    # faced the page. "bleed": ["bottom"] on a TOP-tier panel therefore grew it to y = -BLEED --
+    # straight down over every tier beneath it. Measured on the delivered Princes Gate issue: 67
+    # overlapping panel pairs, most of them one panel drawn wholly inside another, plus 73
+    # caption blocks straddling two panels on 26 pages, because a caption is placed relative to
+    # the cell and the cell now spanned half the sheet.
+    #
+    # The sizing side already had this guard -- spec_panels.apply_bleed tests `facing` before
+    # growing anything -- so the art was being GENERATED for the correct cell and DRAWN into a
+    # bloated one. The two sides now agree.
+    #
+    # It is the same rule the comment above this function's caller states for grow: a panel may
+    # only run into space it has. An edge that faces a neighbour is not the page edge, and
+    # bleeding it is meaningless as well as destructive -- there is no trim there to run off.
+    edges = effective_bleed(panel, free)
     if edges:
-        if isinstance(edges, str):
-            edges = [edges]
         b = BLEED if BLEED_ON else 0
         if "left" in edges:
             w += x + b
@@ -674,6 +691,23 @@ def break_out(panel, x, y, w, h, free=(True, True, True, True)):
         if "top" in edges:
             h = PAGE_H + b - y
     return [x, y, w, h]
+
+
+def effective_bleed(panel, free):
+    """The bleed edges that actually apply, given which of this cell's edges face the page.
+
+    A panel that asked to bleed on an interior edge is, after this, an ordinary framed cell --
+    so it must be DRAWN as one. Passing the script's raw `bleed` through to render_panel would
+    suppress its border and inset its lettering for a bleed that never happened, which is how
+    the fix for the geometry would have quietly become a second, subtler defect.
+    """
+    edges = panel.get("bleed")
+    if not edges:
+        return []
+    if isinstance(edges, str):
+        edges = [edges]
+    faces = dict(zip(("left", "top", "right", "bottom"), free))
+    return [e for e in edges if faces.get(e)]
 
 
 def render_splash_page(c, page, panels_dir, missing, folio=None):
