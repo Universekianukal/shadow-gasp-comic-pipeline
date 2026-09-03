@@ -198,6 +198,64 @@ def target_px(p):
     return DIMS[p["shape"]]
 
 
+def list_case_kernels(user, base_slug):
+    """Every kernel holding art for this case, most recently run FIRST.
+
+    A case's art lives across several kernels, not one -- see next_kernel_id for why. Ordering
+    matters: a panel re-rolled last week and re-rolled again today exists in two kernels, and the
+    newest is the one the reviewer asked for.
+    """
+    if not user:
+        return []
+    try:
+        r = subprocess.run(["kaggle", "kernels", "list", "--user", user, "-s", base_slug, "-v"],
+                           capture_output=True, text=True, timeout=120)
+    except Exception:
+        return []
+    import csv
+    import io
+    rows = []
+    try:
+        for row in csv.DictReader(io.StringIO(r.stdout or "")):
+            ref = (row.get("ref") or "").strip()
+            name = ref.split("/", 1)[-1]
+            # Kaggle's -s is a fuzzy search, so it also returns other cases' kernels. Only the
+            # base slug and its numbered siblings belong to this book.
+            if not re.fullmatch(re.escape(base_slug) + r"(-\d+)?", name):
+                continue
+            rows.append(((row.get("lastRunTime") or ""), ref))
+    except Exception:
+        return []
+    rows.sort(reverse=True)
+    return [ref for _, ref in rows]
+
+
+def next_kernel_id(user, base_slug):
+    """A kernel id that does not exist yet, so pushing NEVER destroys art.
+
+    ⭐ THE KERNEL IS THE ONLY ART STORE. cases/ is rm -rf'd after every run, so the previous
+    kernel's output is the sole surviving copy of a book's panels. Pushing a new version of a
+    kernel REPLACES that output -- which meant a targeted /regen of 13 panels left a kernel
+    holding only those 13, and the next run of that book had to regenerate the other 275 at a
+    different seed, changing art that was already approved. Two re-rolls in a row could never
+    both survive: the store ping-ponged and was never complete.
+
+    Writing each batch to a fresh kernel makes the store append-only. Recovery then overlays all
+    of a case's kernels, newest first, so every panel ever rendered stays reachable.
+    """
+    used = set()
+    for ref in list_case_kernels(user, base_slug):
+        name = ref.split("/", 1)[-1]
+        m = re.fullmatch(re.escape(base_slug) + r"-(\d+)", name)
+        used.add(int(m.group(1)) if m else 1)
+    if not used:
+        return f"{user}/{base_slug}"      # first generation of this book
+    n = 2
+    while n in used:
+        n += 1
+    return f"{user}/{base_slug}-{n}"
+
+
 def panels_from_kernel_source(kernel_id):
     """The exact PANELS list a previous kernel rendered, read back out of its own source.
 
@@ -250,8 +308,11 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     """Push one Kaggle kernel for the given list of {file,shape,prompt} dicts,
     poll to completion, download results into panels_dir. Returns list of
     files that failed to download."""
-    kernel_id = f"{kaggle_user}/{slug}"
-    kernel_dir = f"/tmp/kaggle_kernel_{slug}"
+    # A FRESH kernel every time -- never a new version of an existing one, which would replace
+    # the only surviving copy of everything that kernel holds. See next_kernel_id.
+    kernel_id = next_kernel_id(kaggle_user, slug)
+    print(f"generating into a new kernel: {kernel_id}", flush=True)
+    kernel_dir = "/tmp/kaggle_kernel_" + kernel_id.split("/", 1)[-1]
     os.makedirs(kernel_dir, exist_ok=True)
     os.makedirs(panels_dir, exist_ok=True)
 
@@ -489,34 +550,50 @@ def recover_from_previous_kernel(user, slug, prompts, panels_dir):
     """
     if not user:
         return
-    kernel_id = f"{user}/{slug}"
+    os.makedirs(panels_dir, exist_ok=True)
+    kernels = list_case_kernels(user, slug)
+    if not kernels:
+        print(f"no existing kernel for {slug} -- generating from scratch", flush=True)
+        return
+    print(f"{len(kernels)} kernel(s) hold art for this case: {', '.join(kernels)}", flush=True)
+
+    total = 0
+    for kernel_id in kernels:
+        # Stop as soon as the book is whole. Kernels are ordered newest-first, so the panels
+        # already taken are the most recent renders of themselves -- an older kernel must never
+        # overwrite a re-roll the reviewer asked for.
+        wanted = [p for p in prompts
+                  if not os.path.exists(os.path.join(panels_dir, p["file"]))]
+        if not wanted:
+            break
+        total += recover_one_kernel(kernel_id, wanted, panels_dir)
+    print(f"  recovered {total}/{len(prompts)} panels from {len(kernels)} kernel(s)", flush=True)
+
+
+def recover_one_kernel(kernel_id, wanted, panels_dir):
+    """Take from one kernel every panel in `wanted` it can vouch for. Returns how many."""
     try:
         r = subprocess.run(["kaggle", "kernels", "status", kernel_id],
                            capture_output=True, text=True, timeout=120)
         if "COMPLETE" not in (r.stdout or ""):
-            return
+            print(f"  {kernel_id}: not COMPLETE, skipping", flush=True)
+            return 0
     except Exception:
-        return
+        return 0
 
-    print(f"found a completed kernel {kernel_id} -- recovering its art before generating",
-          flush=True)
     out_dir = os.path.join(tempfile.mkdtemp(prefix="kaggle_recover_"), "out")
     try:
         subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir],
                        check=True, timeout=1800)
     except Exception as e:
-        print(f"  recovery download failed ({e}) -- generating from scratch", flush=True)
-        return
-
+        print(f"  {kernel_id}: download failed ({e}), skipping", flush=True)
+        return 0
     # ⭐ MATCH PER PANEL, NOT PER BOOK.
     #
     # This used to be one SHA1 over the whole list: any difference at all and NOTHING was
-    # recovered. That is only correct while every kernel renders the entire book. It does not:
-    # a targeted `--regen` pushes a kernel containing ONLY the handful of panels being
-    # re-rolled, to the same kernel id, overwriting the full-book kernel that came before. So
-    # the run after a /regen sees a 13-panel kernel, fails the whole-list hash against a
-    # 288-panel script, and regenerates all 288 -- hours of T4 time to replace art that was
-    # already good and already sitting in the download directory.
+    # recovered. That is only correct while every kernel renders the entire book, and none of
+    # them do -- a targeted --regen renders a handful, so a per-book hash compares 13 panels
+    # against a 288-panel script, fails, and regenerates everything.
     #
     # The safety property was never about the list. It is "this picture was rendered from this
     # caption's prompt", which is a per-panel fact, so check it per panel. Strictly safer than
@@ -524,20 +601,18 @@ def recover_from_previous_kernel(user, slug, prompts, panels_dir):
     # matched, this one verifies every file it takes.
     prev = {p["out"]: p["prompt"] for p in panels_from_kernel_source(kernel_id)}
 
-    # Fast path for the ordinary case, and the fallback when the source cannot be read: an
-    # intact whole-list stamp still vouches for every panel in one go.
+    # Fallback when the source cannot be read: an intact whole-list stamp vouches for the lot.
     fp_path = os.path.join(out_dir, "_prompts_fp.txt")
     stamp = open(fp_path).read().strip() if os.path.exists(fp_path) else ""
-    whole_book = bool(stamp) and stamp == prompts_fingerprint(build_panels_for_kernel(prompts))
+    whole_book = bool(stamp) and stamp == prompts_fingerprint(build_panels_for_kernel(wanted))
 
     if not prev and not whole_book:
-        print("  cannot establish what the previous kernel rendered -- regenerating rather "
-              "than putting old art under new captions", flush=True)
-        return
+        print(f"  {kernel_id}: cannot establish what it rendered -- skipping rather than "
+              "putting its art under new captions", flush=True)
+        return 0
 
-    os.makedirs(panels_dir, exist_ok=True)
     recovered = mismatched = 0
-    for p in prompts:
+    for p in wanted:
         name = p["file"].replace("/", "_")
         src = os.path.join(out_dir, name)
         dst = os.path.join(panels_dir, p["file"])
@@ -548,9 +623,10 @@ def recover_from_previous_kernel(user, slug, prompts, panels_dir):
             continue
         os.replace(src, dst)
         recovered += 1
-    print(f"  recovered {recovered}/{len(prompts)} panels from the previous run"
+    print(f"  {kernel_id}: recovered {recovered}"
           + (f" ({mismatched} skipped: rendered from a different prompt)" if mismatched else ""),
           flush=True)
+    return recovered
 
 
 def main():
