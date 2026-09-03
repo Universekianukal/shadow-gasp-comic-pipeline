@@ -239,7 +239,19 @@ jobs:
           # NEVER be committed here, or anyone could download the comic free
           # straight from GitHub before it's even approved. Only the ledger
           # (case *names*, not content) is safe to keep in git history.
-          git add cases_used.json
+          # issues.json as well as the ledger. issue_registry.assign() WRITES this file when it
+          # hands a new case its number, and nothing was committing it -- so every number
+          # assigned in CI died with the runner. Operation Nimrod shipped as #04 with the
+          # registry still topping out at 3, which means the next new case would have been
+          # handed 4 as well: two books numbered #04, the number baked into each PDF and each
+          # Gumroad title. Worse, once that second book recorded 4, a Nimrod REBUILD would
+          # compute 5 -- a different script-cache key, so a fresh paid generation, a fingerprint
+          # that no longer matches its art, and a reprint contradicting the issue already sold.
+          git add cases_used.json issues.json
           git commit -m "Update case ledger: ${{ steps.case.outputs.case }}" || echo "nothing to commit"
+          # Rebase before pushing: a push from a 3-hour build races anything committed to main
+          # while it ran, and losing the ledger to a non-fast-forward is how a case gets built
+          # twice.
+          git pull --rebase --autostash origin main || true
           git push
           rm -rf cases/
