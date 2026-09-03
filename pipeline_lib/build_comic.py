@@ -1316,7 +1316,14 @@ def main():
             page(foliated(lambda sp=sp: render_grid_page(
                 c, sp, panels_dir, missing)))
 
-    bm_pages = int(doc["back_matter"].get("pages", 2))
+    # The script's own figure is a guess made before any of this was measured, and the sources
+    # list is drawn into whatever the last page has left. On OVERBOARD that left 64pt for an
+    # 81pt block and cost a citation. Measure, and add a sheet if the content needs one.
+    _asked = int(doc["back_matter"].get("pages", 2))
+    bm_pages = FB.back_matter_pages(sys.modules[__name__], doc["back_matter"], _asked)
+    if bm_pages != _asked:
+        print(f"back matter: {_asked} page(s) requested, using {bm_pages} so the sources fit",
+              flush=True)
     for i in range(bm_pages):
         page(foliated(lambda i=i: FB.render_back_matter(
             c, g, doc["back_matter"], i, bm_pages)))
