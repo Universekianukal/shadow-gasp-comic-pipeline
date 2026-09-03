@@ -1085,6 +1085,71 @@ def render_back_cover(c, spec):
         c.drawString(MARGIN, MARGIN + 0.72 * inch, spec["publisher"].upper())
 
 
+def audit_text_bounds(path, tol=1.0):
+    """Read the finished PDF back and report any TEXT drawn off the sheet.
+
+    ⭐ THE GENERAL GUARD, not another per-site fix. Every text block in this book is placed by
+    arithmetic that walks a `y` downward -- back matter, sources, captions, the cast page, the
+    timeline, the back cover -- and any one of them can walk off the bottom when the content is
+    longer than whoever wrote that code imagined. Two shipped that way in one issue: OVERBOARD's
+    last citation printed 4pt below the page edge, and the back-cover hook ran off BOTH sides
+    because it was never wrapped. Both were found by a human noticing, which does not scale.
+
+    So: measure the artefact instead of trusting the code that made it. Cheap (one pass over an
+    already-written file), and it cannot miss a call site because it never looks at call sites.
+
+    TEXT ONLY, deliberately. Art is *supposed* to run past the trim on a bleed page, so flagging
+    images would cry wolf on every splash in the book. Type never should -- it is held inside
+    the safe band by design.
+
+    Non-fatal on purpose. A book with one overhanging line is still worth delivering and
+    reviewing; killing the build here would throw away hours of GPU over a typographic defect,
+    which is the mistake the OCR gate already made once. It shouts instead, and the reviewer
+    reading the Telegram draft is the gate.
+    """
+    try:
+        import pymupdf
+    except ImportError:
+        try:
+            import fitz as pymupdf
+        except ImportError:
+            print("bounds audit skipped: PyMuPDF not installed", flush=True)
+            return []
+
+    offenders = []
+    with pymupdf.open(path) as doc:
+        for i, page in enumerate(doc, 1):
+            r = page.rect
+            for blk in page.get_text("blocks"):
+                x0, y0, x1, y1, txt = blk[0], blk[1], blk[2], blk[3], blk[4]
+                if not txt.strip():
+                    continue
+                if (x0 < r.x0 - tol or y0 < r.y0 - tol
+                        or x1 > r.x1 + tol or y1 > r.y1 + tol):
+                    offenders.append((i, txt.strip().replace("\n", " ")[:60],
+                                      round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1)))
+
+    if offenders:
+        print(f"WARNING: {len(offenders)} text block(s) fall outside the page:",
+              file=sys.stderr, flush=True)
+        for pg, txt, x0, y0, x1, y1 in offenders:
+            print(f"   p{pg}: [{x0},{y0} {x1},{y1}] {txt!r}", file=sys.stderr, flush=True)
+    else:
+        print("bounds audit: no text outside the page", flush=True)
+
+    # Written beside the PDF so stage_and_deliver can put it in the Telegram caption. Always
+    # written, including when empty -- an absent file has to mean "the audit did not run", not
+    # "the audit found nothing", or a skipped audit reads as a clean book.
+    try:
+        report = os.path.splitext(path)[0] + "_bounds.json"
+        with open(report, "w", encoding="utf-8") as fh:
+            json.dump([{"page": p, "text": t, "bbox": [a, b, cc, d]}
+                       for p, t, a, b, cc, d in offenders], fh, indent=2)
+    except Exception as e:
+        print(f"WARNING: could not write the bounds report ({e})", flush=True)
+    return offenders
+
+
 def set_page_boxes(path, off):
     """
     Stamp TrimBox / BleedBox / ArtBox onto every page.
@@ -1267,6 +1332,7 @@ def main():
     c.save()
     if BLEED_ON:
         set_page_boxes(out, off)
+    audit_text_bounds(out)
     total = folio[0] - 1
 
     n_panels = 1 + sum(
