@@ -15,6 +15,8 @@ import tempfile
 import sys
 import time
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
 DIMS = {
     "LANDSCAPE": (1280, 720),
     "SPLASH": (720, 1280),
@@ -351,7 +353,6 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir], check=True, timeout=180)
 
     failed = []
-    degenerate = []
     for p in panels:
         src = os.path.join(out_dir, p["file"].replace("/", "_"))
         dst = os.path.join(panels_dir, p["file"])
@@ -359,21 +360,98 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
             failed.append(p["file"])
             continue
         os.replace(src, dst)
-        m, sd = finish_panel(dst, target_px(p))
-        if m < MIN_MEAN or sd < MIN_SD:
-            degenerate.append((p["file"], m, sd))
-
-    # Repeat the kernel's own check on what actually landed on disk. Saying it here as well as
-    # in the Kaggle log is the point: nobody reads the Kaggle log, and the run this guard was
-    # written for reported "success" while every full-bleed page in the book was a dark slab.
-    if degenerate:
-        print(f"WARNING: {len(degenerate)} panel(s) still degenerate after in-kernel "
-              "re-rolls:", flush=True)
-        for f, m, sd in degenerate:
-            print(f"   {f}  mean {m:.1f}  sd {sd:.1f}", flush=True)
-        print("   re-roll them with: -f regen_panels="
-              f"\"{' '.join(f for f, _, _ in degenerate)}\"", flush=True)
+        finish_panel(dst, target_px(p))
+    # The degenerate check is NOT here. It runs over the whole book in scan_dark() instead --
+    # art recovered from a previous kernel never passes through this loop, and a dark panel is
+    # just as dark whether this run rendered it or inherited it.
     return failed
+
+
+def scan_dark(panels_dir, prompts):
+    """Every panel in the finished book that came out dark or flat, worst first.
+
+    Deliberately sweeps the WHOLE book, not just what this run rendered. Most of a rebuild is
+    recovered from the previous kernel and never passes through the download loop, so checking
+    only fresh art would report a clean book while 275 inherited panels went unlooked-at.
+
+    Returns [(file, mean, sd)] using the same MIN_MEAN/MIN_SD the kernel re-rolls on, so what
+    lands in Telegram and what the GPU already retried mean the same thing.
+    """
+    from PIL import Image, ImageStat
+    out = []
+    for p in prompts:
+        path = os.path.join(panels_dir, p["file"])
+        if not os.path.exists(path):
+            continue
+        try:
+            with Image.open(path) as im:
+                st = ImageStat.Stat(im.convert("L"))
+        except Exception as e:
+            # An unreadable panel is a defect worth re-rolling, not a reason to abandon the scan.
+            print(f"  could not measure {p['file']}: {e}", flush=True)
+            out.append((p["file"], 0.0, 0.0))
+            continue
+        m, sd = float(st.mean[0]), float(st.stddev[0])
+        if m < MIN_MEAN or sd < MIN_SD:
+            out.append((p["file"], m, sd))
+    return sorted(out, key=lambda r: r[2])
+
+
+def build_contact_sheets(panels_dir, entries, out_dir, prefix,
+                         per_sheet=12, cols=4, cell=430):
+    """Tile panels up for review, each labelled with the name to type into /regen.
+
+    `entries` is a list of (filename, note). The note is what puts the reviewer in the picture:
+    a panel is up for re-roll either because OCR saw letterforms in it or because it measured
+    dark and flat, and those are different judgements to make by eye.
+
+    Lives here rather than in ocr_autofix because it needs nothing but Pillow, while that module
+    imports RapidOCR at the top -- so the dark sheets stay buildable in the art step even on a
+    run where the OCR step falls over, which is a step marked continue-on-error precisely
+    because it does.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("WARNING: Pillow missing, no contact sheets", flush=True)
+        return []
+
+    # PIL's default bitmap font is ~11px and unreadable once Telegram scales a 1700px sheet down
+    # to phone width -- the label is the whole point, since it is what gets typed into /regen.
+    font = note_font = None
+    for cand in (os.path.join(os.path.dirname(HERE), "fonts", "Montserrat-Bold.ttf"),
+                 os.path.join(HERE, "fonts", "Montserrat-Bold.ttf")):
+        try:
+            font = ImageFont.truetype(cand, 30)
+            note_font = ImageFont.truetype(cand, 21)
+            break
+        except Exception:
+            continue
+
+    sheets = []
+    for idx in range(0, len(entries), per_sheet):
+        batch = entries[idx:idx + per_sheet]
+        rows = (len(batch) + cols - 1) // cols
+        label_h = 74
+        sheet = Image.new("RGB", (cols * cell, rows * (cell + label_h)), (18, 18, 18))
+        draw = ImageDraw.Draw(sheet)
+        for i, (fn, note) in enumerate(batch):
+            path = os.path.join(panels_dir, fn)
+            x, y = (i % cols) * cell, (i // cols) * (cell + label_h)
+            try:
+                im = Image.open(path).convert("RGB")
+                im.thumbnail((cell - 8, cell - 8))
+                sheet.paste(im, (x + 4, y + 4))
+            except Exception:
+                draw.rectangle([x + 4, y + 4, x + cell - 4, y + cell - 4], outline=(90, 90, 90))
+            draw.text((x + 8, y + cell + 4), fn.replace(".jpg", ""),
+                      fill=(255, 214, 90), font=font)
+            if note:
+                draw.text((x + 8, y + cell + 40), note, fill=(190, 190, 190), font=note_font)
+        out = os.path.join(out_dir, f"{prefix}{idx // per_sheet + 1}.jpg")
+        sheet.save(out, "JPEG", quality=88)
+        sheets.append(out)
+    return sheets
 
 
 def finish_panel(path, target):
@@ -505,15 +583,37 @@ def main():
         print(f"forced re-roll of {len(forced)} panel(s): {forced}", flush=True)
     missing = [p for p in prompts if not os.path.exists(os.path.join(panels_dir, p["file"]))]
     if not missing:
-        print("All panels already present, skipping")
+        print("All panels already present, skipping generation")
+    else:
+        print(f"{len(missing)}/{len(prompts)} panels need generation")
+        # A different seed base for a forced re-roll -- re-rendering the same prompt at the same
+        # seed reproduces the same picture, which is not a fix.
+        seed = 3000 + (7000 if forced else 0)
+        failed = run_batch(args.kaggle_user, args.slug, missing, panels_dir, seed_base=seed)
+        if failed:
+            print(f"WARNING: {len(failed)} panels failed to generate: {failed}", file=sys.stderr)
+
+    # Measure the finished book and hand the bad panels to the reviewer.
+    #
+    # Runs on EVERY path, including "all panels already present" -- that branch used to return
+    # early, which is exactly the run where nothing new was rendered and therefore nothing new
+    # was ever looked at. The output is two files stage_and_deliver picks up: the names, which
+    # become re-rollable via /regen, and contact sheets showing what they actually look like.
+    dark = scan_dark(panels_dir, prompts)
+    names = [f for f, _, _ in dark]
+    json.dump(names, open(os.path.join(args.case_dir, "dark_panels.json"), "w"), indent=2)
+    if not dark:
+        print(f"tonal scan clean: 0/{len(prompts)} panels dark or flat", flush=True)
         return
-    print(f"{len(missing)}/{len(prompts)} panels need generation")
-    # A different seed base for a forced re-roll -- re-rendering the same prompt at the same
-    # seed reproduces the same picture, which is not a fix.
-    seed = 3000 + (7000 if forced else 0)
-    failed = run_batch(args.kaggle_user, args.slug, missing, panels_dir, seed_base=seed)
-    if failed:
-        print(f"WARNING: {len(failed)} panels failed to generate: {failed}", file=sys.stderr)
+    print(f"WARNING: {len(dark)}/{len(prompts)} panel(s) came out dark or flat "
+          f"(mean<{MIN_MEAN} or sd<{MIN_SD}):", file=sys.stderr, flush=True)
+    for f, m, sd in dark:
+        print(f"   {f}  mean {m:.1f}  sd {sd:.1f}", flush=True)
+    sheets = build_contact_sheets(
+        panels_dir, [(f, f"dark  mean {m:.0f}  sd {sd:.0f}") for f, m, sd in dark],
+        args.case_dir, "dark_sheet")
+    print(f"{len(dark)} dark panel(s) -> {len(sheets)} contact sheet(s); no art was touched",
+          flush=True)
 
 
 if __name__ == "__main__":

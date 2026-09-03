@@ -644,24 +644,45 @@ def main():
 
     # OCR contact sheets: which panels the scan thinks carry text, for eyeballing against the
     # PDF. Nothing has been regenerated -- the decision is the reviewer's, sent back as /regen.
+    #
+    # TWO reasons a panel is offered for re-roll, and both have to reach the chat or the reviewer
+    # cannot act on them in one pass: OCR saw letterforms, or the tonal sweep measured the panel
+    # dark and flat. The dark set is why an entire book of full-bleed splashes once shipped as
+    # black slabs -- nothing looked, and nothing said so. Both feed the SAME `flagged` list the
+    # Worker validates /regen against, so one /regen can name panels from either sheet and they
+    # all re-roll in a single rebuild.
     flagged = []
-    try:
-        fp = os.path.join(comic_dir, "ocr_flagged.json")
-        if os.path.exists(fp):
-            flagged = json.load(open(fp, encoding="utf-8"))
-        sheets = sorted(glob.glob(os.path.join(comic_dir, "ocr_flagged_sheet*.jpg")))
-        for n, sheet in enumerate(sheets, 1):
-            # The command goes on EVERY sheet, not just the first: you scroll to sheet 4, spot a
-            # bad panel there, and the instruction has to be under your thumb, not 3 messages up.
-            cap = (f"\U0001f50d OCR flagged {len(flagged)} panel(s) — sheet {n}/{len(sheets)}. "
-                   "These are the originals; nothing was regenerated.\n"
-                   "Re-roll the bad ones (labels are the panel names):\n"
-                   f"/regen {approval_token} p05_3 p06_1")
-            telegram_send_photo(bot_token, chat_id, sheet, caption=cap)
-        if sheets:
-            print(f"sent {len(sheets)} OCR contact sheet(s) to Telegram", flush=True)
-    except Exception as e:
-        print(f"WARNING: could not send OCR contact sheets ({e}) -- not fatal", flush=True)
+    for label, source, prefix, icon, why in (
+            ("OCR flagged", "ocr_flagged.json", "ocr_flagged_sheet", "\U0001f50d",
+             "these carry readable text"),
+            ("dark or flat", "dark_panels.json", "dark_sheet", "\U0001f311",
+             "these measured dark or flat — no picture, or nearly none")):
+        try:
+            names = []
+            fp = os.path.join(comic_dir, source)
+            if os.path.exists(fp):
+                names = json.load(open(fp, encoding="utf-8"))
+            for nm in names:
+                if nm not in flagged:
+                    flagged.append(nm)
+            sheets = sorted(glob.glob(os.path.join(comic_dir, prefix + "*.jpg")))
+            # Show REAL panel names in the example, not p05_3/p06_1 placeholders -- on a sheet of
+            # thirteen the reviewer wants to copy the line and edit it, not retype it.
+            eg = " ".join(x.replace(".jpg", "") for x in names[:2]) or "p05_3 p06_1"
+            for n, sheet in enumerate(sheets, 1):
+                # The command goes on EVERY sheet, not just the first: you scroll to sheet 4, spot
+                # a bad panel there, and the instruction has to be under your thumb, not 3
+                # messages up.
+                cap = (f"{icon} {label}: {len(names)} panel(s) — sheet {n}/{len(sheets)}. "
+                       f"{why}. Nothing was regenerated.\n"
+                       "Re-roll the bad ones (labels are the panel names, and one /regen can "
+                       "mix panels from any sheet):\n"
+                       f"/regen {approval_token} {eg}")
+                telegram_send_photo(bot_token, chat_id, sheet, caption=cap)
+            if sheets:
+                print(f"sent {len(sheets)} {label} contact sheet(s) to Telegram", flush=True)
+        except Exception as e:
+            print(f"WARNING: could not send {label} contact sheets ({e}) -- not fatal", flush=True)
     register_with_worker(
         worker_url=os.environ["WORKER_URL"],
         shared_secret=os.environ["WORKER_SHARED_SECRET"],

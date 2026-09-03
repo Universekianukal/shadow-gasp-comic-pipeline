@@ -72,57 +72,15 @@ def main():
     # PDF. Regeneration happens only when they ask for it, per panel, via /regen.
     names = [p["file"] for p in flagged]
     json.dump(names, open(os.path.join(args.case_dir, "ocr_flagged.json"), "w"), indent=2)
-    sheets = build_contact_sheets(panels_dir, names, args.case_dir)
+    # The note says WHY this panel is up for re-roll. The dark sweep in gen_flux_kaggle writes
+    # its own sheets through the same builder, and the reviewer has to be able to tell the two
+    # judgements apart at a glance: letterforms in the art is a different call from a page that
+    # came out flat.
+    sheets = gk.build_contact_sheets(
+        panels_dir, [(p["file"], "text detected") for p in flagged],
+        args.case_dir, "ocr_flagged_sheet")
     print(f"{len(flagged)} panels flagged -> {len(sheets)} contact sheet(s); no art was touched",
           flush=True)
-
-
-def build_contact_sheets(panels_dir, names, out_dir, per_sheet=12, cols=4, cell=430):
-    """Tile the flagged panels into a few labelled sheets.
-
-    59 flagged panels is 6 Telegram albums at the 10-image cap, which is unreviewable next to a
-    51-page PDF. Twelve to a sheet makes it ~5 images, each panel captioned with the filename to
-    type into /regen.
-    """
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        print("WARNING: Pillow missing, no contact sheets", flush=True)
-        return []
-
-    # PIL's default bitmap font is ~11px and unreadable once Telegram scales a 1700px sheet down
-    # to phone width -- the label is the whole point, since it is what gets typed into /regen.
-    font = None
-    for cand in (os.path.join(os.path.dirname(HERE), "fonts", "Montserrat-Bold.ttf"),
-                 os.path.join(HERE, "fonts", "Montserrat-Bold.ttf")):
-        try:
-            font = ImageFont.truetype(cand, 30)
-            break
-        except Exception:
-            continue
-
-    sheets = []
-    for idx in range(0, len(names), per_sheet):
-        batch = names[idx:idx + per_sheet]
-        rows = (len(batch) + cols - 1) // cols
-        label_h = 44
-        sheet = Image.new("RGB", (cols * cell, rows * (cell + label_h)), (18, 18, 18))
-        draw = ImageDraw.Draw(sheet)
-        for i, fn in enumerate(batch):
-            path = os.path.join(panels_dir, fn)
-            x, y = (i % cols) * cell, (i // cols) * (cell + label_h)
-            try:
-                im = Image.open(path).convert("RGB")
-                im.thumbnail((cell - 8, cell - 8))
-                sheet.paste(im, (x + 4, y + 4))
-            except Exception:
-                draw.rectangle([x + 4, y + 4, x + cell - 4, y + cell - 4], outline=(90, 90, 90))
-            draw.text((x + 8, y + cell + 6), fn.replace(".jpg", ""),
-                      fill=(255, 214, 90), font=font)
-        out = os.path.join(out_dir, f"ocr_flagged_sheet{idx // per_sheet + 1}.jpg")
-        sheet.save(out, "JPEG", quality=88)
-        sheets.append(out)
-    return sheets
 
 
 if __name__ == "__main__":
