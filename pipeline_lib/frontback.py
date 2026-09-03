@@ -329,6 +329,59 @@ def render_timeline(c, g, spec):
 
 # ------------------------------------------------------------ back matter --
 
+def sources_height(g, sources, shrink=1.0):
+    """Points the PRINCIPAL SOURCES block needs at a given tightness. Mirrors _sources()."""
+    if not sources:
+        return 0.0
+    size, lead, gap = 7.4 * shrink, 10.6 * shrink, 4.6 * shrink
+    max_w = g.PAGE_W - 2 * g.MARGIN - 0.16 * inch
+    h = (0.14 * inch + 0.20 * inch) * shrink
+    for src in sources:
+        h += len(LT.wrap(src, g.FONT_BODY, size, max_w)) * lead + gap
+    return h
+
+
+def back_matter_pages(g, spec, requested):
+    """How many back-matter pages this content actually needs.
+
+    ⚠️ `back_matter.pages` is written by the MODEL, before anything is measured, and the sources
+    list is drawn into whatever the last page has left over. On OVERBOARD that was 64pt for an
+    81pt block, so a citation was dropped -- the guard in _sources() caught it and said so, but
+    a warning is not a fix.
+
+    ⭐ DRY-RENDERS with the real drawing code rather than re-deriving the geometry. The first
+    attempt at this mirrored render_back_matter's arithmetic in a second function and disagreed
+    with it immediately -- claiming 2 pages were enough for the very book that had just come up
+    17pt short. Two copies of a layout calculation drift apart the moment either is touched,
+    which is the same shape as the bug being fixed here: spec_panels and build_comic each had
+    their own idea of a bleed. So draw it to a throwaway canvas and see what happens.
+
+    Costs a few canvas draws over text already in memory -- no images, no I/O.
+    """
+    global _DROPPED
+    sources = spec.get("sources") or []
+    if not sources or not [p for p in spec.get("lines", []) if p.strip()]:
+        return max(requested, 1)
+
+    from reportlab.pdfgen import canvas as _canvas
+
+    start = max(requested, 1)
+    for n in range(start, start + 4):
+        _DROPPED = 0
+        try:
+            scratch = _canvas.Canvas(io.BytesIO(), pagesize=(g.PAGE_W, g.PAGE_H))
+            for i in range(n):
+                render_back_matter(scratch, g, spec, i, n)
+                scratch.showPage()
+        except Exception as e:
+            print(f"back matter: dry run failed ({e}); using the requested {requested}",
+                  flush=True)
+            return max(requested, 1)
+        if not _DROPPED:
+            return n
+    return start + 3
+
+
 def render_back_matter(c, g, spec, page_index, total_pages):
     """
     WHAT WAS REAL, paginated.
@@ -449,6 +502,8 @@ def _sources(c, g, sources, y):
         lines = LT.wrap(src, g.FONT_BODY, size, max_w)
         # Hard guard: never start an entry that cannot finish on the sheet.
         if y - len(lines) * lead < BOTTOM:
+            global _DROPPED
+            _DROPPED += 1
             print(f"WARNING: no room left for source {src[:60]!r} -- dropped from the printed "
                   "list", file=sys.stderr, flush=True)
             break
