@@ -32,9 +32,13 @@ on:
         required: false
         default: "25"
       case_source:
-        description: "Where an auto-picked case comes from: published (a short already on YouTube, no comic yet) or new (never covered)"
+        description: "Where an auto-picked case comes from: upcoming (short not out yet - comic lands with its launch), published (short already live, no comic yet), new (never covered)"
         required: false
         default: "published"
+      lead:
+        description: "For case_source=upcoming: 0 = the next short due, 1 = the one after it. Raise it if the next short publishes sooner than a comic can be reviewed."
+        required: false
+        default: "0"
       # Plain string, not `type: choice`: a choice list needs a non-empty default, and "no
       # override" has to be expressible. An unknown name is rejected by layout_profiles with
       # the list of valid ones, before any Anthropic or Kaggle spend.
@@ -77,7 +81,7 @@ jobs:
         if: github.event.inputs.case == ''
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python pipeline_lib/pick_case.py --source "${{ github.event.inputs.case_source || vars.COMIC_DAILY_SOURCE || 'published' }}"
+        run: python pipeline_lib/pick_case.py --source "${{ github.event.inputs.case_source || vars.COMIC_DAILY_SOURCE || 'published' }}" --lead "${{ github.event.inputs.lead || '0' }}"
 
       - name: Set case variable
         id: case
