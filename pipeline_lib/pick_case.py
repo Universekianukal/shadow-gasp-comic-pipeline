@@ -173,13 +173,21 @@ def pick_upcoming(ledger, lead):
     state = _fetch_json(VIDEO_STATE_URL).get("days", {})
     published = {norm_case(c["case"]) for c in ledger["cases"] if c.get("videoId")}
 
+    # Cases that already HAVE a comic. `pick_published` has always filtered on this; the first
+    # version of pick_upcoming set comicAt without ever reading it, so `--lead 0` would hand back
+    # the same day every time and rebuild a book that already exists.
+    drawn = {norm_case(c.get("case", "")) for c in ledger["cases"] if c.get("comicAt")}
+
     pending = []
     for k in sorted(state, key=lambda k: int(k)):
         day = state[k]
         if not day.get("done"):
             continue                       # not pregenerated: no art, no script, not imminent
-        if norm_case(day.get("case", "")) in published:
+        key = norm_case(day.get("case", ""))
+        if key in published:
             continue                       # already out
+        if key in drawn:
+            continue                       # already has a comic
         pending.append((int(k), day["case"]))
 
     if not pending:
