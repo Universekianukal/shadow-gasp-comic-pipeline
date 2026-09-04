@@ -156,12 +156,14 @@
     {
       "videoId": "MvXNDB_Y5iU",
       "case": "Operation Nimrod / Iranian Embassy Siege (short teaser, precedes long-form version)",
-      "publishedAt": "2026-06-05"
+      "publishedAt": "2026-06-05",
+      "comicAt": "2026-09-03T00:00:00+00:00"
     },
     {
       "videoId": "ZwARHhTmZwo",
       "case": "Heaven's Gate cult mass suicide",
-      "publishedAt": "2026-06-05"
+      "publishedAt": "2026-06-05",
+      "comicAt": "2026-08-20T00:00:00+00:00"
     },
     {
       "videoId": "Tl0e3DFDlJE",
@@ -271,7 +273,8 @@
     {
       "videoId": "tfGcnEM8FXo",
       "case": "Operation Nimrod / Iranian Embassy Siege 1980 (full long-form documentary)",
-      "publishedAt": "2026-06-27"
+      "publishedAt": "2026-06-27",
+      "comicAt": "2026-09-03T00:00:00+00:00"
     },
     {
       "videoId": "sZFPrrmIvqE",
@@ -371,7 +374,8 @@
     {
       "videoId": "1qmX_xAF3xU",
       "case": "D.B. Cooper skyjacking",
-      "publishedAt": "2026-07-28"
+      "publishedAt": "2026-07-28",
+      "comicAt": "2026-07-28T00:00:00+00:00"
     },
     {
       "videoId": null,
