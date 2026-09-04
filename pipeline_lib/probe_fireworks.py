@@ -141,6 +141,25 @@ def main():
     run("D  large, STREAMING (the candidate fix)", max_tokens=64000,
         system=BIG_SYSTEM, user=BIG_USER, read_timeout=600, stream=True)
 
+    # E exercises llm.py ITSELF, not a hand-rolled request. D proving that raw SSE works
+    # says nothing about whether our stream reader reassembles it correctly -- and a
+    # reassembly bug would surface as corrupt JSON two hours into a paid build.
+    print("\n=== E  llm.py end-to-end (real SSE through _read_stream) ===", flush=True)
+    try:
+        import llm as _llm
+        c = _llm.LLM(provider="fireworks", max_retries=1,
+                     model=MODEL if MODEL else None)
+        t0 = time.time()
+        got = c.text("Write about 1200 words on the history of forensic fingerprinting.",
+                     system="You write clearly.", max_tokens=8000)
+        print(f"    OK in {time.time()-t0:.1f}s -- {len(got):,} chars, "
+              f"stream={c.stream}", flush=True)
+        print(f"    head: {got[:120]!r}", flush=True)
+        if not got.strip():
+            print("    !! EMPTY -- the stream reader is not assembling content", flush=True)
+    except Exception as exc:
+        print(f"    FAILED: {type(exc).__name__}: {str(exc)[:300]}", flush=True)
+
     print("\nRead A first: if A failed, nothing below it is informative.", flush=True)
 
 
