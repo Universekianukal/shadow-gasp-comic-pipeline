@@ -450,16 +450,39 @@ def generate_prompts(script, provider, chunk_size=80, attempts=2):
         want = {p["file"] for p in batch}
         for attempt in range(1, attempts + 1):
             try:
-                raw = call_model(PROMPT_SYSTEM, user, max_tokens=min(32000, len(batch) * 320),
+                # 640/panel, not 320. ⭐⭐ A BIGGER CEILING IS NOT A BIGGER BILL: providers
+                # charge for tokens actually generated, not for the budget requested. A
+                # truncation retry, however, costs a WHOLE second generation -- the model
+                # re-reasons and re-writes all 80 prompts and the first attempt's tokens
+                # are paid for and discarded. So under-budgeting is the expensive choice.
+                #
+                # 320 was sized for the ANSWER alone. glm-5p2 is a reasoning model: it
+                # thinks before it writes and bills that thinking against this same
+                # ceiling, so the budget has to cover reasoning + 80 JSON entries. At
+                # chunk_size=80 the old value gave min(32000, 25600) = 25,600 and
+                # truncated; llm.py doubled it to 51,200 and that succeeded. 640/panel
+                # (and a 64000 cap to let it through) reproduces the value that WORKED,
+                # on the first attempt instead of the second.
+                raw = call_model(PROMPT_SYSTEM, user, max_tokens=min(64000, len(batch) * 640),
                                  provider=provider)
                 got = extract_json(raw).get("panel_prompts", [])
                 names = {g.get("file") for g in got}
-                if names != want:
+                # ⭐ Only MISSING panels are a real failure. "0 missing, 1 unexpected"
+                # means every panel we asked for arrived and the model volunteered one
+                # extra -- and that used to trigger a full regeneration of all 80, paying
+                # twice to discard a surplus entry we can simply drop. Extras are filtered
+                # below by iterating `batch`, so a hallucinated file can never reach the
+                # art stage.
+                if want - names:
                     raise ValueError(
                         f"panel set mismatch: {len(want - names)} missing, "
                         f"{len(names - want)} unexpected")
-                for g in got:
-                    collected[g["file"]] = g
+                if names - want:
+                    print(f"  (dropped {len(names - want)} unexpected entr"
+                          f"{'y' if len(names - want) == 1 else 'ies'})", flush=True)
+                by_file = {g.get("file"): g for g in got}
+                for p in batch:
+                    collected[p["file"]] = by_file[p["file"]]
                 break
             except (json.JSONDecodeError, ValueError, RuntimeError) as e:
                 print(f"  prompts chunk {start // chunk_size + 1} attempt {attempt}/{attempts} "
