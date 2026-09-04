@@ -819,7 +819,7 @@ async function sendTopicsPage(env, chatId, kind, page, messageId) {
   const head = kind === "up"
     ? `\u{1F680} UPCOMING shorts — not published yet, so the comic lands with the launch. ${items.length} waiting.`
     : `\u{1F4DA} BACKLOG — published shorts with no comic yet. ${items.length} waiting, newest first.`;
-  const body = `${head}\nPage ${page + 1}/${pages}. Tap one to build it at 25 pages.`;
+  const body = `${head}\nPage ${page + 1}/${pages}. Tap one to build it at 35 pages.`;
   const params = { chat_id: chatId, text: body, reply_markup: { inline_keyboard: rows } };
   if (messageId) await tg(env, "editMessageText", { ...params, message_id: messageId });
   else await tg(env, "sendMessage", params);
@@ -985,14 +985,18 @@ async function handleCallback(env, cq) {
       return;
     }
     try {
-      await dispatchPipeline(env, { case: picked, target_pages: "25", dry_run: "false" });
+      // 35, not 25. A tap is the default path, so the default should be the book worth
+      // selling. 25 delivered a 41-page book; 35 lands nearer 50-55, which crosses from
+      // the $3.99 tier into $4.99 and roughly doubles the Kaggle time per build. Both are
+      // deliberate. Type /make <case> | 50 for the bigger book.
+      await dispatchPipeline(env, { case: picked, target_pages: "35", dry_run: "false" });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the build: ${e.message}` });
       return;
     }
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F4D6} Building "${picked}" at 25 pages. The draft lands here when it's done.\nFor a bigger book instead: /make ${picked} | 50`
+      text: `\u{1F4D6} Building "${picked}" at 35 pages. The draft lands here when it's done.\nFor a bigger book instead: /make ${picked} | 50`
     });
     return;
   }
