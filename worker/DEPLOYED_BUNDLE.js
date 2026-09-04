@@ -927,6 +927,48 @@ async function funnelComic(env, chatId, caseId, videoIdOverride) {
     text: `\u{1F517} Linking ${c.title || c.case}\n  → https://youtu.be/${videoId}\n  ${c.product_url}\nResult follows here.` });
 }
 
+
+// ---- auto-funnel: a day just uploaded, and its comic may already be waiting ----
+//
+// ⭐ THE POINT IS THE TIMING. Comics are now built AHEAD of their shorts, so by the time a day
+// uploads the book often already exists -- and the link is worth most in the first hours, when a
+// short gets its impressions. Funnelling by hand afterwards means the earliest viewers, the
+// biggest group, never saw it.
+//
+// Works on a video that is still PRIVATE or scheduled: the YouTube API edits the snippet of any
+// video you own, and scheduling only governs when it becomes visible. So the description is
+// written while the video is dark and goes live already carrying the link.
+//
+// Deliberately does NOT check whether the comic is published -- funnel_comic_link.yml already
+// refuses a draft product (a draft URL 404s for viewers), and duplicating that check here would
+// give two places to keep in step. If the comic is not ready, the job declines and says so.
+async function autoFunnelForCase(env, caseName, videoId, chatId) {
+  if (!caseName || !videoId) return;
+  try {
+    const list = await env.PENDING.list({ prefix: "comic:" });
+    const want = caseHead(caseName);
+    for (const k of list.keys) {
+      const raw = await env.PENDING.get(k.name);
+      if (!raw) continue;
+      const c = JSON.parse(raw);
+      const name = c.case || c.title || "";
+      if (!c.product_url || caseHead(name) !== want) continue;
+      // Already linked to this very video: nothing to do, and re-dispatching would spend a
+      // workflow run to be told ALREADY_LINKED.
+      if (c.linked_at && c.video_id === videoId) return;
+      await dispatchFunnelComicLink(env, {
+        video_id: videoId, product_url: c.product_url, product_name: c.title || c.case,
+        pages: String(c.pages || ""), hook: c.hook || "", position: "top",
+        notify_chat_id: chatId ? String(chatId) : ""
+      });
+      return;
+    }
+  } catch (e) {
+    // Never let bookkeeping break an upload notification: the video is already live.
+    console.log("autoFunnel failed (non-fatal): " + e.message);
+  }
+}
+
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -2130,6 +2172,11 @@ var worker_default = {
       if (!day || !video_id && !fb_post_id && !ig_media_id) {
         return new Response("missing fields", { status: 400 });
       }
+      // Fire and forget, before composing the message: if a comic for this case is already
+      // published, its link should be on the video from the first minute rather than whenever
+      // somebody remembers to run /funnel.
+      await autoFunnelForCase(env, caseName, video_id, chat_id);
+
       const lines = [];
       if (video_id) {
         lines.push(`\u2705 Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}`);
