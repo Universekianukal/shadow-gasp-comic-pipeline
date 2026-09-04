@@ -231,7 +231,23 @@ jobs:
           [ "$C_OCR" = "failure" ]     && STEP="OCR check"
           [ "$C_DELIVER" = "failure" ] && STEP="building the PDF / Gumroad / Telegram"
           echo "failed at: $STEP"
-          curl -sS -X POST "${WORKER_URL%/}/build-failed"             -H "Content-Type: application/json"             -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}"             -H "User-Agent: shadow-gasp-comic-pipeline"             --data "$(python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"step":os.environ["STEP"],"target_pages":os.environ["PAGES"],"profile":os.environ["PROFILE"],"run_url":os.environ["RUN_URL"]}))' )"             || echo "WARNING: could not report the failure"
+          # ⚠️ EXPORT. STEP was a plain shell variable, so the inline python3 -- a separate
+          # process -- could not see it and died with KeyError: 'STEP'. The payload was never
+          # built and the retry button never arrived: a failed build stayed as silent as it had
+          # been before the button was written.
+          export STEP
+          python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"step":os.environ["STEP"],"target_pages":os.environ["PAGES"],"profile":os.environ["PROFILE"],"run_url":os.environ["RUN_URL"]}))' > /tmp/failed.json
+          cat /tmp/failed.json
+          # ⚠️ A BROWSER User-Agent, not a descriptive one. Cloudflare fingerprints unfamiliar
+          # clients and rejects them at the edge -- the previous call came back "error code:
+          # 1101" with "shadow-gasp-comic-pipeline" as its UA, before the Worker ever ran. Same
+          # trap as the 1010 blocks on the Python notify paths.
+          curl -sS -X POST "${WORKER_URL%/}/build-failed" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/failed.json \
+            || echo "WARNING: could not report the failure"
 
       - name: Commit ONLY the dedup ledger back to repo (never the comic content)
         if: always()
