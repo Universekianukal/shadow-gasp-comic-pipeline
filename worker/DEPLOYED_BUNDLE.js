@@ -805,6 +805,61 @@ async function sendTopicsPage(env, chatId, kind, page, messageId) {
   else await tg(env, "sendMessage", params);
 }
 
+
+// ---- resolve a comic's short from the LEDGER, not just from the record written at build time ----
+//
+// A `comic:` KV record is written ONCE, by stage_and_deliver, at build time. If the ledger lookup
+// failed then -- as it did for every book before the case-name matching was fixed, and as it does
+// for any comic built BEFORE its short is published -- video_id is stored empty and stays empty
+// forever. Nothing re-reads it. PRINCES GATE therefore reported "no short recorded" while the
+// ledger held tfGcnEM8FXo all along, and could not be repaired by rebuilding either: stage_draft
+// refuses to overwrite a PUBLISHED product.
+//
+// With launch-timed comics (built deliberately before the short goes out) an empty video_id at
+// build time is now the NORMAL case, not the exception. So resolve on demand.
+//
+// Reads the video repo's ledger, which is the authority on video ids -- the comic repo's copy
+// only refreshes during a build. No credentials: the repo is public. No cron, no KV copy of 115
+// videos to keep in sync, and nothing that can silently stop refreshing.
+var RAW_VIDEO_LEDGER = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main/_pipeline/cases_used.json";
+
+function caseHead(name) {
+  // Mirrors stage_and_deliver._case_head: the leading name, before any " / " qualifier or a
+  // trailing parenthetical. "Operation Nimrod" and "Operation Nimrod / Iranian Embassy Siege 1980
+  // (full long-form documentary)" are the same case, and only this reduction sees that.
+  let head = (name || "").split("/")[0].replace(/\(.*?\)/g, "");
+  return head.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+var _ledgerCache = null;
+async function ledgerCases() {
+  if (_ledgerCache) return _ledgerCache;
+  const r = await fetch(RAW_VIDEO_LEDGER, { headers: { "User-Agent": "shadow-gasp-bot" } });
+  if (!r.ok) throw new Error(`ledger fetch ${r.status}`);
+  _ledgerCache = (await r.json()).cases || [];
+  return _ledgerCache;
+}
+
+async function resolveShort(rec) {
+  // What the record already knows wins: it was chosen for this book deliberately.
+  if (rec && rec.video_id) return rec.video_id;
+  const name = (rec && (rec.case || rec.title)) || "";
+  if (!name) return "";
+  try {
+    const cases = await ledgerCases();
+    const want = caseHead(name);
+    const hits = cases.filter((c) => c.videoId && (
+      (c.case || "").trim().toLowerCase() === name.trim().toLowerCase() || caseHead(c.case) === want));
+    if (!hits.length) return "";
+    // Newest of a case's videos -- a teaser and a long-form both match, and the fuller video is
+    // the better thing to send a reader to. Same rule stage_and_deliver uses.
+    hits.sort((a, b) => (b.publishedAt || "").localeCompare(a.publishedAt || ""));
+    return hits[0].videoId || "";
+  } catch (e) {
+    return "";
+  }
+}
+
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -1571,6 +1626,10 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       const raw = await env.PENDING.get(k.name);
       if (!raw) continue;
       const c = JSON.parse(raw);
+      // A record minted before its short existed (or before the lookup was fixed) carries no
+      // video_id. Resolve it now rather than reporting "(none recorded)" for a video the ledger
+      // knows perfectly well.
+      if (!c.video_id) c.video_id = await resolveShort(c);
       // Only claim a link when one was actually recorded. Saying "link it" beside a video that
       // already carries the link reads as outstanding work when there is none.
       const state = c.linked_at
@@ -1614,11 +1673,11 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       return;
     }
     const rec = JSON.parse(raw);
-    const videoId = vid || rec.video_id;
+    const videoId = vid || rec.video_id || await resolveShort(rec);
     if (!videoId) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "\u274C No short is recorded for \"" + (rec.title || rec.case) + "\".\nPass the video id: /funnel <videoId>"
+        text: "\u274C No short found for \"" + (rec.title || rec.case) + "\" \u2014 not in the record and not in the ledger either.\nPass the video id: /funnel <videoId>"
       });
       return;
     }
