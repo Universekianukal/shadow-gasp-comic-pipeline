@@ -1,0 +1,43 @@
+name: Probe LLM provider (diagnostic)
+
+# Diagnostic only -- generates nothing, publishes nothing, commits nothing.
+#
+# Exists because the script step's failures cost ~2 hours of runner time and a paid
+# generation to observe ONCE, which is far too slow to test a hypothesis against. This
+# answers the same question in about two minutes. See pipeline_lib/probe_fireworks.py
+# for what each probe distinguishes.
+#
+# Manual only, on purpose: it is for when a build is already failing, not something to
+# run on a schedule.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Override the model (blank = accounts/fireworks/models/glm-5p2)"
+        required: false
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # Hard ceiling: every probe has its own read timeout, but a wedged socket must never
+    # be able to hold a runner for six hours.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Probe
+        env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          COMIC_LLM_MODEL: ${{ github.event.inputs.model }}
+        run: python pipeline_lib/probe_fireworks.py
