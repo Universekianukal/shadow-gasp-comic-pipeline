@@ -10,33 +10,30 @@ import json
 import os
 import urllib.request
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
-MODEL = "claude-sonnet-5"
+import llm as _llm
 
 
-def call_claude(system, user, max_tokens=1200):
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps({
-            "model": MODEL, "max_tokens": max_tokens,
-            "system": system, "messages": [{"role": "user", "content": user}],
-        }).encode(),
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        method="POST",
+def call_llm(system, user, max_tokens=1200):
+    """Write the promo post on whichever provider can actually be billed.
+
+    ⚠️ This used to be a bare urllib POST to api.anthropic.com with the key read at
+    MODULE level, which made it the last unswitchable LLM call in the repo. When the
+    Anthropic balance ran out on 2026-09-02 the script step had already been moved to
+    Fireworks and kept working, so "the pipeline runs on Fireworks" looked true -- while
+    every publish silently died here on HTTP 400 "credit balance is too low". Partially
+    migrating a pipeline hides the outage rather than fixing it.
+
+    Default is `auto`, which prefers Anthropic and drops to Fireworks only when Anthropic
+    refuses for billing (see llm.BillingError). So topping the balance back up restores
+    Anthropic with no config change, which is the whole point.
+    """
+    client = _llm.LLM(
+        provider=(os.environ.get("COMIC_LLM_PROVIDER") or "auto").strip().lower(),
+        model=(os.environ.get("COMIC_LLM_MODEL") or "").strip() or None,
+        # One paid attempt per prompt; llm.py still retries free transport faults on top.
+        max_retries=1,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Anthropic API HTTP {e.code}: {e.read().decode()}") from e
-    for block in data.get("content", []):
-        if block.get("type") == "text":
-            return block["text"].strip()
-    raise RuntimeError(f"No text block in response: {json.dumps(data)[:500]}")
+    return client.text(user, system=system, max_tokens=max_tokens).strip()
 
 
 def get_product_image_urls(product_id):
@@ -131,7 +128,7 @@ def main():
         f"Write the Facebook group post now. Under 80 words."
     )
 
-    post = call_claude(system, user)
+    post = call_llm(system, user)
 
     bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
