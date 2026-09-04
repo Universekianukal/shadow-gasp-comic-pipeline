@@ -778,7 +778,26 @@ async function loadTopics(env) {
     .sort((a, b) => (b.publishedAt || "").localeCompare(a.publishedAt || ""))
     .map((c) => ({ label: c.publishedAt ? c.publishedAt.slice(0, 10) : "undated", case: c.case }));
 
-  return { upcoming, backlog };
+  // ⭐ THE THIRD STATE. A case is not simply "has a comic or not": a comic can exist and still
+  // reach nobody, because the link from the short to the store is what actually earns. Before
+  // this, a built-but-unlinked comic vanished from /topics entirely and looked finished.
+  //
+  // Linkage lives in the KV comic records (linked_at), not in either ledger, because it is a
+  // fact about a YouTube description rather than about a case.
+  const done = [];
+  try {
+    const recs = await env.PENDING.list({ prefix: "comic:" });
+    for (const k of recs.keys) {
+      const raw = await env.PENDING.get(k.name);
+      if (!raw) continue;
+      const c = JSON.parse(raw);
+      if (!c.linked_at) continue;
+      done.push({ label: c.issue ? `#${c.issue}` : "linked",
+                  case: `${c.title || c.case} → youtu.be/${c.video_id || "?"}` });
+    }
+  } catch (e) { /* a missing record list must not hide the other two lists */ }
+
+  return { upcoming, backlog, done };
 }
 
 async function sendTopicsPage(env, chatId, kind, page, messageId) {
@@ -789,10 +808,12 @@ async function sendTopicsPage(env, chatId, kind, page, messageId) {
     await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't load the topic lists: ${e.message}` });
     return;
   }
-  const items = kind === "up" ? lists.upcoming : lists.backlog;
+  const items = kind === "up" ? lists.upcoming : (kind === "dn" ? lists.done : lists.backlog);
   if (!items.length) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: kind === "up"
-      ? "No upcoming days are waiting for a comic." : "Every published short already has a comic." });
+    const blank = kind === "up" ? "No upcoming days are waiting for a comic."
+      : kind === "dn" ? "No comic is linked to its short yet."
+      : "Every published short already has a comic.";
+    await tg(env, "sendMessage", { chat_id: chatId, text: blank });
     return;
   }
   const pages = Math.ceil(items.length / TOPICS_PER_PAGE);
@@ -805,21 +826,32 @@ async function sendTopicsPage(env, chatId, kind, page, messageId) {
   const token = Math.random().toString(36).slice(2, 10);
   await env.PENDING.put(`topics:${token}`, JSON.stringify(slice.map((x) => x.case)), { expirationTtl: 86400 });
 
-  const rows = slice.map((x, i) => [{
+  // A COMPLETED row is a statement of fact, not an offer -- tapping it must not rebuild a comic
+  // that already exists and is already linked. Those are rendered as text instead.
+  const rows = kind === "dn" ? [] : slice.map((x, i) => [{
     text: `${x.label} · ${x.case.length > 42 ? x.case.slice(0, 41) + "…" : x.case}`,
     callback_data: `topic:${token}:${i}`
   }]);
   const nav = [];
   if (page > 0) nav.push({ text: "‹ prev", callback_data: `topicpg:${kind}:${page - 1}` });
   if (page < pages - 1) nav.push({ text: "next ›", callback_data: `topicpg:${kind}:${page + 1}` });
-  nav.push({ text: kind === "up" ? `backlog (${lists.backlog.length})` : `upcoming (${lists.upcoming.length})`,
-             callback_data: `topicpg:${kind === "up" ? "bk" : "up"}:0` });
+  // Always offer the two lists you are NOT looking at, so every view reaches the other two.
+  for (const nk of [["up", "upcoming", lists.upcoming.length],
+                    ["bk", "backlog", lists.backlog.length],
+                    ["dn", "completed", lists.done.length]]) {
+    if (nk[0] !== kind) nav.push({ text: `${nk[1]} (${nk[2]})`, callback_data: `topicpg:${nk[0]}:0` });
+  }
   if (nav.length) rows.push(nav);
 
   const head = kind === "up"
     ? `\u{1F680} UPCOMING shorts — not published yet, so the comic lands with the launch. ${items.length} waiting.`
+    : kind === "dn"
+    ? `✅ COMPLETED — comic built AND linked into its short's description. ${items.length} done.`
     : `\u{1F4DA} BACKLOG — published shorts with no comic yet. ${items.length} waiting, newest first.`;
-  const body = `${head}\nPage ${page + 1}/${pages}. Tap one to build it at 35 pages.`;
+  const listing = kind === "dn" ? "\n\n" + slice.map((x) => `${x.label} · ${x.case}`).join("\n") : "";
+  const body = `${head}\nPage ${page + 1}/${pages}.` +
+    (kind === "dn" ? " Nothing to do here — these are already earning." : " Tap one to build it at 35 pages.") +
+    listing;
   const params = { chat_id: chatId, text: body, reply_markup: { inline_keyboard: rows } };
   if (messageId) await tg(env, "editMessageText", { ...params, message_id: messageId });
   else await tg(env, "sendMessage", params);
@@ -1729,7 +1761,10 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
   }
   if (text.startsWith("/topics")) {
     const rest = text.slice("/topics".length).trim().toLowerCase();
-    await sendTopicsPage(env, chatId, rest.startsWith("back") ? "bk" : "up", 0, null);
+    const kind = rest.startsWith("back") ? "bk"
+      : (rest.startsWith("done") || rest.startsWith("comp") || rest.startsWith("link")) ? "dn"
+      : "up";
+    await sendTopicsPage(env, chatId, kind, 0, null);
     return;
   }
   if (text.startsWith("/links")) {
@@ -2338,6 +2373,66 @@ No answer in 15 min defaults to STOP.`,
 ${run_url || ""}`
       });
       return new Response("ok", { status: 200 });
+    }
+    if (request.method === "POST" && url.pathname === "/comic/sweep") {
+      // ⚠️ THE AUTO-FUNNEL HAS A WINDOW, AND THIS CLOSES IT.
+      //
+      // autoFunnelForCase fires once, when a day uploads. If the comic is still a Gumroad draft
+      // at that moment the funnel job refuses -- correctly, a draft URL 404s -- and NOTHING ever
+      // comes back. A comic published an hour later stays unlinked for good.
+      //
+      // That window is not a rare edge: whether a comic is ready depends on a human reviewing
+      // the art, which does not align with a 05:15 cron. So sweep periodically for comics that
+      // are publishable, have a live video, and carry no link yet.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const list = await env.PENDING.list({ prefix: "comic:" });
+      const sent = [], skipped = [];
+      for (const k of list.keys) {
+        const raw = await env.PENDING.get(k.name);
+        if (!raw) continue;
+        const c = JSON.parse(raw);
+        const name = c.title || c.case || k.name;
+        if (c.linked_at) continue;                       // already carries its link
+        if (!c.product_url) { skipped.push(`${name}: not staged`); continue; }
+        const videoId = c.video_id || await resolveShort(c);
+        if (!videoId) { skipped.push(`${name}: short not published`); continue; }
+
+        // Check the storefront BEFORE dispatching. funnel_comic_link.yml is still the authority
+        // and refuses drafts itself -- this only avoids burning a workflow run every sweep on a
+        // book that cannot be linked yet. A draft permalink is not publicly reachable.
+        let live = false;
+        try {
+          const r = await fetch(c.product_url, { method: "GET", headers: { "User-Agent": "shadow-gasp-bot" } });
+          live = r.ok;
+        } catch (e) { live = false; }
+        if (!live) { skipped.push(`${name}: still a draft`); continue; }
+
+        try {
+          await dispatchFunnelComicLink(env, {
+            video_id: videoId, product_url: c.product_url, product_name: name,
+            pages: String(c.pages || ""), hook: c.hook || "", position: "top",
+            notify_chat_id: String(env.TELEGRAM_CHAT_ID || "")
+          });
+          sent.push(`${name} -> ${videoId}`);
+        } catch (e) {
+          skipped.push(`${name}: dispatch failed (${e.message})`);
+        }
+      }
+      // Only speak when something happened. A sweep that reports "nothing to do" every few hours
+      // trains you to ignore it, and then it is silent when it matters.
+      if (sent.length) {
+        await tg(env, "sendMessage", {
+          chat_id: env.TELEGRAM_CHAT_ID,
+          text: `\u{1F517} Link sweep: funnelling ${sent.length} comic(s) whose short was already live.\n` +
+                sent.join("\n")
+        });
+      }
+      return new Response(JSON.stringify({ sent, skipped }), {
+        status: 200, headers: { "Content-Type": "application/json" }
+      });
     }
     if (request.method === "POST" && url.pathname === "/comic/linked") {
       // ⚠️ THE MISSING WRITE. /links renders `linked_at`, and nothing in the Worker ever set it
