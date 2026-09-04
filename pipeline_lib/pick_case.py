@@ -5,9 +5,10 @@ Two sources, chosen with --source:
   published (DEFAULT) -- a case that ALREADY has a short published on YouTube and does not yet
       have a comic. This is the sales path: the short is the advertisement, the comic is the
       product, and the audience that watched the short is the audience being sold to. Costs no
-      Anthropic call at all -- it is a lookup over cases_used.json, not a generation.
+      LLM call at all -- it is a lookup over cases_used.json, not a generation, so it runs
+      with no provider key set.
 
-  new -- ask Claude for a case the channel has never covered in any form. This was the original
+  new -- ask an LLM for a case the channel has never covered in any form. This was the original
       (and previously the only) behaviour. It is the opposite of the sales path: it deliberately
       excludes every published short, so the resulting comic has no existing audience.
 
@@ -26,8 +27,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
 LEDGER_PATH = os.path.join(REPO_ROOT, "cases_used.json")
 
-MODEL = "claude-sonnet-5"
-
 
 def load_ledger():
     if not os.path.exists(LEDGER_PATH):
@@ -41,36 +40,25 @@ def save_ledger(ledger):
         json.dump(ledger, f, indent=2, ensure_ascii=False)
 
 
-def call_claude(system, user, max_tokens=2000):
-    # Read lazily, not at import: --source published makes no API call at all and must run
-    # without the key present.
-    api_key = os.environ["ANTHROPIC_API_KEY"]
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps({
-            "model": MODEL,
-            "max_tokens": max_tokens,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
-        }).encode(),
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        method="POST",
+def call_llm(system, user, max_tokens=2000):
+    """Ask for candidate cases on whichever provider can actually be billed.
+
+    Only `--source new` reaches this. Default provider is `auto`: Anthropic while its
+    balance holds, dropping to Fireworks on a billing refusal (llm.BillingError), so a
+    topped-up account is used again with no config change.
+
+    ⭐ Both the import and the client are built INSIDE the function, not at module scope.
+    `--source published` -- the default, and the one the daily build uses -- makes no API
+    call whatsoever, and must keep running with no LLM key and no `requests` installed.
+    """
+    import llm as _llm
+
+    client = _llm.LLM(
+        provider=(os.environ.get("COMIC_LLM_PROVIDER") or "auto").strip().lower(),
+        model=(os.environ.get("COMIC_LLM_MODEL") or "").strip() or None,
+        max_retries=1,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Anthropic API HTTP {e.code}: {e.read().decode()}") from e
-    if "content" not in data:
-        raise RuntimeError(f"Unexpected Anthropic API response: {json.dumps(data)[:1000]}")
-    for block in data["content"]:
-        if block.get("type") == "text":
-            return block["text"]
-    raise RuntimeError(f"No text block in Anthropic API response: {json.dumps(data)[:1000]}")
+    return client.text(user, system=system, max_tokens=max_tokens)
 
 
 def emit(case, hook, video_id=""):
@@ -276,7 +264,7 @@ def pick_new(ledger):
         "Respond as JSON: {\"candidates\": [{\"case\": ..., \"hook\": ..., \"confidence\": ...}]}"
     )
 
-    text = call_claude(system, user)
+    text = call_llm(system, user)
     start, end = text.find("{"), text.rfind("}") + 1
     result = json.loads(text[start:end])
 
