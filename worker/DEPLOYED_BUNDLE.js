@@ -860,6 +860,53 @@ async function resolveShort(rec) {
   }
 }
 
+
+// Which case a given video IS, per the ledger. Used to refuse a funnel that would advertise one
+// comic on another story's video.
+async function caseOfVideo(videoId) {
+  try {
+    const cases = await ledgerCases();
+    const hit = cases.find((c) => c.videoId === videoId);
+    return hit ? hit.case : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+// Dispatch the funnel for ONE named comic record. The typed /funnel resolves the book as
+// "whatever is newest", which is what put OVERBOARD's link on the Operation Nimrod video; this
+// takes the book by case id, so it cannot drift.
+async function funnelComic(env, chatId, caseId, videoIdOverride) {
+  const raw = await env.PENDING.get("comic:" + caseId);
+  if (!raw) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ I have no record for that comic any more." });
+    return;
+  }
+  const c = JSON.parse(raw);
+  const videoId = videoIdOverride || c.video_id || await resolveShort(c);
+  if (!videoId) {
+    await tg(env, "sendMessage", { chat_id: chatId,
+      text: `❌ No short found for "${c.title || c.case}" — its video is not published yet.` });
+    return;
+  }
+  if (!c.product_url) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ No Gumroad URL recorded for that book." });
+    return;
+  }
+  try {
+    await dispatchFunnelComicLink(env, {
+      video_id: videoId, product_url: c.product_url, product_name: c.title || c.case,
+      pages: String(c.pages || ""), hook: c.hook || "", position: "top",
+      notify_chat_id: String(chatId)
+    });
+  } catch (e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the funnel job: ${e.message}` });
+    return;
+  }
+  await tg(env, "sendMessage", { chat_id: chatId,
+    text: `\u{1F517} Linking ${c.title || c.case}\n  → https://youtu.be/${videoId}\n  ${c.product_url}\nResult follows here.` });
+}
+
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -896,6 +943,10 @@ async function handleCallback(env, cq) {
       message_id: messageId,
       text: decision === "stop" ? "\u{1F6D1} Stopped \u2014 render will not publish hookless." : "\u25B6\uFE0F Continuing \u2014 will render and publish with a static Ken Burns still."
     });
+    return;
+  }
+  if (action === "funnelc") {
+    await funnelComic(env, chatId, token, extra || "");
     return;
   }
   if (action === "topicpg") {
@@ -1622,6 +1673,7 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       return;
     }
     const rows = [];
+    const buttons = [];
     for (const k of list.keys) {
       const raw = await env.PENDING.get(k.name);
       if (!raw) continue;
@@ -1641,12 +1693,22 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
         "  short: " + (c.video_id ? "https://youtu.be/" + c.video_id : "(none recorded)") + "\n" +
         state
       );
+      // ⚠️ A BUTTON, not a typed command. /links used to print "/funnel <videoId>", and typing
+      // that pairs the video with the LATEST book rather than this one -- following this very
+      // suggestion is what put OVERBOARD's link on the Operation Nimrod video. The button carries
+      // the case id, so the book cannot drift between reading the list and tapping.
+      if (!c.linked_at && c.video_id) {
+        buttons.push([{ text: `\u{1F517} Funnel ${c.issue ? "#" + c.issue : (c.title || c.case).slice(0, 24)}`,
+                        callback_data: `funnelc:${k.name.slice("comic:".length)}` }]);
+      }
     }
     await tg(env, "sendMessage", {
       chat_id: chatId,
       text: "\u{1F4DA} COMICS\n\n" + rows.join("\n\n") +
-            "\n\n/funnel reports ALREADY_LINKED if the description already carries the link, so it " +
-            "is also how you check without changing anything."
+            "\n\nTap a button to link one \u2014 it pins that exact book. Typing /funnel <videoId> " +
+            "uses whichever comic is NEWEST, which is rarely what you mean when more than one is " +
+            "in flight.",
+      reply_markup: buttons.length ? { inline_keyboard: buttons } : undefined
     });
     return;
   }
@@ -1674,6 +1736,25 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     }
     const rec = JSON.parse(raw);
     const videoId = vid || rec.video_id || await resolveShort(rec);
+    // ⚠️ REFUSE A MISMATCH. With no token, `rec` is whatever book is NEWEST -- not the one the
+    // reader had in mind when they copied a video id out of /links. That silently advertised
+    // OVERBOARD on the Operation Nimrod video. If the named video belongs to a different case,
+    // stop: the fix is a tap in /links, or the explicit token form.
+    if (vid && videoId) {
+      const owner = await caseOfVideo(videoId);
+      const book = rec.case || rec.title || "";
+      if (owner && book && caseHead(owner) !== caseHead(book)) {
+        await tg(env, "sendMessage", {
+          chat_id: chatId,
+          text: `\u26A0\uFE0F That pairing looks wrong, so nothing was dispatched.\n\n` +
+                `https://youtu.be/${videoId} is "${owner}"\n` +
+                `but the newest comic is "${book}".\n\n` +
+                `Use /links and tap the button for the comic you mean \u2014 that pins the book. ` +
+                `To force this pairing anyway: /funnel ${token} ${videoId}`
+        });
+        return;
+      }
+    }
     if (!videoId) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
