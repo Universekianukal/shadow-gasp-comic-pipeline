@@ -17,6 +17,12 @@ also how the scheduled workflow is smoke-tested without spending on tokens.
 `auto` exists because the opposite happened: the only scheduled run this project ever
 made failed outright with "ANTHROPIC_API_KEY is not set". A missing key should degrade
 the run, not delete it.
+
+⚠️ A PRESENT KEY IS NOT A WORKING KEY. `auto` resolves by whether an env var is set, and
+an account with a zero balance still has its key exported -- so `auto` picks Anthropic and
+dies at the first call with "Your credit balance is too low". That is why BillingError and
+the fallback in LLM._switch_provider exist: the account's state is only observable at the
+moment of refusal, so recovery has to happen there rather than in configuration.
 """
 
 from __future__ import annotations
@@ -56,6 +62,38 @@ class LLMError(RuntimeError):
     pass
 
 
+class BillingError(LLMError):
+    """The provider refused because the account cannot pay, not because the call was bad.
+
+    Worth its own type because it is the one 4xx that says nothing about the request:
+    the same prompt on a different provider succeeds. `auto` cannot see this coming --
+    it picks by whether a KEY is present, and a dead account's key is still present --
+    so the only place this can be caught is at the point of refusal.
+    """
+
+
+# Substrings that mean "this account cannot pay", across providers. Matched only on the
+# statuses below, so ordinary 400s (a malformed request) still fail loudly and immediately.
+_BILLING_MARKERS = (
+    "credit balance is too low",   # anthropic
+    "insufficient_quota",          # openai
+    "insufficient credits",
+    "exceeded your current quota",
+    "plans & billing",
+    "payment required",
+)
+_BILLING_STATUSES = (400, 402, 429)
+
+
+def _is_billing_refusal(status: int, detail: str) -> bool:
+    if status == 402:
+        return True
+    if status not in _BILLING_STATUSES:
+        return False
+    low = detail.lower()
+    return any(m in low for m in _BILLING_MARKERS)
+
+
 class Truncated(LLMError):
     """Output stopped at the token limit, so the result is incomplete.
 
@@ -93,12 +131,19 @@ class LLM:
     # arrives cannot be repaired.
     reasoning_effort: str | None = "low"
 
+    # On a billing refusal, move to the next provider in AUTO_ORDER that has a key rather
+    # than killing the run. This is what lets a single setting mean "use Anthropic while it
+    # has credit, otherwise Fireworks" -- the account's state is discovered at call time,
+    # since no amount of config can see a balance.
+    fallback: bool = True
+
     # Absolute ceiling for the automatic budget escalation below.
     MAX_OUTPUT_TOKENS = 64000
 
     def __post_init__(self) -> None:
         self.provider = resolve_provider((self.provider or "mock").lower(),
                                          verbose=False)
+        self._refused: set[str] = set()
         if self.provider not in PROVIDERS:
             raise LLMError(f"unknown provider {self.provider!r}; "
                            f"choose from {', '.join(PROVIDERS)}")
@@ -119,6 +164,36 @@ class LLM:
         if self.provider == "mock":
             return _mock_text(prompt, max_tokens)
 
+        while True:
+            try:
+                return self._text_once(prompt, system, max_tokens)
+            except BillingError as exc:
+                if not self._switch_provider(exc):
+                    raise
+
+    def _switch_provider(self, exc: BillingError) -> bool:
+        """Move to the next key-bearing provider after a billing refusal. False if none left."""
+        if not self.fallback:
+            return False
+        self._refused.add(self.provider)
+        for name in AUTO_ORDER:
+            if name in self._refused:
+                continue
+            env = "ANTHROPIC_API_KEY" if name == "anthropic" else OPENAI_COMPATIBLE[name][1]
+            if not os.environ.get(env):
+                continue
+            print(f"  ! {self.provider} refused for billing -- {exc}", flush=True)
+            print(f"  -> falling back to {name}", flush=True)
+            self.provider = name
+            # The model MUST be recomputed, never carried across: an explicit
+            # COMIC_LLM_MODEL of "claude-sonnet-5" is meaningless to Fireworks, so keeping
+            # the caller's choice would turn a recoverable billing error into a 404.
+            self.model = (os.environ.get(f"{name.upper()}_MODEL")
+                          or DEFAULT_MODELS.get(name))
+            return True
+        return False
+
+    def _text_once(self, prompt: str, system: str, max_tokens: int) -> str:
         budget = max_tokens
         for attempt in range(3):
             try:
@@ -281,6 +356,11 @@ def _raise_for_status(r: requests.Response) -> None:
     if r.status_code >= 400:
         # 4xx other than 429 will not improve on retry - fail loudly and immediately.
         detail = r.text[:500]
+        # Checked BEFORE the generic 4xx branch: Anthropic reports a dead balance as a
+        # plain 400, which would otherwise be classified as a bad request and never
+        # reach the provider fallback.
+        if _is_billing_refusal(r.status_code, detail):
+            raise BillingError(f"HTTP {r.status_code}: {detail}")
         if 400 <= r.status_code < 500 and r.status_code != 429:
             raise LLMError(f"HTTP {r.status_code}: {detail}")
         raise RuntimeError(f"HTTP {r.status_code}: {detail}")
