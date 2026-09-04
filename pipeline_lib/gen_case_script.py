@@ -363,7 +363,20 @@ def call_model(system, user, max_tokens=16000, provider=None):
     provider = (provider or os.environ.get("COMIC_LLM_PROVIDER")
                 or "anthropic").strip().lower()
     if provider in ("", "anthropic"):
-        return call_claude(system, user, max_tokens=max_tokens)
+        # ⚠️ The default is STILL anthropic, and that account is at zero. The workflow
+        # pins COMIC_LLM_PROVIDER so a build never lands here by accident -- but a local
+        # run, or a cleared repo variable, would, and used to die on the spot with no
+        # route out. Anthropic's own refusal is a plain HTTP 400, so nothing about the
+        # status code marks it as recoverable; only the body does.
+        try:
+            return call_claude(system, user, max_tokens=max_tokens)
+        except RuntimeError as exc:
+            import llm as LLM
+            if not LLM._is_billing_refusal(400, str(exc)):
+                raise
+            print(f"  ! anthropic refused for billing -- {exc}", flush=True)
+            print("  -> falling back to fireworks", flush=True)
+            provider = "fireworks"
 
     import llm as LLM  # local import so the Anthropic path needs no extra module
     client = LLM.LLM(
