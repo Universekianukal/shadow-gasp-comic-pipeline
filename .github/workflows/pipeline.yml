@@ -238,10 +238,12 @@ jobs:
           export STEP
           python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"step":os.environ["STEP"],"target_pages":os.environ["PAGES"],"profile":os.environ["PROFILE"],"run_url":os.environ["RUN_URL"]}))' > /tmp/failed.json
           cat /tmp/failed.json
-          # ⚠️ A BROWSER User-Agent, not a descriptive one. Cloudflare fingerprints unfamiliar
-          # clients and rejects them at the edge -- the previous call came back "error code:
-          # 1101" with "shadow-gasp-comic-pipeline" as its UA, before the Worker ever ran. Same
-          # trap as the 1010 blocks on the Python notify paths.
+          # A browser User-Agent as insurance. NOTE: tested afterwards, the descriptive UA was
+          # NOT the problem here -- it still reaches the Worker. The "error code: 1101" was a
+          # CONSEQUENCE of the KeyError above: python3 died, --data got an empty string, and the
+          # malformed request was rejected. Kept because the Python notify paths genuinely were
+          # blocked at the edge (1010), and one UA rule across every caller is easier to hold in
+          # mind than a per-caller exception.
           curl -sS -X POST "${WORKER_URL%/}/build-failed" \
             -H "Content-Type: application/json" \
             -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
