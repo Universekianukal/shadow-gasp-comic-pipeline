@@ -137,8 +137,17 @@ class LLM:
     # since no amount of config can see a balance.
     fallback: bool = True
 
+    # Stream by default. See the long note in _call: a silent non-streaming connection is
+    # what four consecutive builds died inside. Set False only to compare the two.
+    stream: bool = True
+
     # Absolute ceiling for the automatic budget escalation below.
     MAX_OUTPUT_TOKENS = 64000
+
+    # Max seconds between two streamed chunks before the server is treated as gone. This
+    # is an IDLE gap, not a total-duration cap, so a legitimately long generation is never
+    # cut short -- only a silent one is.
+    STREAM_IDLE_TIMEOUT = 180
 
     def __post_init__(self) -> None:
         self.provider = resolve_provider((self.provider or "mock").lower(),
@@ -192,6 +201,40 @@ class LLM:
                           or DEFAULT_MODELS.get(name))
             return True
         return False
+
+    @staticmethod
+    def _read_stream(r: requests.Response) -> tuple[str, str, str | None]:
+        """Reassemble an SSE chat-completions stream into (content, reasoning, finish).
+
+        Returns exactly what the non-streaming branch produces, so every downstream check
+        -- truncation, empty content, the reasoning-budget diagnostics -- is unchanged.
+
+        ⚠️ Malformed or unexpected chunks are skipped rather than raised on. A stream that
+        delivered 60,000 good characters and one unparseable keep-alive frame is a usable
+        answer; throwing it away would resurrect the exact failure this streaming change
+        exists to remove. A stream that yields nothing still falls through to the empty
+        content checks in _call, which classify it properly.
+        """
+        content, reasoning, finish = [], [], None
+        for line in r.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if not line or line == "[DONE]":
+                continue
+            try:
+                choice = json.loads(line)["choices"][0]
+            except (ValueError, KeyError, IndexError):
+                continue
+            delta = choice.get("delta") or {}
+            if delta.get("content"):
+                content.append(delta["content"])
+            if delta.get("reasoning_content"):
+                reasoning.append(delta["reasoning_content"])
+            if choice.get("finish_reason"):
+                finish = choice["finish_reason"]
+        return "".join(content), "".join(reasoning), finish
 
     def _text_once(self, prompt: str, system: str, max_tokens: int) -> str:
         budget = max_tokens
@@ -285,39 +328,52 @@ class LLM:
         payload = {"model": self.model, "max_tokens": max_tokens, "messages": msgs}
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
+
+        # ⭐⭐ STREAM. A non-streaming request sends NOTHING until the whole answer is
+        # finished, and the comic script takes many minutes to write -- so the connection
+        # sits completely silent for the entire generation. That silence is what killed
+        # four consecutive builds on 2026-09-04/05: RemoteDisconnected at ~5m04s, or a
+        # socket that stayed open for the full read timeout and never delivered a byte.
+        #
+        # Measured with pipeline_lib/probe_fireworks.py, same model, same 64k budget:
+        #   non-streaming: first byte at 431.0s (i.e. at the very end)
+        #   streaming:     first byte at   0.6s, and the whole call finished FASTER (263s)
+        #
+        # Streaming does not make the model quicker; it makes the connection continuously
+        # busy, so there is no idle window for anything in the path to reap. It also turns
+        # the read timeout below into what the comment always claimed it was -- a gap
+        # BETWEEN CHUNKS rather than a cap on total call duration -- which is why a stall
+        # is now caught in 3 minutes instead of 15, without ever cutting off a long but
+        # healthy generation.
+        payload["stream"] = self.stream
         r = requests.post(
             f"{base}/chat/completions",
             headers={"Authorization": f"Bearer {key}",
                      "content-type": "application/json"},
-            # 600s was not enough for a 150-panel comic script: CI hit a read timeout on every
-            # attempt while the same call finished locally in under 20 minutes.
-            #
-            # ⚠️ SPLIT, not one number. A single 1800s value has to cover both "how long may the
-            # model take to answer" and "how long do we wait to find out the server is gone" --
-            # and the second question needs a far smaller answer. On 2026-09-04 Fireworks dropped
-            # one connection and then stalled: the run sat 30 minutes on a dead socket, burned
-            # the outer 2-attempt budget, and produced nothing in 36 minutes of runner time.
-            #
-            # (connect, read): a connection that will not open in 30s is not opening. The read
-            # budget stays generous because a real 50-page generation legitimately takes many
-            # minutes -- but it is the STREAM-IDLE gap that matters, not total call duration, so
-            # a server that goes silent is now detected in minutes rather than half an hour.
-            json=payload, timeout=(30, 900))
+            # (connect, read): a connection that will not open in 30s is not opening.
+            # While streaming, the read budget is the idle gap between chunks -- keep it
+            # well above a slow model's inter-token pause but far below a build's patience.
+            json=payload, timeout=(30, self.STREAM_IDLE_TIMEOUT if self.stream else 900),
+            stream=self.stream)
         _raise_for_status(r)
-        data = r.json()
-        try:
-            choice = data["choices"][0]
-            content = choice["message"].get("content") or ""
-        except (KeyError, IndexError):
-            raise LLMError(f"{self.provider} returned no completion. "
-                           f"Response: {str(data)[:400]}") from None
+
+        if not self.stream:
+            data = r.json()
+            try:
+                choice = data["choices"][0]
+                content = choice["message"].get("content") or ""
+            except (KeyError, IndexError):
+                raise LLMError(f"{self.provider} returned no completion. "
+                               f"Response: {str(data)[:400]}") from None
+            reasoning = choice["message"].get("reasoning_content") or ""
+            finish = choice.get("finish_reason")
+        else:
+            content, reasoning, finish = self._read_stream(r)
 
         # Reasoning models spend the budget thinking before they write, and put that
         # thinking in a separate field while still billing it against max_tokens. If
         # the budget runs out first, `content` comes back empty or cut short - which
         # would otherwise reach the netlist validator as a malformed design.
-        reasoning = choice["message"].get("reasoning_content") or ""
-        finish = choice.get("finish_reason")
 
         if not content.strip():
             # Empty output that stopped at the limit is the MOST recoverable form of
