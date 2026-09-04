@@ -48,6 +48,7 @@ jobs:
         run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
 
       - name: Publish
+        id: publish
         if: github.event.inputs.action == 'publish'
         env:
           # BOTH keys, deliberately. gen_promo.py defaults to `auto`: it uses Anthropic while
@@ -70,6 +71,7 @@ jobs:
           python pipeline_lib/gen_promo.py --case "${{ github.event.inputs.case }}" --url "$URL" --product-id "${{ github.event.inputs.product_id }}"
 
       - name: Reject
+        id: reject
         if: github.event.inputs.action == 'reject'
         run: |
           ~/.local/bin/gumroad products delete "${{ github.event.inputs.product_id }}" --yes
@@ -79,6 +81,7 @@ jobs:
             -d text="❌ Rejected and deleted from Gumroad."
 
       - name: Regenerate with more pages (dispatches the full pipeline again)
+        id: regenerate
         if: github.event.inputs.action == 'regenerate'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -90,3 +93,63 @@ jobs:
           gh workflow run pipeline.yml \
             -f "case=${{ github.event.inputs.case }}" \
             -f "target_pages=${{ github.event.inputs.target_pages }}"
+
+      # ⛔ THIS WORKFLOW HAD NO FAILURE PATH AT ALL until 2026-09-05.
+      #
+      # Tapping Publish/Reject/Regenerate and receiving nothing back was not a bug in the
+      # alert -- there was no alert. Four of the last five runs failed in ~18s on
+      # "credit balance is too low" from gen_promo.py and every one of them was silent,
+      # so the buttons looked like they did nothing at all.
+      #
+      # Sent straight to Telegram rather than through the Worker's /build-failed, which
+      # mints a retry token for a BUILD. Re-running an action is a different operation:
+      # a publish that got as far as Gumroad must not be blindly repeated.
+      - name: Report failure to Telegram
+        if: failure()
+        continue-on-error: true
+        env:
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          # The tap's own chat when the Worker sent one, else the owner. Without the
+          # fallback an action dispatched by hand (no chat_id input) would still be silent.
+          CHAT: ${{ github.event.inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          ACTION: ${{ github.event.inputs.action }}
+          CASE: ${{ github.event.inputs.case }}
+          PRODUCT: ${{ github.event.inputs.product_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          C_PUBLISH: ${{ steps.publish.conclusion }}
+          C_REJECT: ${{ steps.reject.conclusion }}
+          C_REGEN: ${{ steps.regenerate.conclusion }}
+        run: |
+          STEP="an unknown step"
+          [ "$C_PUBLISH" = "failure" ] && STEP="publish (Gumroad + promo post)"
+          [ "$C_REJECT"  = "failure" ] && STEP="reject (Gumroad delete)"
+          [ "$C_REGEN"   = "failure" ] && STEP="regenerate (dispatching the pipeline)"
+          # ⚠️ EXPORT, and build the payload in a FILE. Both mistakes were made in
+          # pipeline.yml's copy of this step: an unexported STEP is invisible to the
+          # separate python3 process (KeyError: 'STEP'), which left --data empty and the
+          # alert as silent as having no alert at all.
+          export STEP
+          echo "failed at: $STEP"
+          # ⚠️ Gumroad publish runs BEFORE the promo post, and the "LIVE" message is edited
+          # in between -- so a failure here does NOT mean the product is unpublished.
+          # Saying so plainly stops a retry from double-publishing.
+          python3 - <<'PY' > /tmp/msg.json
+          import json, os
+          note = ("\n\n⚠️ The Gumroad publish itself runs BEFORE this point, so the "
+                  "product may already be LIVE. Check before re-tapping Publish."
+                  if os.environ["STEP"].startswith("publish") else "")
+          print(json.dumps({
+              "chat_id": os.environ["CHAT"],
+              "disable_web_page_preview": True,
+              "text": ("❌ Action FAILED: " + os.environ["ACTION"]
+                       + "\n\nAt: " + os.environ["STEP"]
+                       + "\nCase: " + (os.environ.get("CASE") or "(none given)")
+                       + "\nProduct: " + (os.environ.get("PRODUCT") or "(none given)")
+                       + "\nLog: " + os.environ["RUN_URL"] + note),
+          }))
+          PY
+          cat /tmp/msg.json
+          curl -sS -X POST "https://api.telegram.org/bot${BOT}/sendMessage" \
+            -H "Content-Type: application/json" \
+            --data @/tmp/msg.json \
+            || echo "WARNING: could not report the failure"
