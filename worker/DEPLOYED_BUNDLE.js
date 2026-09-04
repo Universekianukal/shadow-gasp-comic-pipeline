@@ -705,6 +705,106 @@ __name(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name2(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name22(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name222(confirmPublishKeyboard, "confirmPublishKeyboard");
+
+// ---- /topics : browse what can be turned into a comic, and build it on a tap ----
+//
+// Two lists, because they answer different questions. UPCOMING days are shorts that have not
+// gone out yet, so the comic can land with the launch traffic; the BACKLOG is every published
+// short that still has no comic. The Batch sheet was the obvious source and turned out to be
+// the wrong one: it tracks pregenerated days only (58 rows) while the ledger holds 104
+// published shorts with no comic, most predating the batch system entirely.
+//
+// Reads the two repos' raw JSON directly. No Google credentials in the Worker -- the sheet
+// would have needed service-account JWT signing here for a strictly smaller list.
+var RAW_COMIC = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-comic-pipeline/main";
+var RAW_VIDEO = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main";
+var TOPICS_PER_PAGE = 8;
+
+function normCase(s) {
+  // Matches pick_case.norm_case: the two repos spell the same case differently (an em dash in
+  // state.json where the ledger stores U+0097), so an == join silently misses.
+  return (s || "").normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLowerCase();
+}
+
+async function loadTopics(env) {
+  const [ledR, stR] = await Promise.all([
+    fetch(`${RAW_COMIC}/cases_used.json`, { headers: { "User-Agent": "shadow-gasp-bot" } }),
+    fetch(`${RAW_VIDEO}/_pipeline/batch/state.json`, { headers: { "User-Agent": "shadow-gasp-bot" } })
+  ]);
+  if (!ledR.ok) throw new Error(`ledger fetch ${ledR.status}`);
+  const led = await ledR.json();
+  const cases = led.cases || [];
+
+  const published = new Set(cases.filter((c) => c.videoId).map((c) => normCase(c.case)));
+  const drawn = new Set(cases.filter((c) => c.comicAt).map((c) => normCase(c.case)));
+
+  const upcoming = [];
+  if (stR.ok) {
+    const days = (await stR.json()).days || {};
+    const nums = Object.keys(days).map(Number).sort((a, b) => a - b);
+    // Work from the publishing frontier: low unpublished days are stalled, not imminent.
+    let frontier = 0;
+    for (const n of nums) if (published.has(normCase(days[String(n)].case))) frontier = n;
+    for (const n of nums) {
+      const d = days[String(n)];
+      const k = normCase(d.case);
+      if (!d.done || published.has(k) || drawn.has(k) || n <= frontier) continue;
+      upcoming.push({ label: `day ${n}`, case: d.case });
+    }
+  }
+
+  const backlog = cases
+    .filter((c) => c.videoId && !c.comicAt)
+    .sort((a, b) => (b.publishedAt || "").localeCompare(a.publishedAt || ""))
+    .map((c) => ({ label: c.publishedAt ? c.publishedAt.slice(0, 10) : "undated", case: c.case }));
+
+  return { upcoming, backlog };
+}
+
+async function sendTopicsPage(env, chatId, kind, page, messageId) {
+  let lists;
+  try {
+    lists = await loadTopics(env);
+  } catch (e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't load the topic lists: ${e.message}` });
+    return;
+  }
+  const items = kind === "up" ? lists.upcoming : lists.backlog;
+  if (!items.length) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: kind === "up"
+      ? "No upcoming days are waiting for a comic." : "Every published short already has a comic." });
+    return;
+  }
+  const pages = Math.ceil(items.length / TOPICS_PER_PAGE);
+  page = Math.max(0, Math.min(page, pages - 1));
+  const slice = items.slice(page * TOPICS_PER_PAGE, (page + 1) * TOPICS_PER_PAGE);
+
+  // The chosen page goes in KV so a button can carry an INDEX rather than a case name --
+  // callback_data is capped at 64 bytes and these names run past that. Keyed per page so a
+  // stale button cannot resolve to whatever has since shifted into that slot.
+  const token = Math.random().toString(36).slice(2, 10);
+  await env.PENDING.put(`topics:${token}`, JSON.stringify(slice.map((x) => x.case)), { expirationTtl: 86400 });
+
+  const rows = slice.map((x, i) => [{
+    text: `${x.label} · ${x.case.length > 42 ? x.case.slice(0, 41) + "…" : x.case}`,
+    callback_data: `topic:${token}:${i}`
+  }]);
+  const nav = [];
+  if (page > 0) nav.push({ text: "‹ prev", callback_data: `topicpg:${kind}:${page - 1}` });
+  if (page < pages - 1) nav.push({ text: "next ›", callback_data: `topicpg:${kind}:${page + 1}` });
+  nav.push({ text: kind === "up" ? `backlog (${lists.backlog.length})` : `upcoming (${lists.upcoming.length})`,
+             callback_data: `topicpg:${kind === "up" ? "bk" : "up"}:0` });
+  if (nav.length) rows.push(nav);
+
+  const head = kind === "up"
+    ? `\u{1F680} UPCOMING shorts — not published yet, so the comic lands with the launch. ${items.length} waiting.`
+    : `\u{1F4DA} BACKLOG — published shorts with no comic yet. ${items.length} waiting, newest first.`;
+  const body = `${head}\nPage ${page + 1}/${pages}. Tap one to build it at 25 pages.`;
+  const params = { chat_id: chatId, text: body, reply_markup: { inline_keyboard: rows } };
+  if (messageId) await tg(env, "editMessageText", { ...params, message_id: messageId });
+  else await tg(env, "sendMessage", params);
+}
+
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -740,6 +840,33 @@ async function handleCallback(env, cq) {
       chat_id: chatId,
       message_id: messageId,
       text: decision === "stop" ? "\u{1F6D1} Stopped \u2014 render will not publish hookless." : "\u25B6\uFE0F Continuing \u2014 will render and publish with a static Ken Burns still."
+    });
+    return;
+  }
+  if (action === "topicpg") {
+    await sendTopicsPage(env, chatId, token, parseInt(extra, 10) || 0, cq.message && cq.message.message_id);
+    return;
+  }
+  if (action === "topic") {
+    const raw = await env.PENDING.get(`topics:${token}`);
+    if (!raw) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+      return;
+    }
+    const picked = JSON.parse(raw)[parseInt(extra, 10)];
+    if (!picked) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      return;
+    }
+    try {
+      await dispatchPipeline(env, { case: picked, target_pages: "25", dry_run: "false" });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the build: ${e.message}` });
+      return;
+    }
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: `\u{1F4D6} Building "${picked}" at 25 pages. The draft lands here when it's done.\nFor a bigger book instead: /make ${picked} | 50`
     });
     return;
   }
@@ -1113,6 +1240,8 @@ var COMMAND_LIST = [
   "/make <case> | 50  \u2014 build straight away at 50pp, skipping both pickers",
   "/regen p05_3 p06_1  \u2014 re-roll specific panels on the MOST RECENT book, after checking the OCR contact sheets. Panel names are the gold labels on those sheets. Everything else is reused, so it takes minutes not an hour.",
   "/regen <token> p05_3  \u2014 same, but for an older book (the token is in that book's sheet captions)",
+  "/topics  - browse buildable cases: upcoming shorts first, then the published backlog. Tap one to build it.",
+  "/topics backlog  - jump straight to the published-but-no-comic list",
   "/links  - every comic with its Gumroad URL, the short it came from, and the command to link them",
   "/funnel  - put the most recent comic's link into the description of the short it was made from (published products only)",
   "/funnel <videoId>  - same, naming the video explicitly",
@@ -1424,6 +1553,11 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
   }
   if (text.startsWith("/help") || text.startsWith("/commands") || text.trim() === "/") {
     await tg(env, "sendMessage", { chat_id: chatId, text: COMMAND_LIST });
+    return;
+  }
+  if (text.startsWith("/topics")) {
+    const rest = text.slice("/topics".length).trim().toLowerCase();
+    await sendTopicsPage(env, chatId, rest.startsWith("back") ? "bk" : "up", 0, null);
     return;
   }
   if (text.startsWith("/links")) {
