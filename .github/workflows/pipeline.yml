@@ -80,7 +80,12 @@ jobs:
         id: pick
         if: github.event.inputs.case == ''
         env:
+          # `auto` = Anthropic while it has credit, Fireworks when it refuses for billing.
+          # Only --source new spends anything here; the default (published) is a ledger
+          # lookup and needs no key at all.
+          COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER_PICK || 'auto' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
         run: python pipeline_lib/pick_case.py --source "${{ github.event.inputs.case_source || vars.COMIC_DAILY_SOURCE || 'published' }}" --lead "${{ github.event.inputs.lead || '0' }}"
 
       - name: Set case variable
