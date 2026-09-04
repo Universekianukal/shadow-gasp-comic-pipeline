@@ -151,17 +151,38 @@ class LLM:
     # -- transport ------------------------------------------------------------
 
     def _retry(self, fn):
+        # ⚠️ A DROPPED CONNECTION IS NOT A FAILED GENERATION.
+        #
+        # Callers set max_retries=1 on purpose: every attempt is a full paid generation of a
+        # 50-page book, and nesting this loop inside gen_case_script's own once cost 12 attempts
+        # and ~2 hours. But that also meant a connection the server closed BEFORE producing
+        # anything got no retry at all -- it cost nothing to redo, and was treated as gravely as
+        # a model that answered badly. On 2026-09-04 that turned one dropped socket into a dead
+        # build.
+        #
+        # So transport failures that cannot have consumed a generation get their own small
+        # allowance, independent of max_retries. A read timeout is deliberately NOT in this set:
+        # the model may well have been mid-answer, so retrying it does cost real money.
+        cheap = (requests.exceptions.ConnectionError,
+                 requests.exceptions.ChunkedEncodingError)
+        attempts = max(self.max_retries, 3)
         delay = 2.0
         last = None
-        for attempt in range(self.max_retries):
+        for attempt in range(attempts):
             try:
                 return fn()
             except LLMError:
                 raise
             except Exception as exc:  # network / 429 / 5xx
                 last = exc
-                if attempt == self.max_retries - 1:
+                spent = attempt + 1
+                # Past the caller's budget, only a free-to-retry transport error may continue.
+                if spent >= self.max_retries and not isinstance(exc, cheap):
                     break
+                if spent >= attempts:
+                    break
+                print(f"  . {type(exc).__name__} on attempt {spent}/{attempts}, retrying in "
+                      f"{delay:.0f}s", flush=True)
                 time.sleep(delay)
                 delay *= 2
         raise LLMError(f"LLM call failed after {self.max_retries} attempts: {last}")
@@ -195,7 +216,18 @@ class LLM:
                      "content-type": "application/json"},
             # 600s was not enough for a 150-panel comic script: CI hit a read timeout on every
             # attempt while the same call finished locally in under 20 minutes.
-            json=payload, timeout=1800)
+            #
+            # ⚠️ SPLIT, not one number. A single 1800s value has to cover both "how long may the
+            # model take to answer" and "how long do we wait to find out the server is gone" --
+            # and the second question needs a far smaller answer. On 2026-09-04 Fireworks dropped
+            # one connection and then stalled: the run sat 30 minutes on a dead socket, burned
+            # the outer 2-attempt budget, and produced nothing in 36 minutes of runner time.
+            #
+            # (connect, read): a connection that will not open in 30s is not opening. The read
+            # budget stays generous because a real 50-page generation legitimately takes many
+            # minutes -- but it is the STREAM-IDLE gap that matters, not total call duration, so
+            # a server that goes silent is now detected in minutes rather than half an hour.
+            json=payload, timeout=(30, 900))
         _raise_for_status(r)
         data = r.json()
         try:
