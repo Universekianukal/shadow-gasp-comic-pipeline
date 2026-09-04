@@ -50,7 +50,14 @@ jobs:
       - name: Publish
         if: github.event.inputs.action == 'publish'
         env:
+          # BOTH keys, deliberately. gen_promo.py defaults to `auto`: it uses Anthropic while
+          # that balance holds and drops to Fireworks on a billing refusal. Passing only
+          # ANTHROPIC_API_KEY here is what made every publish since 2026-09-02 die on
+          # "credit balance is too low" -- with no fallback available and, because this
+          # workflow has no failure notify, no message in Telegram either.
+          COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER_PROMO || 'auto' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
