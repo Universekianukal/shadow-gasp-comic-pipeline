@@ -727,16 +727,33 @@ function normCase(s) {
 }
 
 async function loadTopics(env) {
-  const [ledR, stR] = await Promise.all([
+  // ⚠️ TWO LEDGERS, AND ONLY ONE IS THE AUTHORITY ON VIDEOS.
+  //
+  // The comic repo's cases_used.json is a COPY, refreshed by sync_from_video_repo -- which runs
+  // inside pick_case, and pick_case is SKIPPED whenever a build names its case explicitly. Every
+  // recent build did exactly that, so the copy silently fell behind and /topics could not offer
+  // day 38 (the Edmund Fitzgerald) for two days after its video was recorded.
+  //
+  // So: videos and dates come from the VIDEO repo, which the pipeline writes as it publishes.
+  // Only comicAt comes from the comic repo, because that is the thing only the comic repo knows.
+  // Nothing here can go stale waiting for a build to run.
+  const [comicR, videoR, stR] = await Promise.all([
     fetch(`${RAW_COMIC}/cases_used.json`, { headers: { "User-Agent": "shadow-gasp-bot" } }),
+    fetch(`${RAW_VIDEO}/_pipeline/cases_used.json`, { headers: { "User-Agent": "shadow-gasp-bot" } }),
     fetch(`${RAW_VIDEO}/_pipeline/batch/state.json`, { headers: { "User-Agent": "shadow-gasp-bot" } })
   ]);
-  if (!ledR.ok) throw new Error(`ledger fetch ${ledR.status}`);
-  const led = await ledR.json();
-  const cases = led.cases || [];
+  if (!videoR.ok) throw new Error(`video ledger fetch ${videoR.status}`);
+  const cases = (await videoR.json()).cases || [];
 
+  // comicAt lives only in the comic repo. If that fetch fails, fall back to offering nothing as
+  // drawn rather than hiding the whole list -- a duplicate build is recoverable, an empty
+  // /topics is just broken.
+  let drawn = new Set();
+  if (comicR.ok) {
+    const comicCases = (await comicR.json()).cases || [];
+    drawn = new Set(comicCases.filter((c) => c.comicAt).map((c) => normCase(c.case)));
+  }
   const published = new Set(cases.filter((c) => c.videoId).map((c) => normCase(c.case)));
-  const drawn = new Set(cases.filter((c) => c.comicAt).map((c) => normCase(c.case)));
 
   const upcoming = [];
   if (stR.ok) {
@@ -754,7 +771,10 @@ async function loadTopics(env) {
   }
 
   const backlog = cases
-    .filter((c) => c.videoId && !c.comicAt)
+    // `drawn`, NOT c.comicAt: these rows come from the VIDEO ledger now, which has no comicAt
+    // field at all -- so testing it would be vacuously true and every shipped comic would be
+    // offered for rebuilding again, which is the exact bug the comicAt backfill just fixed.
+    .filter((c) => c.videoId && !drawn.has(normCase(c.case)))
     .sort((a, b) => (b.publishedAt || "").localeCompare(a.publishedAt || ""))
     .map((c) => ({ label: c.publishedAt ? c.publishedAt.slice(0, 10) : "undated", case: c.case }));
 
@@ -2267,6 +2287,36 @@ No answer in 15 min defaults to STOP.`,
 ${run_url || ""}`
       });
       return new Response("ok", { status: 200 });
+    }
+    if (request.method === "POST" && url.pathname === "/comic/linked") {
+      // ⚠️ THE MISSING WRITE. /links renders `linked_at`, and nothing in the Worker ever set it
+      // -- the field appeared only in reads. The first three comics showed a tick because their
+      // records were minted carrying one; #04 reported "not linked yet" no matter how many times
+      // it was successfully funnelled, because no code path could ever say otherwise.
+      //
+      // The Worker cannot check for itself: it has no YouTube credentials, so it cannot read a
+      // description. The funnel job can, and now reports back.
+      const auth = request.headers.get("X-Batch-Notify-Secret");
+      if (auth !== env.BATCH_NOTIFY_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const body = await request.json();
+      const { product_url, video_id, linked_at } = body;
+      if (!product_url) return new Response("product_url required", { status: 400 });
+      const list = await env.PENDING.list({ prefix: "comic:" });
+      let hits = 0;
+      for (const k of list.keys) {
+        const raw = await env.PENDING.get(k.name);
+        if (!raw) continue;
+        const c = JSON.parse(raw);
+        if ((c.product_url || "") !== product_url) continue;
+        c.linked_at = linked_at || new Date().toISOString().slice(0, 10);
+        // A book funnelled to a video it had no record of should remember that video.
+        if (video_id && !c.video_id) c.video_id = video_id;
+        await env.PENDING.put(k.name, JSON.stringify(c));
+        hits++;
+      }
+      return new Response(`ok ${hits}`, { status: 200 });
     }
     if (request.method === "POST" && url.pathname === "/batch/pregen_done") {
       const auth = request.headers.get("X-Batch-Notify-Secret");
