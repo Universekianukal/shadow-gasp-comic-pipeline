@@ -396,7 +396,7 @@
       "source": "auto-picked"
     },
     {
-      "videoId": null,
+      "videoId": "BfhX4oA3DhI",
       "case": "Isdal Woman (Norway, 1970)",
       "publishedAt": "2026-07-30"
     },
@@ -471,14 +471,14 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "yzBkl-Cgs7s",
       "case": "The Springfield Three disappearance (Springfield, Missouri, 1992)",
-      "publishedAt": null
+      "publishedAt": "2026-08-14"
     },
     {
-      "videoId": null,
+      "videoId": "FtROmAutfMg",
       "case": "The Yuba County Five (California, 1978)",
-      "publishedAt": null
+      "publishedAt": "2026-08-16"
     },
     {
       "videoId": "HxkKGV7ya48",
@@ -531,9 +531,9 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "73scVUa-pDQ",
       "case": "The Voynich Manuscript (carbon-dated 1404-1438)",
-      "publishedAt": null
+      "publishedAt": "2026-08-22"
     },
     {
       "videoId": "x5RZv6P2xTw",
@@ -616,7 +616,7 @@
       "publishedAt": "2026-08-14"
     },
     {
-      "videoId": null,
+      "videoId": "4STsCyk0M0A",
       "case": "The Green Bicycle Case (Bella Wright murder, Leicestershire, England, 1919)",
       "publishedAt": "2026-08-14"
     },
@@ -705,6 +705,26 @@
       "videoId": null,
       "case": "The Glico Morinaga case (Japan, 1984-1985)",
       "publishedAt": "2026-09-02"
+    },
+    {
+      "videoId": null,
+      "case": "Roberto Calvi / 'God's Banker' death at Blackfriars Bridge (London, 1982)",
+      "publishedAt": null
+    },
+    {
+      "videoId": "72LmvE4fYmc",
+      "case": "The Sinking of the Edmund Fitzgerald (Lake Superior, November 10, 1975)",
+      "publishedAt": "2026-09-03"
+    },
+    {
+      "videoId": "nWOlgHlVDMs",
+      "case": "Cerro Gordo silver mine death (1878, California)",
+      "publishedAt": "2026-08-29"
+    },
+    {
+      "videoId": "UJy2YloIuSA",
+      "case": "Radium Girls (full long-form documentary)",
+      "publishedAt": "2026-08-01"
     }
   ]
 }
