@@ -50,12 +50,97 @@ on:
         description: "Page layout style: chamber|cinematic|classic|documentary|mosaic|staccato (blank = auto, derived from the case id)"
         required: false
         default: ""
+      # ~2 hours of GPU per build against a 30h/week PER-ACCOUNT Kaggle quota. Naming the
+      # account spreads books across accounts instead of starving one.
+      #
+      # ⚠️ NOT a free per-build choice. THE KERNEL IS THE ONLY ART STORE -- cases/ is rm -rf'd
+      # after every run, so a case's panels survive only as Kaggle kernel output, and
+      # list_case_kernels() searches ONLY the account it is given. Rebuilding a book on a
+      # different account finds nothing, prints "generating from scratch", and re-renders every
+      # panel at a new seed, discarding art that was already approved. So a case is PINNED to
+      # whichever account first built it; the caller is responsible for passing that same slot
+      # every time. The Telegram Worker records the pin next to the issue number.
+      #
+      # Slots are single uppercase letters resolved dynamically from the secrets context, so a
+      # fourth account is two new secrets and no edit here. Blank = the original
+      # KAGGLE_USERNAME / KAGGLE_API_TOKEN pair, which is what every pre-existing book used.
+      kaggle_account:
+        description: "Kaggle account slot: blank = original pair, or A/B/C (needs KAGGLE_<slot>_USERNAME + KAGGLE_<slot>_API_TOKEN)"
+        required: false
+        default: ""
+      # The issue number is normally assigned INSIDE the build (issue_registry.assign) and only
+      # committed back at the very end, 2-3 hours later -- so two builds started in that window
+      # both read the same issues.json and are both handed the same number, which is then baked
+      # into the PDF and the Gumroad title. Passing it in lets the Telegram Worker assign it at
+      # the moment of the tap instead, against a single authority, before anything dispatches.
+      # "auto" keeps the old in-build behaviour, which is still the fallback for `gh workflow
+      # run` and for a Worker that cannot write to issues.json.
+      issue_no:
+        description: "Issue number to use, or 'auto' to take the next one from issues.json"
+        required: false
+        default: "auto"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Job-level so both Kaggle steps resolve the same account -- they used to name the secrets
+    # separately, which is two places for the pair to disagree.
+    #
+    # `secrets[format(...)]` indexes the secrets context by name, so slots need no per-account
+    # branch here. GitHub expressions have no ternary; `cond && A || B` is the idiom. A slot
+    # whose secrets are missing indexes to an empty string and falls through to the original
+    # pair -- which would silently build on the WRONG account, so the step below refuses to
+    # continue unless the resolved username matches what the slot asked for.
+    env:
+      KAGGLE_USERNAME: ${{ github.event.inputs.kaggle_account != '' && secrets[format('KAGGLE_{0}_USERNAME', github.event.inputs.kaggle_account)] || secrets.KAGGLE_USERNAME }}
+      KAGGLE_API_TOKEN: ${{ github.event.inputs.kaggle_account != '' && secrets[format('KAGGLE_{0}_API_TOKEN', github.event.inputs.kaggle_account)] || secrets.KAGGLE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      # A build spends ~2h of one account's weekly GPU budget, and because the username is a
+      # masked secret nothing in the log says which account paid. Two failure modes are worth
+      # catching in 5 seconds rather than 40 minutes deep in the Kaggle push:
+      #
+      #   1. the slot's secrets do not exist -- the expression above yields "" and falls back to
+      #      the primary, so the build would quietly spend the wrong quota AND write this case's
+      #      art to an account the pin does not name;
+      #   2. a typo'd slot ("b" vs "B", "alt") does the same thing just as quietly.
+      #
+      # KAGGLE_ACCOUNTS maps slot -> handle in plain text (a username is not a secret), which
+      # gives us something to compare the resolved credential against. Without it we can only
+      # check for emptiness, which case 1 above already defeats.
+      - name: Confirm the Kaggle account resolved
+        env:
+          SLOT: ${{ github.event.inputs.kaggle_account }}
+          ACCOUNT_MAP: ${{ vars.KAGGLE_ACCOUNTS }}
+        run: |
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_API_TOKEN" ]; then
+            echo "::error::kaggle_account='${SLOT:-<blank>}' resolved to an empty credential. Add KAGGLE_${SLOT}_USERNAME and KAGGLE_${SLOT}_API_TOKEN, or leave kaggle_account blank."
+            exit 1
+          fi
+          if [ -n "$SLOT" ] && [ -n "$ACCOUNT_MAP" ]; then
+            WANT=$(printf '%s' "$ACCOUNT_MAP" | tr ',' '\n' | awk -F: -v s="$SLOT" '$1==s{print $2}')
+            if [ -z "$WANT" ]; then
+              echo "::error::Slot '$SLOT' is not listed in the KAGGLE_ACCOUNTS variable ($ACCOUNT_MAP). Refusing to guess which account to spend."
+              exit 1
+            fi
+            if [ "$WANT" != "$KAGGLE_USERNAME" ]; then
+              echo "::error::Slot '$SLOT' should be '$WANT' but the secrets resolved to a different account. KAGGLE_${SLOT}_USERNAME is probably missing, so it fell back to the primary pair. Refusing to build this case on the wrong account -- its art store lives with the pin."
+              exit 1
+            fi
+            echo "Kaggle account: slot $SLOT = $WANT"
+          else
+            # The blank slot is the original pair, which every pre-existing book was built on.
+            # It is checked too, against the "-" entry: if that secret is ever rotated to a
+            # different account, every unpinned rebuild would start looking for its art in a
+            # place it was never written, and the only symptom is "generating from scratch".
+            WANT=$(printf '%s' "$ACCOUNT_MAP" | tr ',' '\n' | awk -F: '$1=="-"{print $2}')
+            if [ -n "$WANT" ] && [ "$WANT" != "$KAGGLE_USERNAME" ]; then
+              echo "::error::The default KAGGLE_USERNAME is not '$WANT' as KAGGLE_ACCOUNTS claims. Either the secret was rotated or the map is stale -- fix one to match the other before building, or existing books will not find their art."
+              exit 1
+            fi
+            echo "Kaggle account: default pair${WANT:+ = $WANT}"
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -128,7 +213,7 @@ jobs:
           SLUG=$(echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40)
           mkdir -p cases/$SLUG/panels
           echo "slug=$SLUG" >> "$GITHUB_ENV"
-          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages || vars.COMIC_DAILY_PAGES || '25' }}" --profile "${{ github.event.inputs.profile || vars.COMIC_DAILY_PROFILE }}"
+          python pipeline_lib/gen_case_script.py --out-dir cases/$SLUG --case "$CASE" --case-id "$SLUG" --target-pages "${{ github.event.inputs.target_pages || vars.COMIC_DAILY_PAGES || '25' }}" --profile "${{ github.event.inputs.profile || vars.COMIC_DAILY_PROFILE }}" --issue-no "${{ github.event.inputs.issue_no || 'auto' }}"
 
       # Solve the page layout BEFORE any art is generated, and write each panel's real
       # target_px back onto its prompt. Without this, gen_flux_kaggle falls back to one fixed
@@ -155,8 +240,9 @@ jobs:
         id: flux
         if: github.event.inputs.dry_run != 'true'
         env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          # KAGGLE_USERNAME / KAGGLE_API_TOKEN come from the JOB-level env above, which honours
+          # the kaggle_account input. Re-declaring them here would shadow that and pin every
+          # build to the primary account while the picker still claimed otherwise.
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           # Blank = base FLUX. Set the repo variable to a private HF repo holding
           # sgnoir_lora_v1.safetensors to render in the trained house style instead. Loading is
@@ -176,9 +262,8 @@ jobs:
         # rm -rf's cases/ unconditionally, two hours of GPU and a complete book were deleted by
         # a failed retry. Build the PDF from the art we have instead.
         continue-on-error: true
-        env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        # Kaggle credentials come from the job-level env, so the auto-fix kernel lands on the
+        # same account that generated the art.
         run: |
           cd pipeline_lib
           python ocr_autofix.py --case-dir ../cases/${{ env.slug }} --kaggle-user "$KAGGLE_USERNAME" --slug "${{ env.slug }}"
