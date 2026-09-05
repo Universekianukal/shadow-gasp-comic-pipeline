@@ -828,8 +828,14 @@ async function sendTopicsPage(env, chatId, kind, page, messageId) {
 
   // A COMPLETED row is a statement of fact, not an offer -- tapping it must not rebuild a comic
   // that already exists and is already linked. Those are rendered as text instead.
+  // NUMBERED, and the full name goes in the message body below. A button label is truncated
+  // by Telegram's own rendering no matter what we send, so the button carries the number and
+  // the text carries the truth. Before this the ONLY place a case name appeared was the
+  // button, cut at 42 chars -- and the documented way to ask for a bigger book,
+  // "/make <case> | 50", requires typing that name in full. The truncation therefore hid the
+  // escape hatch it made necessary: you cannot type a name you were never shown.
   const rows = kind === "dn" ? [] : slice.map((x, i) => [{
-    text: `${x.label} · ${x.case.length > 42 ? x.case.slice(0, 41) + "…" : x.case}`,
+    text: `${i + 1}. ${x.label} · ${x.case.length > 38 ? x.case.slice(0, 37) + "…" : x.case}`,
     callback_data: `topic:${token}:${i}`
   }]);
   const nav = [];
@@ -848,9 +854,14 @@ async function sendTopicsPage(env, chatId, kind, page, messageId) {
     : kind === "dn"
     ? `✅ COMPLETED — comic built AND linked into its short's description. ${items.length} done.`
     : `\u{1F4DA} BACKLOG — published shorts with no comic yet. ${items.length} waiting, newest first.`;
-  const listing = kind === "dn" ? "\n\n" + slice.map((x) => `${x.label} · ${x.case}`).join("\n") : "";
+  // Every list prints its full case names now, not just the completed one. The numbers match
+  // the buttons above, so a long name is both readable and tappable.
+  const listing = "\n\n" + slice
+    .map((x, i) => `${kind === "dn" ? "" : `${i + 1}. `}${x.label} · ${x.case}`)
+    .join("\n");
   const body = `${head}\nPage ${page + 1}/${pages}.` +
-    (kind === "dn" ? " Nothing to do here — these are already earning." : " Tap one to build it at 35 pages.") +
+    (kind === "dn" ? " Nothing to do here — these are already earning."
+                   : " Tap one to choose its page count.") +
     listing;
   const params = { chat_id: chatId, text: body, reply_markup: { inline_keyboard: rows } };
   if (messageId) await tg(env, "editMessageText", { ...params, message_id: messageId });
@@ -1058,19 +1069,61 @@ async function handleCallback(env, cq) {
       await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
       return;
     }
+    // ASK, don't assume. A tap used to dispatch 35 pages immediately, and the only way to get
+    // a bigger book was to retype the full case name into /make -- a name the truncated button
+    // never showed you. Choosing the size is now the second tap.
+    //
+    // It also puts a deliberate stop between a stray tap and a build that costs ~2h of the
+    // weekly Kaggle budget plus a paid generation.
+    //
+    // callback_data is capped at 64 bytes, which is why this reuses the SAME page token and
+    // index rather than carrying the case name: "topicgo:<8>:<i>|<pages>" is ~22 bytes.
+    //
+    // ⚠️ "|" NOT ":" between index and pages. The shared router is
+    // `const [action, token, extra] = data.split(":")`, which keeps only the THIRD segment --
+    // a fourth would be silently dropped and every build would quietly fall back to 35.
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: `\u{1F4D6} ${picked}\n\nHow many pages?\n\n`
+          + "25 — ~41pp delivered, $3.99 tier\n"
+          + "35 — ~50-55pp, $4.99 tier (the usual choice)\n"
+          + "50 — bigger book, roughly double the art time\n"
+          + "75 — the largest that has built cleanly",
+      reply_markup: { inline_keyboard: [
+        [{ text: "25", callback_data: `topicgo:${token}:${extra}|25` },
+         { text: "35", callback_data: `topicgo:${token}:${extra}|35` },
+         { text: "50", callback_data: `topicgo:${token}:${extra}|50` },
+         { text: "75", callback_data: `topicgo:${token}:${extra}|75` }]
+      ]}
+    });
+    return;
+  }
+  if (action === "topicgo") {
+    const raw = await env.PENDING.get(`topics:${token}`);
+    if (!raw) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+      return;
+    }
+    // extra is "<index>|<pages>". The router already consumed the ":" separators, so the
+    // page count rides in on a character it does not split on.
+    const [idxStr, pagesStr] = String(extra).split("|");
+    const picked2 = JSON.parse(raw)[parseInt(idxStr, 10)];
+    const pages2 = String(parseInt(pagesStr, 10) || 35);
+    if (!picked2) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      return;
+    }
     try {
-      // 35, not 25. A tap is the default path, so the default should be the book worth
-      // selling. 25 delivered a 41-page book; 35 lands nearer 50-55, which crosses from
-      // the $3.99 tier into $4.99 and roughly doubles the Kaggle time per build. Both are
-      // deliberate. Type /make <case> | 50 for the bigger book.
-      await dispatchPipeline(env, { case: picked, target_pages: "35", dry_run: "false" });
+      await dispatchPipeline(env, { case: picked2, target_pages: pages2, dry_run: "false" });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the build: ${e.message}` });
       return;
     }
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Building at ${pages2} pages...` });
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F4D6} Building "${picked}" at 35 pages. The draft lands here when it's done.\nFor a bigger book instead: /make ${picked} | 50`
+      text: `\u{1F4D6} Building "${picked2}" at ${pages2} pages. The draft lands here when it's done.`
     });
     return;
   }
@@ -1444,7 +1497,7 @@ var COMMAND_LIST = [
   "/make <case> | 50  \u2014 build straight away at 50pp, skipping both pickers",
   "/regen p05_3 p06_1  \u2014 re-roll specific panels on the MOST RECENT book, after checking the OCR contact sheets. Panel names are the gold labels on those sheets. Everything else is reused, so it takes minutes not an hour.",
   "/regen <token> p05_3  \u2014 same, but for an older book (the token is in that book's sheet captions)",
-  "/topics  - browse buildable cases: upcoming shorts first, then the published backlog. Tap one to build it.",
+  "/topics  - browse buildable cases: upcoming shorts first, then the published backlog. Full case names are listed under the buttons; tap one and pick 25/35/50/75 pages.",
   "/topics backlog  - jump straight to the published-but-no-comic list",
   "/links  - every comic with its Gumroad URL, the short it came from, and the command to link them",
   "/funnel  - put the most recent comic's link into the description of the short it was made from (published products only)",
