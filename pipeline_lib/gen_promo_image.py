@@ -57,7 +57,45 @@ def _fit_hook(draw, text, font_name, max_width, start_size, min_size=44):
     return font, textwrap.wrap(text, width=26)[:5]
 
 
-def build(bg_path, hook, title, subtitle, cta, out_path, size=(SIZE, SIZE)):
+def _paste_cover(base, cover_path, margin, scale):
+    """Drop the REAL cover into the frame, with a shadow and a hairline edge.
+
+    ⭐ WITHOUT THIS THE POSTER NEVER SHOWS THE PRODUCT. promo_bg.jpg is generated for this case
+    in the house style -- same model, same mandatory style prefix, same era palette -- but it
+    is a bespoke establishing shot, deliberately emptied of close-up subjects so type can sit
+    on it. A poster built on it alone advertises the mood and never shows the thing being sold,
+    so a reader cannot tell what they would receive. The cover is the one image that IS the
+    product, so it belongs in the frame.
+
+    Right-hand side, because every type block here is left-aligned: putting it left would
+    collide with the hook at long hook lengths rather than never.
+    """
+    if not cover_path or not os.path.exists(cover_path):
+        return
+    cov = Image.open(cover_path).convert("RGB")
+    W, H = base.size
+    target_h = int(H * 0.42)
+    ratio = cov.width / max(1, cov.height)
+    target_w = int(target_h * ratio)
+    if target_w > W * 0.34:                      # never crowd the hook column
+        target_w = int(W * 0.34)
+        target_h = int(target_w / ratio)
+    cov = cov.resize((max(1, target_w), max(1, target_h)), Image.LANCZOS)
+
+    x = W - margin - target_w
+    y = int(H * 0.5 - target_h * 0.5)
+
+    shadow = Image.new("RGBA", (target_w + 40, target_h + 40), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rectangle([20, 20, 20 + target_w, 20 + target_h], fill=(0, 0, 0, 190))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(14))
+    base.paste(shadow, (x - 20, y - 20 + int(8 * scale)), shadow)
+    base.paste(cov, (x, y))
+    ImageDraw.Draw(base).rectangle([x, y, x + target_w, y + target_h],
+                                   outline=(90, 88, 84), width=max(1, int(2 * scale)))
+    return (x, y, target_w, target_h)
+
+
+def build(bg_path, hook, title, subtitle, cta, out_path, size=(SIZE, SIZE), cover_path=None):
     W, H = size
     if bg_path and os.path.exists(bg_path):
         bg = Image.open(bg_path).convert("RGB")
@@ -89,8 +127,14 @@ def build(bg_path, hook, title, subtitle, cta, out_path, size=(SIZE, SIZE)):
 
     d = ImageDraw.Draw(bg)
     margin = int(min(W, H) * 0.078)
-    safe = W - margin * 2
     scale = min(W, H) / SIZE
+
+    # The cover goes down BEFORE the type, and the text column is narrowed to what is left.
+    # Drawing it afterwards would let the hook run underneath it -- text that reads fine in the
+    # generated file and is unreadable in the post, which is the failure that only shows up
+    # once it is public.
+    placed = _paste_cover(bg, cover_path, margin, scale) if cover_path else None
+    safe = (placed[0] - margin - int(30 * scale)) - margin if placed else W - margin * 2
 
     # top label
     label_font = _font("Montserrat-Bold.ttf", max(16, int(26 * scale)))
@@ -127,6 +171,8 @@ def build(bg_path, hook, title, subtitle, cta, out_path, size=(SIZE, SIZE)):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bg", help="atmospheric background image (promo_bg.jpg)")
+    ap.add_argument("--cover", default=None,
+                    help="the finished cover, inset so the poster shows the actual product")
     ap.add_argument("--hook", required=True, help="the scroll-stopping question/line")
     ap.add_argument("--title", required=True)
     ap.add_argument("--subtitle", default="A documentary comic · Real case, researched")
@@ -135,7 +181,8 @@ def main():
     ap.add_argument("--size", default="1080x1080", help="WxH, e.g. 1280x720")
     args = ap.parse_args()
     w, h = (int(v) for v in args.size.lower().split("x"))
-    print(build(args.bg, args.hook, args.title, args.subtitle, args.cta, args.out, (w, h)))
+    print(build(args.bg, args.hook, args.title, args.subtitle, args.cta, args.out, (w, h),
+                cover_path=args.cover))
 
 
 if __name__ == "__main__":
