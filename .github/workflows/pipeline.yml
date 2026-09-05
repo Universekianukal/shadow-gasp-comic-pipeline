@@ -359,7 +359,13 @@ jobs:
           # Gumroad title. Worse, once that second book recorded 4, a Nimrod REBUILD would
           # compute 5 -- a different script-cache key, so a fresh paid generation, a fingerprint
           # that no longer matches its art, and a reprint contradicting the issue already sold.
-          git add cases_used.json issues.json
+          # promo/ too. The social poster is the one image a build makes that must OUTLIVE the
+          # build: cases/ is deleted a few lines below, so a poster left there dies with the
+          # runner and /promo falls back to a storefront cover forever. It is an advert --
+          # type, the hook and the cover, no interior pages -- so it is as safe here as the
+          # ledgers are, and it deliberately never reaches Gumroad: the product page should
+          # show the product, not an ad for it.
+          git add cases_used.json issues.json promo/
           git commit -m "Update case ledger: ${{ steps.case.outputs.case }}" || echo "nothing to commit"
           # Rebase before pushing: a push from a 3-hour build races anything committed to main
           # while it ran, and losing the ledger to a non-fast-forward is how a case gets built

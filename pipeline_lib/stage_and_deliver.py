@@ -12,6 +12,7 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -550,13 +551,9 @@ def main():
     tags = tags[:5]
     print(f"gumroad tags: {tags}", flush=True)
 
-    # Purpose-built social promo graphic (hook-led, not a comic page). Built
-    # here at build time because the case folder is deleted after this run --
-    # it rides along as a Gumroad preview so it can be fetched again at
-    # publish time and handed over for posting.
-    panels = os.path.join(comic_dir, "panels")
-    hook = script.get("promo_hook") or script.get("tagline", "")
-    sub = "documentary comic"
+    # (An earlier attempt at the social poster left three variables here that nothing read --
+    # it planned to ship the poster as a Gumroad preview. The poster is now built below and
+    # kept OUT of the storefront: the product page should show the product, not an ad.)
 
     # Three different shapes for three different jobs. cover.jpg stays 9:16
     # because that's the comic's actual front cover page inside the PDF — but
@@ -570,6 +567,53 @@ def main():
     except Exception as e:
         print(f"WARNING: promo card build failed ({e}) — continuing without it")
         promo_path = None
+
+    # ---- the social poster: for Facebook and Instagram ONLY, never the storefront ----
+    #
+    # Built here because this is the only moment everything it needs exists together:
+    # panels/promo_bg.jpg (generated on Kaggle in the same kernel as the art, so it costs no
+    # extra GPU), the finished cover, and the script's promo_hook. cases/ is deleted when the
+    # build ends and none of it survives.
+    #
+    # ⚠️ It is deliberately NOT added to `previews`. Gumroad covers are the storefront gallery
+    # a buyer browses; this is an ad. Keeping it out means the product page shows the product.
+    #
+    # Hosting is this repo, which is already public: raw.githubusercontent serves it as
+    # image/jpeg, which is all Facebook and Instagram need to fetch it. The filename carries a
+    # content hash, so a regenerated poster is a NEW url -- which matters because IG's fetch
+    # failures (9004/2207052) bind to the url forever, and only genuinely new bytes at a new
+    # path clear one.
+    poster_path = None
+    try:
+        import hashlib as _h
+        import gen_promo_image
+        _bg = os.path.join(comic_dir, "panels", "promo_bg.jpg")
+        _hook = (script.get("promo_hook") or script.get("title") or "").strip()
+        if os.path.exists(_bg) and _hook:
+            _tmp = os.path.join(comic_dir, "_poster.jpg")
+            gen_promo_image.build(
+                _bg, _hook,
+                f"{script.get('series', 'SHADOW GASP')} #{script.get('issue_no', '')}: {script.get('title', '')}".strip(),
+                "A documentary comic · real case, researched",
+                "LINK IN POST",
+                _tmp, cover_path=cover_path)
+            _digest = _h.sha1(open(_tmp, "rb").read()).hexdigest()[:8]
+            _dest_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "promo")
+            os.makedirs(_dest_dir, exist_ok=True)
+            # Keyed on the GUMROAD PERMALINK, not the case id and not a re-derived slug.
+            # Post time finds this file starting from a Gumroad product, and the two slugs do
+            # not agree: the case id is "uss-cyclops-disappearance-1918" while the product
+            # lives at /l/the-silent-sea, and the slug rules differ on apostrophes too --
+            # HEAVEN'S GATE is "heavensgate" on the storefront and neither slugify() produces
+            # that. Using the exact permalink both sides already hold removes the guess.
+            poster_path = os.path.join(_dest_dir, f"{slugify(script['title'])}-{_digest}.jpg")
+            shutil.copyfile(_tmp, poster_path)
+            print(f"social poster: promo/{os.path.basename(poster_path)}", flush=True)
+        else:
+            print(f"WARNING: no promo poster (bg={os.path.exists(_bg)}, hook={bool(_hook)})")
+    except Exception as e:
+        # Never fatal. A finished, priced, uploaded book must not be lost to a marketing asset.
+        print(f"WARNING: social poster build failed ({e}) — continuing without it")
 
     # Square storefront tile, styled as a comic cover. A shop tile for a comic
     # IS its cover -- series banner, title, issue number. A bare atmospheric

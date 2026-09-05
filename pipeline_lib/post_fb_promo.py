@@ -106,6 +106,41 @@ def _measure(url):
         return None
 
 
+RAW = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-comic-pipeline/main"
+
+
+def poster_url(permalink_or_case):
+    """The social poster for this comic, if the build made one.
+
+    Preferred over any Gumroad cover: it is purpose-built for a feed -- hook set large, the
+    real cover inset, price and CTA -- where a cover is a book jacket that happens to be
+    square. Kept in this repo rather than on the storefront, because the product page should
+    show the product and not an advert for it.
+
+    Filenames carry a content hash, so a regenerated poster is a new URL. That is deliberate:
+    Instagram binds a fetch failure (9004/2207052) to the URL permanently, and only new bytes
+    at a new path clear it.
+    """
+    if not os.path.isdir(MARKER_DIR) or not permalink_or_case:
+        return None
+    # The build names the file with the product's own permalink, so match on that VERBATIM --
+    # re-slugifying here is what would break it. The two slug rules disagree (HEAVEN'S GATE is
+    # "heavensgate" on Gumroad; slugify would say "heaven-s-gate"), and a mismatch fails
+    # silently by falling back to a storefront cover, which looks like the poster was never
+    # built rather than never found.
+    # Compared with separators removed, because one legacy permalink disagrees with the rule
+    # that generates it: HEAVEN'S GATE is "heavensgate" on Gumroad while slugify() yields
+    # "heaven-s-gate". Nine of ten products match exactly; collapsing punctuation catches the
+    # tenth instead of silently serving it a storefront cover.
+    def _flat(s):
+        return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+    want = _flat(permalink_or_case)
+    hits = sorted(f for f in os.listdir(MARKER_DIR)
+                  if f.endswith(".jpg") and _flat(f.rsplit("-", 1)[0]) == want)
+    return f"{RAW}/promo/{hits[-1]}" if hits else None
+
+
 def cover_url(product, platform="fb"):
     """Pick the cover to post, by SHAPE rather than by position.
 
@@ -266,7 +301,15 @@ def main():
     slug = slugify(product.get("custom_permalink") or product.get("name"))
     marker = os.path.join(MARKER_DIR, f"{slug}.json")
     caption = build_caption(product, a.hook, a.platform)
-    img, dims = cover_url(product, a.platform)
+    # The purpose-built poster wins when the build produced one; the Gumroad cover is the
+    # fallback for books built before posters existed.
+    img = poster_url(product.get("custom_permalink"))
+    dims = None
+    if img:
+        dims = None
+        print("image   : social poster (built by the pipeline)")
+    else:
+        img, dims = cover_url(product, a.platform)
 
     print(f"platform: {a.platform}")
     print(f"product : {product['name']}  (${product.get('price', 0) / 100:.0f})")
