@@ -78,6 +78,52 @@ __name2(dispatchPipeline, "dispatchPipeline");
 __name22(dispatchPipeline, "dispatchPipeline");
 __name222(dispatchPipeline, "dispatchPipeline");
 
+async function dispatchPostPromo(env, inputs) {
+  const r = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_promo.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "shadow-gasp-bot"
+      },
+      body: JSON.stringify({ ref: "main", inputs })
+    }
+  );
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
+
+// The storefront is the authority on what can be promoted -- a comic is promotable exactly
+// when it is PUBLISHED, and only Gumroad knows that. Reading the KV comic records instead
+// would offer drafts, and a post linking to an unpublished product sends every click to a 404.
+async function gumroadProducts(env) {
+  const r = await fetch(
+    `https://api.gumroad.com/v2/products?access_token=${encodeURIComponent(env.GUMROAD_ACCESS_TOKEN || "")}`,
+    { headers: { "User-Agent": "shadow-gasp-bot" } }
+  );
+  if (!r.ok) throw new Error(`Gumroad list failed: ${r.status}`);
+  const j = await r.json();
+  return (j.products || []).filter((p) => p.published);
+}
+
+// Which comics have already gone out, read from the markers the posting job commits. Without
+// this the list would happily offer a book a second time, and the whole point of the marker is
+// that a duplicate post is what cost this page its reach.
+async function promoPosted(env) {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/promo?ref=main`,
+                          { headers: ghHeaders(env) });
+    if (!r.ok) return new Set();
+    const files = await r.json();
+    return new Set((Array.isArray(files) ? files : [])
+      .filter((f) => f.name && f.name.endsWith(".json"))
+      .map((f) => f.name.replace(/\.json$/, "")));
+  } catch (e) {
+    return new Set();
+  }
+}
+
 // ---- per-case registry: the issue number, and the Kaggle account that holds the art ----
 //
 // Both facts are decided HERE, at the tap, and written to issues.json in the comic repo before
@@ -1287,6 +1333,61 @@ async function handleCallback(env, cq) {
     await funnelComic(env, chatId, token, extra || "");
     return;
   }
+  if (action === "promo" || action === "promogo") {
+    const rawP = await env.PENDING.get(`promo:${token}`);
+    if (!rawP) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That promo list has expired — run /promo again." });
+      return;
+    }
+    const item = JSON.parse(rawP)[parseInt(extra, 10)];
+    if (!item) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that comic — run /promo again." });
+      return;
+    }
+    if (action === "promo") {
+      // CONFIRM FIRST. This publishes to a page with ~1,336 followers and cannot be undone
+      // from here -- a mis-tap has to be deleted by hand in Facebook. The same page lost its
+      // reach to a duplicate post that nobody intended to make.
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u{1F4E2} Post to Facebook?\n\n${item.n}\n$${Math.round((item.pr || 0) / 100)}\n${item.u}\n\n`
+            + "The post carries the comic's cover, its opening lines, and this link — in the "
+            + "post itself, not the comments.\n\n"
+            + "⚠️ This publishes immediately to ~1,336 followers and can only be undone in Facebook.",
+        reply_markup: { inline_keyboard: [[
+          { text: "✅ Post it", callback_data: `promogo:${token}:${extra}` },
+          { text: "✖ Cancel", callback_data: `promono:${token}:${extra}` }
+        ]] }
+      });
+      return;
+    }
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Posting..." });
+    try {
+      await dispatchPostPromo(env, {
+        case: item.c || item.n,
+        dry_run: "false",
+        force: "false"
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the post: ${e.message}` });
+      return;
+    }
+    await tg(env, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: `\u{1F4E2} Posting "${item.n}" to Facebook.\nI'll confirm here when it lands.`
+    });
+    return;
+  }
+  if (action === "promono") {
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Cancelled" });
+    await tg(env, "editMessageText", {
+      chat_id: chatId, message_id: messageId,
+      text: "✖ Cancelled — nothing was posted."
+    });
+    return;
+  }
   if (action === "topicpg") {
     await sendTopicsPage(env, chatId, token, parseInt(extra, 10) || 0, cq.message && cq.message.message_id);
     return;
@@ -1834,7 +1935,8 @@ var COMMAND_LIST = [
   "/make <case> | 50  \u2014 build straight away at 50pp, skipping both pickers",
   "/regen p05_3 p06_1  \u2014 re-roll specific panels on the MOST RECENT book, after checking the OCR contact sheets. Panel names are the gold labels on those sheets. Everything else is reused, so it takes minutes not an hour.",
   "/regen <token> p05_3  \u2014 same, but for an older book (the token is in that book's sheet captions)",
-  "/topics  - browse buildable cases: upcoming shorts first, then the published backlog. Full case names are listed under the buttons; tap one and pick 25/35/50/75 pages.",
+  "/topics  - browse buildable cases: upcoming shorts first, then the published backlog. Full case names are listed under the buttons; tap one, pick the Kaggle account, the page count and the layout style.",
+  "/promo  - promote a PUBLISHED comic on Facebook: cover + opening lines + the Gumroad link, in the post rather than the comments. Shows the post for confirmation first, and refuses a comic that has already gone out.",
   "/topics backlog  - jump straight to the published-but-no-comic list",
   "/links  - every comic with its Gumroad URL, the short it came from, and the command to link them",
   "/funnel  - put the most recent comic's link into the description of the short it was made from (published products only)",
@@ -2155,6 +2257,47 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       : (rest.startsWith("done") || rest.startsWith("comp") || rest.startsWith("link")) ? "dn"
       : "up";
     await sendTopicsPage(env, chatId, kind, 0, null);
+    return;
+  }
+  if (text.startsWith("/promo")) {
+    let products, posted;
+    try {
+      [products, posted] = await Promise.all([gumroadProducts(env), promoPosted(env)]);
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't read the storefront: ${e.message}` });
+      return;
+    }
+    if (!products.length) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "No PUBLISHED comics to promote. Drafts are skipped — a link to a draft is a 404." });
+      return;
+    }
+    products.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    const token = Math.random().toString(36).slice(2, 10);
+    await env.PENDING.put(`promo:${token}`,
+      JSON.stringify(products.map((p) => ({ n: p.name, u: p.short_url, c: p.custom_permalink, pr: p.price }))),
+      { expirationTtl: 86400 });
+
+    const lines = [];
+    const buttons = [];
+    products.forEach((p, i) => {
+      const done = posted.has(p.custom_permalink || "");
+      lines.push(`${i + 1}. ${p.name}  — $${Math.round((p.price || 0) / 100)}${done ? "  ✅ posted" : ""}`);
+      // Already-posted books are TEXT, not buttons. The marker stops a duplicate server-side
+      // anyway, but offering a tap that will be refused wastes the tap and teaches you to
+      // ignore the refusal.
+      if (!done) buttons.push({ text: String(i + 1), callback_data: `promo:${token}:${i}` });
+    });
+    const rows = [];
+    for (let i = 0; i < buttons.length; i += 4) rows.push(buttons.slice(i, i + 4));
+
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: "\u{1F4E2} PROMOTE A COMIC ON FACEBOOK\n\n" + lines.join("\n") +
+            "\n\nTap a number to see the exact post before anything goes out. " +
+            `The page has ~1,336 followers and the link goes IN the post.` +
+            (rows.length ? "" : "\n\n✅ Every published comic has already been posted."),
+      reply_markup: rows.length ? { inline_keyboard: rows } : undefined
+    });
     return;
   }
   if (text.startsWith("/links")) {
@@ -2823,6 +2966,27 @@ ${run_url || ""}`
       return new Response(JSON.stringify({ sent, skipped }), {
         status: 200, headers: { "Content-Type": "application/json" }
       });
+    }
+    if (request.method === "POST" && url.pathname === "/promo/posted") {
+      // The posting job reports back so a tap does not end in silence. A promo that failed
+      // quietly is worse than one that never ran: you would believe the store had a funnel
+      // pointing at it and stop wondering why nothing arrives.
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const b = await request.json();
+      const ok = b.result === "success";
+      const dry = String(b.dry_run) === "true";
+      await tg(env, "sendMessage", {
+        chat_id: env.TELEGRAM_CHAT_ID,
+        text: dry
+          ? `\u{1F9EA} Promo DRY RUN for "${b.case}" — ${ok ? "token and product check out; nothing posted." : "failed."}\n${b.run_url || ""}`
+          : ok
+            ? `✅ Posted "${b.case}" to Facebook.`
+            : `❌ Facebook post FAILED for "${b.case}".\n${b.run_url || ""}`
+      });
+      return new Response("ok");
     }
     if (request.method === "POST" && url.pathname === "/comic/linked") {
       // ⚠️ THE MISSING WRITE. /links renders `linked_at`, and nothing in the Worker ever set it
