@@ -1,0 +1,95 @@
+name: Post Comic Promo to Facebook
+
+# Deliberately manual. The Telegram button dispatches this; nothing posts automatically.
+#
+# Automatic posting is what a comic pipeline must NOT do. A book gets rebuilt routinely -- a
+# price change, an art regen, a re-render -- and a post-on-every-build would re-post the same
+# comic each time. That is the exact pattern that took this page's reach from ~700-1,300 to 1
+# on 2026-08-10, when day07 was crossposted twice in two hours and had to be deleted by hand.
+# post_fb_promo.py refuses a second post per case, and this stays a deliberate tap on top.
+
+on:
+  workflow_dispatch:
+    inputs:
+      case:
+        description: "Case name, Gumroad permalink, or product id"
+        required: true
+      hook:
+        description: "Override the opening line (blank = use the product description's opening)"
+        required: false
+        default: ""
+      force:
+        description: "Post again even though this comic was already posted"
+        required: false
+        default: "false"
+      dry_run:
+        description: "Resolve the product, print the caption, verify the token -- post nothing"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Gumroad CLI
+        run: curl -fsSL https://gumroad.com/install-cli.sh | bash
+
+      - name: Authenticate Gumroad CLI
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Post to Facebook
+        id: post
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          PATH_EXTRA: /home/runner/.local/bin
+        run: |
+          export PATH="$PATH:/home/runner/.local/bin"
+          python pipeline_lib/post_fb_promo.py \
+            --case "${{ github.event.inputs.case }}" \
+            ${{ github.event.inputs.hook && format('--hook "{0}"', github.event.inputs.hook) || '' }} \
+            ${{ github.event.inputs.force == 'true' && '--force' || '' }} \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      - name: Commit the posted marker
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          # The marker is what stops a rebuild re-posting the book, so it has to outlive the
+          # runner. cases/ is deleted every build and never committed; promo/ is names, ids and
+          # timestamps only, so it is safe in this public repo for the same reason the case
+          # ledger is.
+          git config user.name "shadow-gasp-bot"
+          git config user.email "bot@shadowgasp.example"
+          git add promo/ 2>/dev/null || true
+          git commit -m "promo: posted ${{ github.event.inputs.case }} to Facebook" || {
+            echo "nothing to commit (already posted, or the post was skipped)"; exit 0; }
+          git pull --rebase --autostash origin main || true
+          git push
+
+      - name: Tell Telegram
+        if: always()
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          CASE: ${{ github.event.inputs.case }}
+          RESULT: ${{ steps.post.outcome }}
+          DRY: ${{ github.event.inputs.dry_run }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # A browser User-Agent: urllib's default is refused at Cloudflare's edge (1010) and
+          # the Worker never sees the request, so the log stays empty and the failure is silent.
+          python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"result":os.environ["RESULT"],"dry_run":os.environ["DRY"],"run_url":os.environ["RUN_URL"]}))' > /tmp/promo.json
+          curl -sS -X POST "${WORKER_URL%/}/promo/posted" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/promo.json \
+            || echo "WARNING: could not report the promo result"
