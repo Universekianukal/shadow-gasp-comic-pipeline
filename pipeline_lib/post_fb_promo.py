@@ -37,6 +37,9 @@ import urllib.request
 # too -- a page id is not a secret, and keeping it out of the secret store means one less
 # thing to have drifted when a post silently goes to nowhere.
 FB_PAGE_ID = "1164008466785123"
+# The Instagram Business account linked to that page. One token covers both -- the same
+# FB_PAGE_ACCESS_TOKEN the video pipeline publishes Reels with.
+IG_USER_ID = "17841425663819735"
 GRAPH = "https://graph.facebook.com/v19.0"
 
 # The caption carries an emoji, and a Windows console defaults to cp1252 -- printing it there
