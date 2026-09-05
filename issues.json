@@ -1,5 +1,6 @@
 {
   "issues": {
+    "cerro-gordo-silver-mine-death-1878-calif": 14,
     "disappearance-of-michael-rockefeller-net": 12,
     "hanford-nuclear-reservation-contaminatio": 3,
     "heavens-gate": 2,
@@ -15,6 +16,7 @@
     "uss-cyclops-disappearance-1918": 8
   },
   "kaggle": {
+    "cerro-gordo-silver-mine-death-1878-calif": "C",
     "disappearance-of-michael-rockefeller-net": "-",
     "the-toxic-lady-gloria-ramirez-er-inciden": "B"
   }
