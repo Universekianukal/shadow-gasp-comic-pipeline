@@ -976,13 +976,40 @@ async function loadTopics(env) {
     }
   }
 
+  // ⭐⭐ A MISSING DATE MUST NOT READ AS "OLDEST".
+  //
+  // The backlog sorts newest-first on publishedAt, and a null compares below every real date --
+  // so an undated row sank to the end of the last page, which is where nobody looks. 25 of 116
+  // published shorts sat there: a fifth of the channel, already carrying an audience and with
+  // no comic, silently absent from the list whose entire job is to surface exactly that. The
+  // Georgia Guidestones short was row 108 of 108.
+  //
+  // A row with a videoId IS published; "no date recorded" is a gap in the ledger, not evidence
+  // about when it went out. The ledger is written in publication order, so the nearest
+  // PRECEDING date is a sound stand-in and puts the row back among its neighbours. The label
+  // shows it as approximate (~) so an inferred date is never mistaken for a recorded one.
+  //
+  // The 25 have since been backfilled from YouTube, so this currently changes nothing. It is
+  // here because the writer that dropped those dates has not been fixed, and the failure was
+  // invisible for months precisely because it looked like an ordering quirk rather than a loss.
+  let carried = "";
+  const sortKey = /* @__PURE__ */ new Map();
+  for (const c of cases) {
+    if (c.publishedAt) carried = c.publishedAt;
+    sortKey.set(c, c.publishedAt || carried);
+  }
   const backlog = cases
     // `drawn`, NOT c.comicAt: these rows come from the VIDEO ledger now, which has no comicAt
     // field at all -- so testing it would be vacuously true and every shipped comic would be
     // offered for rebuilding again, which is the exact bug the comicAt backfill just fixed.
     .filter((c) => c.videoId && !drawn.has(normCase(c.case)))
-    .sort((a, b) => (b.publishedAt || "").localeCompare(a.publishedAt || ""))
-    .map((c) => ({ label: c.publishedAt ? c.publishedAt.slice(0, 10) : "undated", case: c.case }));
+    .sort((a, b) => (sortKey.get(b) || "").localeCompare(sortKey.get(a) || ""))
+    .map((c) => ({
+      label: c.publishedAt
+        ? c.publishedAt.slice(0, 10)
+        : (sortKey.get(c) ? `~${sortKey.get(c).slice(0, 10)}` : "undated"),
+      case: c.case
+    }));
 
   // ⭐ THE THIRD STATE. A case is not simply "has a comic or not": a comic can exist and still
   // reach nobody, because the link from the short to the store is what actually earns. Before
