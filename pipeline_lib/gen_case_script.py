@@ -133,7 +133,7 @@ Return a single JSON object with exactly two top-level keys: "script" and
     {"page": 4, "title": "...", "type": "grid", "rows": [[{"file": "p02_1.jpg", "shape": "LANDSCAPE", "caption": "...", "bleed": ["left","right","top"]}], [{"file":"p02_2.jpg","shape":"PORTRAIT","caption":"..."},{"file":"p02_3.jpg","shape":"LANDSCAPE","caption":"..."}]]}
   ],
   "back_matter": {"heading": "WHAT WAS REAL", "pages": 2, "lines": ["FACT ONE...", "", "FACT TWO..."], "sources": ["source 1", "source 2"]},
-  "back_cover": {"logo": "SHADOW GASP", "quote": "\\"A PUNCHY QUOTE\\"", "footer": "SHADOW GASP — TRUE CRIME. TOLD IN INK.", "blurb": "...", "publisher": "Shadow Gasp Press", "price": "$2.99", "rating": "T", "isbn": ""}
+  "back_cover": {"logo": "SHADOW GASP", "quote": "\\"A PUNCHY QUOTE\\"", "footer": "SHADOW GASP — TRUE CRIME. TOLD IN INK.", "blurb": "...", "publisher": "Shadow Gasp Press", "price": "$29", "rating": "T", "isbn": ""}
 }
 
 REQUIREMENTS for "pages":

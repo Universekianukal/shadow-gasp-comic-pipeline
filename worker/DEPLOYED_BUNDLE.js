@@ -77,6 +77,174 @@ __name(dispatchPipeline, "dispatchPipeline");
 __name2(dispatchPipeline, "dispatchPipeline");
 __name22(dispatchPipeline, "dispatchPipeline");
 __name222(dispatchPipeline, "dispatchPipeline");
+
+// ---- per-case registry: the issue number, and the Kaggle account that holds the art ----
+//
+// Both facts are decided HERE, at the tap, and written to issues.json in the comic repo before
+// anything is dispatched. That file is the single authority for both.
+//
+// Why not leave it to the build, which is where it used to happen? issue_registry.assign() runs
+// at checkout and its result is only committed 2-3 hours later, so two builds started inside
+// that window both read the same file and are both handed the same number -- a number printed
+// into the PDF and into the Gumroad title, which cannot be corrected without a full rebuild.
+//
+// The Kaggle pin is the same shape of problem with a quieter failure. The kernel is the ONLY
+// art store: cases/ is deleted after every run, and list_case_kernels() searches only the
+// account it is handed. Build a case on a different account than last time and it finds
+// nothing, prints "generating from scratch", and re-renders every panel at a new seed --
+// silently replacing art that was already approved. So the first build of a case fixes its
+// account, and every later build inherits it. The picker asks once, not every time.
+var REGISTRY_PATH = "issues.json";
+var KAGGLE_ACCOUNTS_FALLBACK = "-:anuragmishra108,B:mahadevi108,C:kianukal";
+
+function caseSlug(name) {
+  // Must match pipeline.yml byte for byte:
+  //   echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40
+  // A slug that disagrees files the number under a key the build never looks up, which would
+  // hand out a fresh number on every single build while looking like it was working.
+  return String(name || "").toLowerCase().replace(/ /g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 40);
+}
+
+function b64decode(s) {
+  const bin = atob(String(s).replace(/\s/g, ""));
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+
+function b64encode(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+function ghHeaders(env) {
+  return {
+    Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+    Accept: "application/vnd.github+json",
+    "Content-Type": "application/json",
+    "User-Agent": "shadow-gasp-bot"
+  };
+}
+
+function parseKaggleAccounts(s) {
+  return String(s || "").split(",")
+    .map((p) => p.split(":"))
+    .filter((p) => p.length === 2 && p[0].trim() && p[1].trim())
+    .map((p) => ({ slot: p[0].trim(), handle: p[1].trim() }));
+}
+
+// Read the slot -> handle map from the repo VARIABLE rather than hardcoding it here, so adding
+// a fourth account is `gh variable set` and not a Worker deploy. The fallback only covers the
+// token lacking actions:read; if the two ever disagree the build's own guard refuses, which is
+// the safe direction.
+async function kaggleAccounts(env) {
+  try {
+    const r = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/actions/variables/KAGGLE_ACCOUNTS`,
+      { headers: ghHeaders(env) }
+    );
+    if (r.ok) {
+      const j = await r.json();
+      const parsed = parseKaggleAccounts(j && j.value);
+      if (parsed.length) return parsed;
+    }
+  } catch (e) {
+    console.log(`kaggleAccounts: ${e.message}`);
+  }
+  return parseKaggleAccounts(KAGGLE_ACCOUNTS_FALLBACK);
+}
+
+async function readRegistry(env) {
+  const r = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/contents/${REGISTRY_PATH}?ref=main`,
+    { headers: ghHeaders(env) }
+  );
+  if (!r.ok) return null;
+  const j = await r.json();
+  let data;
+  try {
+    data = JSON.parse(b64decode(j.content));
+  } catch (e) {
+    return null;
+  }
+  if (!data || typeof data !== "object") return null;
+  data.issues = data.issues || {};
+  data.kaggle = data.kaggle || {};
+  return { data, sha: j.sha };
+}
+
+// What this case would get, without writing anything. Used to skip the account question when
+// the case is already pinned -- offering a choice that will be overridden is worse than not
+// offering it.
+async function peekCase(env, caseName) {
+  const cur = await readRegistry(env);
+  if (!cur) return null;
+  const slug = caseSlug(caseName);
+  return {
+    slug,
+    issue: cur.data.issues[slug],
+    slot: cur.data.kaggle[slug]
+  };
+}
+
+// Returns { issue, slot, pinned, error }. `error` is deliberately non-fatal: the caller falls
+// back to issue_no="auto", which is exactly what the build did before this existed. A registry
+// the Worker cannot write must not be able to block a book.
+async function reserveCase(env, caseName, wantSlot) {
+  const slug = caseSlug(caseName);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const cur = await readRegistry(env);
+    if (!cur) return { error: "could not read issues.json" };
+    const issues = cur.data.issues;
+    const kaggle = cur.data.kaggle;
+    const haveIssue = Object.prototype.hasOwnProperty.call(issues, slug);
+    const havePin = Object.prototype.hasOwnProperty.call(kaggle, slug);
+    // A pin already on file WINS over whatever was tapped. The art is where the art is.
+    const slot = havePin ? kaggle[slug] : (wantSlot || "-");
+    const nums = Object.values(issues).filter((n) => typeof n === "number");
+    const issue = haveIssue ? issues[slug] : (nums.length ? Math.max.apply(null, nums) : 0) + 1;
+
+    // Nothing to write. Idempotent on purpose -- a rebuild must return the number it already
+    // has, or the reprint would contradict the copy already delivered.
+    if (haveIssue && havePin) return { issue, slot, pinned: true };
+
+    issues[slug] = issue;
+    kaggle[slug] = slot;
+
+    // Match what issue_registry.py writes -- sort_keys=True, indent=2, every top-level key
+    // preserved -- so a build's own ledger commit is not a whole-file reformat, and so a key
+    // added there later is not silently dropped here.
+    const out = {};
+    for (const k of Object.keys(cur.data).sort()) out[k] = cur.data[k];
+    const si = {};
+    for (const k of Object.keys(issues).sort()) si[k] = issues[k];
+    const sk = {};
+    for (const k of Object.keys(kaggle).sort()) sk[k] = kaggle[k];
+    out.issues = si;
+    out.kaggle = sk;
+
+    const put = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/contents/${REGISTRY_PATH}`,
+      {
+        method: "PUT",
+        headers: ghHeaders(env),
+        body: JSON.stringify({
+          message: `reserve #${String(issue).padStart(2, "0")} for ${slug} (kaggle ${slot})`,
+          content: b64encode(JSON.stringify(out, null, 2)),
+          sha: cur.sha,
+          branch: "main"
+        })
+      }
+    );
+    if (put.ok) return { issue, slot, pinned: havePin };
+    // 409/422 = the file moved under us between the read and the write. That IS the race this
+    // whole mechanism exists to catch, so re-read and retry rather than clobber their number.
+    if (put.status !== 409 && put.status !== 422) {
+      return { error: `${put.status} ${(await put.text()).slice(0, 120)}` };
+    }
+  }
+  return { error: "issues.json kept changing underneath the reservation" };
+}
 async function dispatchFunnelComicLink(env, inputs) {
   // Lives in the VIDEO repo, not the comic repo: it edits a published YouTube video's
   // description, so it needs that repo's YouTube OAuth secrets and GITHUB_TOKEN_VIDEO.
@@ -639,7 +807,12 @@ __name(approvalKeyboard, "approvalKeyboard");
 __name2(approvalKeyboard, "approvalKeyboard");
 __name22(approvalKeyboard, "approvalKeyboard");
 __name222(approvalKeyboard, "approvalKeyboard");
-var PAGE_PRICE_TIERS = { 20: "0", 25: "2.99", 35: "3.99", 50: "4.99", 75: "6.99", 100: "8.99" };
+// ⚠️ A COPY. The authority is PAGE_PRICE_TIERS in pipeline_lib/stage_and_deliver.py, which is
+// what Gumroad is actually charged. This copy exists only so the buttons can be labelled
+// without a round trip, and nothing keeps the two in step -- change one, change both in the
+// same commit, or Telegram will quote a price the storefront does not honour.
+// Round numbers on purpose: ".99" is charm pricing and reads as a discount bin.
+var PAGE_PRICE_TIERS = { 20: "0", 25: "19", 35: "24", 50: "29", 75: "39", 100: "49" };
 function priceLabel(n) {
   return PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`;
 }
@@ -681,6 +854,39 @@ __name(makeStyleKeyboard, "makeStyleKeyboard");
 __name2(makeStyleKeyboard, "makeStyleKeyboard");
 __name22(makeStyleKeyboard, "makeStyleKeyboard");
 __name222(makeStyleKeyboard, "makeStyleKeyboard");
+// The /topics build wizard: account -> pages -> style. Kept next to STYLE_BUTTONS so the two
+// keyboards cannot drift apart on which styles exist.
+// Prices come from PAGE_PRICE_TIERS rather than being written into the text, so this question
+// cannot quote a figure the storefront has stopped charging. The tier is chosen from PAGES
+// ACTUALLY DELIVERED, which runs ~40-55% above the target, so the label shows the tier the book
+// will most likely land in rather than the one its target number would suggest.
+var PAGE_QUESTION = "How many pages?\n\n"
+  + `25 — ~41pp delivered, $${PAGE_PRICE_TIERS[35]} tier\n`
+  + `35 — ~50-55pp, $${PAGE_PRICE_TIERS[50]} tier (the usual choice)\n`
+  + `50 — bigger book, roughly double the art time, $${PAGE_PRICE_TIERS[75]} tier\n`
+  + `75 — the largest that has built cleanly, $${PAGE_PRICE_TIERS[100]} tier`;
+
+function pagesKeyboard(token, idx, slot) {
+  return { inline_keyboard: [[25, 35, 50, 75].map((n) => ({
+    text: String(n),
+    callback_data: `tpag:${token}:${idx}|${slot}|${n}`
+  }))] };
+}
+
+function topicStyleKeyboard(token, idx, slot, pages) {
+  const btn = ([name, icon]) => ({
+    text: `${icon} ${name}`,
+    callback_data: `topicgo:${token}:${idx}|${slot}|${pages}|${name}`
+  });
+  return {
+    inline_keyboard: [
+      STYLE_BUTTONS.slice(0, 3).map(btn),
+      STYLE_BUTTONS.slice(3).map(btn),
+      [{ text: "\u{1F3B2} Auto (from case name)", callback_data: `topicgo:${token}:${idx}|${slot}|${pages}|auto` }]
+    ]
+  };
+}
+
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
@@ -1071,31 +1277,101 @@ async function handleCallback(env, cq) {
     }
     // ASK, don't assume. A tap used to dispatch 35 pages immediately, and the only way to get
     // a bigger book was to retype the full case name into /make -- a name the truncated button
-    // never showed you. Choosing the size is now the second tap.
+    // never showed you. The build is now chosen in steps.
     //
     // It also puts a deliberate stop between a stray tap and a build that costs ~2h of the
     // weekly Kaggle budget plus a paid generation.
     //
-    // callback_data is capped at 64 bytes, which is why this reuses the SAME page token and
-    // index rather than carrying the case name: "topicgo:<8>:<i>|<pages>" is ~22 bytes.
+    // callback_data is capped at 64 bytes, which is why every step reuses the SAME page token
+    // and index rather than carrying the case name. The longest link in the chain is
+    // "topicgo:<8>:<i>|<slot>|<pages>|documentary" -- about 40 bytes.
     //
-    // ⚠️ "|" NOT ":" between index and pages. The shared router is
+    // ⚠️ "|" NOT ":" between the fields. The shared router is
     // `const [action, token, extra] = data.split(":")`, which keeps only the THIRD segment --
-    // a fourth would be silently dropped and every build would quietly fall back to 35.
+    // anything after a fourth ":" is silently dropped, and the build would quietly fall back to
+    // defaults while looking like the buttons had worked.
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
+
+    // If this case already has an account on file, the choice is already made -- its art lives
+    // there and building anywhere else would re-render every panel. Skip straight to pages
+    // rather than offer a choice that reserveCase() is going to override anyway.
+    const known = await peekCase(env, picked);
+    if (known && known.slot) {
+      const accts = await kaggleAccounts(env);
+      const hit = accts.find((a) => a.slot === known.slot);
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u{1F4D6} ${picked}\n\n`
+            + `\u{1F512} Kaggle: ${hit ? hit.handle : known.slot} — fixed, this book's art is already there`
+            + (known.issue ? `\n\u{1F516} Issue #${String(known.issue).padStart(2, "0")}` : "")
+            + `\n\n${PAGE_QUESTION}`,
+        reply_markup: pagesKeyboard(token, extra, known.slot)
+      });
+      return;
+    }
+    const accts = await kaggleAccounts(env);
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F4D6} ${picked}\n\nHow many pages?\n\n`
-          + "25 — ~41pp delivered, $3.99 tier\n"
-          + "35 — ~50-55pp, $4.99 tier (the usual choice)\n"
-          + "50 — bigger book, roughly double the art time\n"
-          + "75 — the largest that has built cleanly",
-      reply_markup: { inline_keyboard: [
-        [{ text: "25", callback_data: `topicgo:${token}:${extra}|25` },
-         { text: "35", callback_data: `topicgo:${token}:${extra}|35` },
-         { text: "50", callback_data: `topicgo:${token}:${extra}|50` },
-         { text: "75", callback_data: `topicgo:${token}:${extra}|75` }]
-      ]}
+      text: `\u{1F4D6} ${picked}\n\nWhich Kaggle account should build it?\n\n`
+          + "Each build spends ~2h of that account's 30h weekly GPU quota.\n"
+          + "⚠️ This is a one-time choice: the panels are stored on whichever account "
+          + "renders them, so every later rebuild of this book stays here too.",
+      reply_markup: { inline_keyboard: accts.map((a) => [{
+        text: a.slot === "-" ? `${a.handle} (default)` : a.handle,
+        callback_data: `tkag:${token}:${extra}|${a.slot}`
+      }]) }
+    });
+    return;
+  }
+  if (action === "tkag") {
+    // extra is "<index>|<slot>"
+    const [idxK, slotK] = String(extra).split("|");
+    const rawK = await env.PENDING.get(`topics:${token}`);
+    if (!rawK) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+      return;
+    }
+    const pickedK = JSON.parse(rawK)[parseInt(idxK, 10)];
+    if (!pickedK) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      return;
+    }
+    const acctsK = await kaggleAccounts(env);
+    const hitK = acctsK.find((a) => a.slot === slotK);
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: hitK ? hitK.handle : slotK });
+    await tg(env, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: `\u{1F4D6} ${pickedK}\n\n\u{1F5A5}️ Kaggle: ${hitK ? hitK.handle : slotK}\n\n${PAGE_QUESTION}`,
+      reply_markup: pagesKeyboard(token, idxK, slotK)
+    });
+    return;
+  }
+  if (action === "tpag") {
+    // extra is "<index>|<slot>|<pages>"
+    const [idxP, slotP, pagesP] = String(extra).split("|");
+    const rawP = await env.PENDING.get(`topics:${token}`);
+    if (!rawP) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+      return;
+    }
+    const pickedP = JSON.parse(rawP)[parseInt(idxP, 10)];
+    if (!pickedP) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      return;
+    }
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `${pagesP} pages` });
+    await tg(env, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: `\u{1F4D6} ${pickedP}\n\n${pagesP} pages\n\nWhich page style?\n`
+          + "\u{1F3AC} cinematic — widescreen, wide tiers, splashes used generously\n"
+          + "\u{1F9E9} mosaic — restless, tier structure changes every page\n"
+          + "\u{1F4D6} classic — house rhythm, wide establishing then tighter beats\n"
+          + "\u{1F512} chamber — close and claustrophobic, paired tall panels\n"
+          + "⚡ staccato — fast cutting, abrupt changes of size\n"
+          + "\u{1F4C1} documentary — dense evidential grid, splashes rare",
+      reply_markup: topicStyleKeyboard(token, idxP, slotP, pagesP)
     });
     return;
   }
@@ -1105,25 +1381,59 @@ async function handleCallback(env, cq) {
       await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
       return;
     }
-    // extra is "<index>|<pages>". The router already consumed the ":" separators, so the
-    // page count rides in on a character it does not split on.
-    const [idxStr, pagesStr] = String(extra).split("|");
+    // extra is "<index>|<slot>|<pages>|<style>". The router already consumed the ":"
+    // separators, so every field after the index rides in on a character it does not split on.
+    const [idxStr, slotStr, pagesStr, styleStr] = String(extra).split("|");
     const picked2 = JSON.parse(raw)[parseInt(idxStr, 10)];
     const pages2 = String(parseInt(pagesStr, 10) || 35);
+    const profile2 = (!styleStr || styleStr === "auto") ? "" : styleStr;
     if (!picked2) {
       await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
       return;
     }
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Reserving the issue number..." });
+
+    // Reserve BEFORE dispatching. This is the whole point of the wizard: the number and the
+    // account are settled against issues.json now, in one place, rather than by a build that
+    // will not commit its answer for another three hours.
+    const res = await reserveCase(env, picked2, slotStr || "-");
+    const accts2 = await kaggleAccounts(env);
+    const slotFinal = res.error ? (slotStr || "-") : res.slot;
+    const hit2 = accts2.find((a) => a.slot === slotFinal);
+    const acctLabel = hit2 ? hit2.handle : slotFinal;
+
     try {
-      await dispatchPipeline(env, { case: picked2, target_pages: pages2, dry_run: "false" });
+      await dispatchPipeline(env, {
+        case: picked2,
+        target_pages: pages2,
+        profile: profile2,
+        // A registry the Worker could not write must not block the book -- "auto" is exactly
+        // what the build did before any of this existed.
+        issue_no: res.error ? "auto" : String(res.issue).padStart(2, "0"),
+        kaggle_account: slotFinal === "-" ? "" : slotFinal,
+        dry_run: "false"
+      });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the build: ${e.message}` });
       return;
     }
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Building at ${pages2} pages...` });
+
+    let note = "";
+    if (res.error) {
+      // Say so plainly. Falling back silently is how you end up with two books numbered the
+      // same and no idea when it started.
+      note = `\n\n⚠️ Couldn't reserve the issue number (${res.error}) — the build will pick one`
+           + " itself, so don't start a second build until this one finishes.";
+    } else if (res.pinned && slotStr && slotStr !== res.slot) {
+      note = `\n\n\u{1F512} Ignored the account you picked: this book's art is already on `
+           + `${acctLabel}, and building elsewhere would re-render every panel.`;
+    }
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F4D6} Building "${picked2}" at ${pages2} pages. The draft lands here when it's done.`
+      text: `\u{1F4D6} Building "${picked2}"\n`
+          + (res.error ? "" : `\u{1F516} Issue #${String(res.issue).padStart(2, "0")}\n`)
+          + `\u{1F4C4} ${pages2} pages · ${profile2 || "auto"} layout\n`
+          + `\u{1F5A5}️ Kaggle: ${acctLabel}\n\nThe draft lands here when it's done.${note}`
     });
     return;
   }

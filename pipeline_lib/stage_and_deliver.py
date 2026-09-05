@@ -21,10 +21,26 @@ import urllib.request
 GUMROAD_BIN = "gumroad"
 DEFAULT_CATEGORY = "comics-and-graphic-novels"
 
-# Flat tier pricing keyed by target page count, shared with the Worker's
-# "Increase Pages" buttons (worker/worker.js pageCountKeyboard). 25pp is the
-# pipeline's own default page count and keeps the base $2.99 price.
-PAGE_PRICE_TIERS = {20: "0", 25: "2.99", 35: "3.99", 50: "4.99", 75: "6.99", 100: "8.99"}
+# Flat tier pricing keyed by target page count.
+#
+# ⚠️ THIS IS THE AUTHORITY. The Worker keeps its own copy in
+# worker/DEPLOYED_BUNDLE.js (var PAGE_PRICE_TIERS) to label its buttons without a
+# round trip, and the two have no mechanism keeping them in step -- change one and
+# you must change the other in the same commit, or Telegram will offer a price the
+# storefront does not charge.
+#
+# Round numbers, deliberately. $2.99 is charm pricing: the convention supermarkets
+# use to say "bargain", and it framed the book as an impulse buy competing on price
+# in a category the storefront gets no discovery in. Whole numbers read as a priced
+# edition rather than a discounted one, and cost a single cent to adopt.
+#
+# The ladder still rises with length, which is the commodity frame -- it says the
+# buyer is paying for quantity of paper. Kept because it matches how the pipeline
+# already sizes books; flattening it to one price per issue is a one-line change
+# here and is the more luxury-correct structure if the tiers ever start to grate.
+#
+# 20pp stays free: it is the internal test size, not a product.
+PAGE_PRICE_TIERS = {20: "0", 25: "19", 35: "24", 50: "29", 75: "39", 100: "49"}
 
 
 def gumroad(args_list):
@@ -461,9 +477,20 @@ def main():
         except Exception as e:
             print(f"WARNING: could not count PDF pages ({e}); pricing off the script",
                   flush=True)
-        tier = max((n for n in PAGE_PRICE_TIERS if n <= delivered),
-                   default=min(PAGE_PRICE_TIERS))
-        args.price = PAGE_PRICE_TIERS[tier]
+        # Free is chosen by INTENT, never by outcome. The free tier used to be selected the
+        # same way as every other one -- by delivered page count -- so any book that came up
+        # short of 25 pages was staged at $0 without a word: a run whose art partly failed, or
+        # whose script was truncated, published itself for nothing. Only a build that ASKED for
+        # the 20pp test size is free.
+        #
+        # The floor for everything else is the lowest PAID tier, so under-delivery now costs
+        # the buyer less rather than costing the shop the whole book.
+        paid = {n: p for n, p in PAGE_PRICE_TIERS.items() if p != "0"}
+        if int(args.target_pages) in (n for n, p in PAGE_PRICE_TIERS.items() if p == "0"):
+            tier, args.price = int(args.target_pages), "0"
+        else:
+            tier = max((n for n in paid if n <= delivered), default=min(paid))
+            args.price = paid[tier]
         print(f"pricing: {delivered} {source} delivered (asked {args.target_pages}) "
               f"-> {tier}pp tier -> ${args.price}", flush=True)
 

@@ -16,7 +16,7 @@ Layout (1080x1080, the safest single size for feed + group posts):
     │   ─────                      │  accent rule
     │                              │
     │  Title · 32-page comic       │  what it is
-    │  $2.99 · link in comments    │  CTA
+    │  $29 · link in comments      │  CTA
     └──────────────────────────────┘
 
 Background is a dedicated atmospheric FLUX image (promo_bg.jpg), heavily

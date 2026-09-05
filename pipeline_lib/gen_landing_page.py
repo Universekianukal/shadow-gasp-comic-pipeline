@@ -61,7 +61,7 @@ TEMPLATE = """<!DOCTYPE html>
     <p class="mt-7 text-xl sm:text-2xl font-bold leading-snug">{hook_esc}</p>
     <div class="mt-9 flex flex-wrap items-center gap-3">
       <a data-gumroad-action="buy" class="buy inline-flex items-center justify-center rounded-lg px-8 py-4 font-extrabold tracking-wide text-white text-lg">
-        Get the comic &mdash; <span data-gumroad-field="price" class="ml-2">$2.99</span>
+        Get the comic &mdash; <span data-gumroad-field="price" class="ml-2">$29</span>
       </a>
       <span class="inline-flex items-center gap-1.5 text-xs font-bold tracking-widest" style="color:#8a8680">
         <svg width="13" height="13" viewBox="0 0 20 20" fill="none" style="opacity:.8">
@@ -115,7 +115,7 @@ TEMPLATE = """<!DOCTYPE html>
     <h2 class="display text-4xl sm:text-5xl">READ THE WHOLE CASE</h2>
     <p class="mt-5 text-lg" style="color:#a8a49c" data-gumroad-field="description">{subject_esc}</p>
     <a data-gumroad-action="buy" class="buy mt-9 inline-flex items-center justify-center rounded-lg px-10 py-5 font-extrabold tracking-wide text-white text-xl">
-      Get it now &mdash; <span data-gumroad-field="price" class="ml-2">$2.99</span>
+      Get it now &mdash; <span data-gumroad-field="price" class="ml-2">$29</span>
     </a>
     <p class="mt-5 text-xs font-bold tracking-widest" style="color:#7d7970">INSTANT PDF &middot; READ ON ANY DEVICE</p>
     <p class="mt-10 text-xs leading-relaxed" style="color:#6e6a63">
@@ -133,7 +133,7 @@ TEMPLATE = """<!DOCTYPE html>
 
 <div class="fixed bottom-0 left-0 right-0 sm:hidden bg-black/85 border-t border-white/10 p-3" style="backdrop-filter:blur(10px)">
   <a data-gumroad-action="buy" class="buy block text-center rounded-lg py-4 font-extrabold tracking-wide text-white">
-    Get the comic &mdash; <span data-gumroad-field="price">$2.99</span>
+    Get the comic &mdash; <span data-gumroad-field="price">$29</span>
   </a>
 </div>
 <div class="h-20 sm:hidden"></div>
