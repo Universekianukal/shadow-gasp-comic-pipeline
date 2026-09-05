@@ -59,6 +59,18 @@ MIN_MEAN = 6.0
 MIN_SD = 35.0
 ATTEMPTS = 3
 
+# How many panels one Kaggle kernel may render before the work is split across another.
+#
+# Not a Kaggle limit and not a timeout -- a host-RAM ceiling. The render loop allocates a fresh
+# float32 array per attempt for the tonal check and never releases host memory (its only
+# cleanup, torch.cuda.empty_cache(), is GPU-side), so RSS grows with panel count until the OOM
+# killer takes the session. Observed: 225 and 228 panels finish comfortably; 471 was killed at
+# roughly panel 380, 3h21m in, having produced nothing the pipeline could then use.
+#
+# 200 sits below every run that has ever succeeded, with room to spare. Raising it trades that
+# margin for fewer kernel startups (~2 min each), which is a bad trade against losing hours.
+MAX_PANELS_PER_KERNEL = 200
+
 
 def gen_size(w, h):
     """The size to actually render (w, h) at, capped to MAX_GEN_PX at the same aspect."""
@@ -580,9 +592,29 @@ def recover_one_kernel(kernel_id, wanted, panels_dir):
     try:
         r = subprocess.run(["kaggle", "kernels", "status", kernel_id],
                            capture_output=True, text=True, timeout=120)
-        if "COMPLETE" not in (r.stdout or ""):
-            print(f"  {kernel_id}: not COMPLETE, skipping", flush=True)
+        status = r.stdout or ""
+        # ⭐⭐ A KILLED KERNEL IS THE ONE MOST WORTH HARVESTING.
+        #
+        # This used to require "COMPLETE", which threw away exactly the art it should have
+        # saved. The Phantom of Heilbronn ran 3h21m, rendered ~380 of its 471 panels, and was
+        # OOM-killed at 80%; its status is ERROR, so recovery skipped it without downloading a
+        # byte, and the retry started all 471 again -- and would have died at the same place.
+        # Two full GPU days for nothing, with the panels sitting in the kernel the whole time.
+        #
+        # Asking "did the run finish?" is the wrong question. The right one is "does this
+        # kernel hold panels I can vouch for?", and that is answered per panel below: every
+        # file is matched against the prompt it was rendered from, taken from the kernel's own
+        # source. A half-finished kernel therefore yields fewer panels; it cannot yield a wrong
+        # one. The status check is strictly weaker than the guard that follows it.
+        #
+        # RUNNING and QUEUED are still skipped -- that output is mid-write, and there is no
+        # reason to race a kernel that will be listed again on the next pass.
+        if "RUNNING" in status or "QUEUED" in status:
+            print(f"  {kernel_id}: still running, skipping", flush=True)
             return 0
+        if "COMPLETE" not in status:
+            print(f"  {kernel_id}: status is not COMPLETE ({status.strip()[:60]}) -- "
+                  "harvesting whatever panels it finished", flush=True)
     except Exception:
         return 0
 
@@ -670,7 +702,34 @@ def main():
         # A different seed base for a forced re-roll -- re-rendering the same prompt at the same
         # seed reproduces the same picture, which is not a fix.
         seed = 3000 + (7000 if forced else 0)
-        failed = run_batch(args.kaggle_user, args.slug, missing, panels_dir, seed_base=seed)
+
+        # ⭐⭐ CHUNK. One kernel cannot carry a whole large book.
+        #
+        # Every panel in a kernel run allocates a fresh float32 array for the tonal check, and
+        # the only cleanup in the loop is torch.cuda.empty_cache(), which frees GPU memory and
+        # does nothing for host RAM. RSS therefore climbs monotonically with panel count. At
+        # ~225 panels the run finishes first -- which is why every book so far has worked. The
+        # Phantom of Heilbronn asked for 471 and was OOM-killed by the host at panel ~380,
+        # three hours and twenty minutes in.
+        #
+        # Splitting is nearly free here because the art store is already append-only:
+        # next_kernel_id() hands each chunk its own kernel, and recover_from_previous_kernel
+        # overlays them newest-first. The cap is what makes a 100-page issue buildable at all.
+        #
+        # Seeds must stay tied to a panel's position in the WHOLE book, not its position in a
+        # chunk, or chunking would silently change the art of every panel after the first 200.
+        failed = []
+        chunks = [missing[i:i + MAX_PANELS_PER_KERNEL]
+                  for i in range(0, len(missing), MAX_PANELS_PER_KERNEL)]
+        if len(chunks) > 1:
+            print(f"splitting across {len(chunks)} kernels "
+                  f"(max {MAX_PANELS_PER_KERNEL} panels each) to stay inside the memory the "
+                  f"host gives one session", flush=True)
+        for n, chunk in enumerate(chunks):
+            if len(chunks) > 1:
+                print(f"--- chunk {n + 1}/{len(chunks)}: {len(chunk)} panels ---", flush=True)
+            failed += run_batch(args.kaggle_user, args.slug, chunk, panels_dir,
+                                seed_base=seed + n * MAX_PANELS_PER_KERNEL)
         if failed:
             print(f"WARNING: {len(failed)} panels failed to generate: {failed}", file=sys.stderr)
 
