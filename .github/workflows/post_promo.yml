@@ -1,12 +1,19 @@
-name: Post Comic Promo to Facebook
+name: Post Comic Promo
 
-# Deliberately manual. The Telegram button dispatches this; nothing posts automatically.
+# Deliberately manual, and deliberately two-stage.
 #
-# Automatic posting is what a comic pipeline must NOT do. A book gets rebuilt routinely -- a
-# price change, an art regen, a re-render -- and a post-on-every-build would re-post the same
-# comic each time. That is the exact pattern that took this page's reach from ~700-1,300 to 1
-# on 2026-08-10, when day07 was crossposted twice in two hours and had to be deleted by hand.
-# post_fb_promo.py refuses a second post per case, and this stays a deliberate tap on top.
+# mode=preview resolves the product, picks the cover and builds the caption, then sends the
+# ACTUAL IMAGE to Telegram with Accept/Reject buttons. Nothing is published. mode=post is what
+# the Accept button dispatches.
+#
+# Why a preview at all: the image that goes out is chosen by shape from five Gumroad covers,
+# and the caption is assembled from the storefront copy. Publishing either without seeing it
+# means finding out on the page. The same reasoning as rendering a PDF and looking at it
+# rather than trusting that the text extracted correctly.
+#
+# Why never automatic: a comic gets REBUILT -- price change, art regen, re-render -- and a
+# post-per-build would re-post the same book. That is the pattern that took this page's reach
+# from ~700-1,300 to 1 on 2026-08-10 and had to be cleaned up by hand.
 
 on:
   workflow_dispatch:
@@ -14,24 +21,28 @@ on:
       case:
         description: "Case name, Gumroad permalink, or product id"
         required: true
+      platform:
+        description: "fb or ig"
+        required: false
+        default: "fb"
+      mode:
+        description: "preview (send a draft to Telegram) or post (publish it)"
+        required: false
+        default: "preview"
       hook:
-        description: "Override the opening line (blank = use the product description's opening)"
+        description: "Override the opening line (blank = the product description's opening)"
         required: false
         default: ""
       force:
-        description: "Post again even though this comic was already posted"
+        description: "Publish again even though this comic already went out on this platform"
         required: false
         default: "false"
-      dry_run:
-        description: "Resolve the product, print the caption, verify the token -- post nothing"
-        required: false
-        default: "true"
 
 permissions:
   contents: write
 
 jobs:
-  post:
+  promo:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,56 +51,86 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Pillow measures each candidate cover: Instagram refuses anything outside 0.80-1.91,
+      # and three of the five covers on a comic fall outside it.
+      - name: Install deps
+        run: pip install Pillow
+
       - name: Install Gumroad CLI
         run: curl -fsSL https://gumroad.com/install-cli.sh | bash
 
       - name: Authenticate Gumroad CLI
         run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
 
-      - name: Post to Facebook
-        id: post
+      - name: Resolve and (maybe) publish
+        id: run
         env:
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          PATH_EXTRA: /home/runner/.local/bin
         run: |
           export PATH="$PATH:/home/runner/.local/bin"
           python pipeline_lib/post_fb_promo.py \
             --case "${{ github.event.inputs.case }}" \
+            --platform "${{ github.event.inputs.platform || 'fb' }}" \
+            --preview-out /tmp/preview.json \
             ${{ github.event.inputs.hook && format('--hook "{0}"', github.event.inputs.hook) || '' }} \
             ${{ github.event.inputs.force == 'true' && '--force' || '' }} \
-            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+            ${{ github.event.inputs.mode != 'post' && '--dry-run' || '' }}
+
+      - name: Send the draft to Telegram
+        if: always() && github.event.inputs.mode != 'post'
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          OUTCOME: ${{ steps.run.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ ! -f /tmp/preview.json ]; then
+            echo '{}' > /tmp/preview.json
+          fi
+          python3 - <<'PY' > /tmp/payload.json
+          import json, os
+          p = json.load(open("/tmp/preview.json", encoding="utf-8"))
+          p["outcome"] = os.environ["OUTCOME"]
+          p["run_url"] = os.environ["RUN_URL"]
+          print(json.dumps(p))
+          PY
+          # A browser User-Agent: urllib/curl defaults are refused at Cloudflare's edge (1010),
+          # so the Worker never sees the call and its log stays empty.
+          curl -sS -X POST "${WORKER_URL%/}/promo/preview" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/payload.json \
+            || echo "WARNING: could not send the draft"
 
       - name: Commit the posted marker
-        if: github.event.inputs.dry_run != 'true'
+        if: github.event.inputs.mode == 'post'
         run: |
-          # The marker is what stops a rebuild re-posting the book, so it has to outlive the
-          # runner. cases/ is deleted every build and never committed; promo/ is names, ids and
-          # timestamps only, so it is safe in this public repo for the same reason the case
-          # ledger is.
+          # The marker is what stops a rebuild re-posting the book, so it must outlive the
+          # runner. It is names, ids and timestamps only -- safe in this public repo for the
+          # same reason the case ledger is.
           git config user.name "shadow-gasp-bot"
           git config user.email "bot@shadowgasp.example"
           git add promo/ 2>/dev/null || true
-          git commit -m "promo: posted ${{ github.event.inputs.case }} to Facebook" || {
-            echo "nothing to commit (already posted, or the post was skipped)"; exit 0; }
+          git commit -m "promo: ${{ github.event.inputs.platform }} <- ${{ github.event.inputs.case }}" || {
+            echo "nothing to commit"; exit 0; }
           git pull --rebase --autostash origin main || true
           git push
 
-      - name: Tell Telegram
-        if: always()
+      - name: Report the result
+        if: always() && github.event.inputs.mode == 'post'
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
           CASE: ${{ github.event.inputs.case }}
-          RESULT: ${{ steps.post.outcome }}
-          DRY: ${{ github.event.inputs.dry_run }}
+          PLATFORM: ${{ github.event.inputs.platform }}
+          RESULT: ${{ steps.run.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          # A browser User-Agent: urllib's default is refused at Cloudflare's edge (1010) and
-          # the Worker never sees the request, so the log stays empty and the failure is silent.
-          python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"result":os.environ["RESULT"],"dry_run":os.environ["DRY"],"run_url":os.environ["RUN_URL"]}))' > /tmp/promo.json
+          python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"platform":os.environ["PLATFORM"],"result":os.environ["RESULT"],"run_url":os.environ["RUN_URL"]}))' > /tmp/done.json
           curl -sS -X POST "${WORKER_URL%/}/promo/posted" \
             -H "Content-Type: application/json" \
             -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            --data @/tmp/promo.json \
-            || echo "WARNING: could not report the promo result"
+            --data @/tmp/done.json \
+            || echo "WARNING: could not report the result"

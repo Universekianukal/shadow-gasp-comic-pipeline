@@ -1345,38 +1345,75 @@ async function handleCallback(env, cq) {
       return;
     }
     if (action === "promo") {
-      // CONFIRM FIRST. This publishes to a page with ~1,336 followers and cannot be undone
-      // from here -- a mis-tap has to be deleted by hand in Facebook. The same page lost its
-      // reach to a duplicate post that nobody intended to make.
+      // Ask WHERE first. Facebook and Instagram get different images and different captions --
+      // an IG caption cannot carry a clickable link at all -- so this is not one post sent to
+      // two places, and pretending otherwise would publish the wrong thing to one of them.
       await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: `\u{1F4E2} Post to Facebook?\n\n${item.n}\n$${Math.round((item.pr || 0) / 100)}\n${item.u}\n\n`
-            + "The post carries the comic's cover, its opening lines, and this link — in the "
-            + "post itself, not the comments.\n\n"
-            + "⚠️ This publishes immediately to ~1,336 followers and can only be undone in Facebook.",
+        text: `\u{1F4E2} ${item.n}\n$${Math.round((item.pr || 0) / 100)}\n${item.u}\n\nPost where?`,
         reply_markup: { inline_keyboard: [[
-          { text: "✅ Post it", callback_data: `promogo:${token}:${extra}` },
-          { text: "✖ Cancel", callback_data: `promono:${token}:${extra}` }
+          { text: "📘 Facebook", callback_data: `promopv:${token}:${extra}|fb` },
+          { text: "📸 Instagram", callback_data: `promopv:${token}:${extra}|ig` }
         ]] }
       });
       return;
     }
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Posting..." });
+    // promogo -- the Accept button on a draft. extra is "<i>|<platform>".
+    const [idxG, platG] = String(extra).split("|");
+    const itemG = JSON.parse(rawP)[parseInt(idxG, 10)];
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Publishing..." });
     try {
       await dispatchPostPromo(env, {
-        case: item.c || item.n,
-        dry_run: "false",
+        case: (itemG && (itemG.c || itemG.n)) || item.c || item.n,
+        platform: platG === "ig" ? "ig" : "fb",
+        mode: "post",
         force: "false"
       });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the post: ${e.message}` });
       return;
     }
+    await tg(env, "editMessageCaption", {
+      chat_id: chatId,
+      message_id: messageId,
+      caption: `\u{1F4E2} Publishing to ${platG === "ig" ? "Instagram" : "Facebook"}…\nI'll confirm here when it lands.`
+    });
+    return;
+  }
+  if (action === "promopv") {
+    // Build the DRAFT. The workflow resolves which of the five covers is postable and what the
+    // caption says, then sends the real image back -- so what you approve is what goes out,
+    // rather than a description of it.
+    const [idxV, platV] = String(extra).split("|");
+    const rawV = await env.PENDING.get(`promo:${token}`);
+    if (!rawV) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That promo list has expired — run /promo again." });
+      return;
+    }
+    const itemV = JSON.parse(rawV)[parseInt(idxV, 10)];
+    if (!itemV) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that comic — run /promo again." });
+      return;
+    }
+    // The preview callback carries no list token, so stash what Accept will need.
+    await env.PENDING.put(`promodraft:${token}`, JSON.stringify({ token, idx: idxV }), { expirationTtl: 86400 });
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Building the draft…" });
+    try {
+      await dispatchPostPromo(env, {
+        case: itemV.c || itemV.n,
+        platform: platV === "ig" ? "ig" : "fb",
+        mode: "preview",
+        force: "false"
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't build the draft: ${e.message}` });
+      return;
+    }
     await tg(env, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
-      text: `\u{1F4E2} Posting "${item.n}" to Facebook.\nI'll confirm here when it lands.`
+      text: `\u{1F5BC} Building the ${platV === "ig" ? "Instagram" : "Facebook"} draft for "${itemV.n}" — the image and caption land here in about a minute.`
     });
     return;
   }
@@ -2966,6 +3003,40 @@ ${run_url || ""}`
       return new Response(JSON.stringify({ sent, skipped }), {
         status: 200, headers: { "Content-Type": "application/json" }
       });
+    }
+    if (request.method === "POST" && url.pathname === "/promo/preview") {
+      // THE DRAFT. Sends the actual image that will be published, with the actual caption,
+      // and Accept/Reject beneath it. Approving a description of a post is not the same as
+      // approving the post: the image is chosen by shape from five candidate covers, and
+      // seeing which one won is the entire point of a draft.
+      const auth = request.headers.get("X-Shared-Secret");
+      if (auth !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
+      const p = await request.json();
+      if (p.outcome !== "success" || !p.image) {
+        await tg(env, "sendMessage", {
+          chat_id: env.TELEGRAM_CHAT_ID,
+          text: `❌ Couldn't build the promo draft for "${p.case || "?"}".\n${p.run_url || ""}`
+        });
+        return new Response("ok");
+      }
+      const plat = p.platform === "ig" ? "Instagram" : "Facebook";
+      const token = Math.random().toString(36).slice(2, 10);
+      await env.PENDING.put(`promo:${token}`,
+        JSON.stringify([{ n: p.case, u: p.url, c: p.permalink, pr: (p.price || 0) * 100 }]),
+        { expirationTtl: 86400 });
+      const warn = p.already
+        ? "\n\n⚠️ This comic has ALREADY been posted here. Accepting will publish a SECOND copy — a duplicate is what cost this page its reach in August."
+        : "";
+      await tg(env, "sendPhoto", {
+        chat_id: env.TELEGRAM_CHAT_ID,
+        photo: p.image,
+        caption: `\u{1F5BC} ${plat} DRAFT — nothing is published yet\n\n${(p.caption || "").slice(0, 800)}${warn}`,
+        reply_markup: { inline_keyboard: [[
+          { text: `✅ Post to ${plat}`, callback_data: `promogo:${token}:0|${p.platform === "ig" ? "ig" : "fb"}` },
+          { text: "✖ Reject", callback_data: `promono:${token}:0` }
+        ]] }
+      });
+      return new Response("ok");
     }
     if (request.method === "POST" && url.pathname === "/promo/posted") {
       // The posting job reports back so a tap does not end in silence. A promo that failed
