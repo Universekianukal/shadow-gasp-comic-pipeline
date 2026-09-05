@@ -1,5 +1,6 @@
 {
   "issues": {
+    "disappearance-of-michael-rockefeller-net": 12,
     "hanford-nuclear-reservation-contaminatio": 3,
     "heavens-gate": 2,
     "mv-kaz-ii-ghost-yacht-great-barrier-reef": 10,
@@ -11,5 +12,8 @@
     "the-sinking-of-the-edmund-fitzgerald-lak": 6,
     "the-zong-massacre-1781-british-slave-shi": 5,
     "uss-cyclops-disappearance-1918": 8
+  },
+  "kaggle": {
+    "disappearance-of-michael-rockefeller-net": "-"
   }
 }
