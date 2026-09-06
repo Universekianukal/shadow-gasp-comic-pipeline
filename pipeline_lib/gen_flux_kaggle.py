@@ -219,11 +219,36 @@ def list_case_kernels(user, base_slug):
     """
     if not user:
         return []
-    try:
-        r = subprocess.run(["kaggle", "kernels", "list", "--user", user, "-s", base_slug, "-v"],
-                           capture_output=True, text=True, timeout=120)
-    except Exception:
-        return []
+    # A FAILED lookup must never be reported as "this book has no art".
+    #
+    # This used to swallow every error and return [], so a denied or broken `kernels list` was
+    # indistinguishable from a genuinely new book. On 2026-09-06 the read path started returning
+    # "Permission 'kernels.get' was denied"; discovery therefore came back empty, the caller
+    # printed "no existing kernel -- generating from scratch", and three separate builds spent a
+    # full GPU window each re-rendering art that was sitting finished in a kernel the whole time.
+    # The cost is wildly asymmetric -- a false "empty" burns hours of the weekly GPU budget and
+    # orphans the real art -- so a lookup that cannot be trusted now raises instead of guessing.
+    r = None
+    for attempt in range(1, 4):
+        try:
+            r = subprocess.run(["kaggle", "kernels", "list", "--user", user, "-s", base_slug, "-v"],
+                               capture_output=True, text=True, timeout=120)
+        except Exception as e:
+            print(f"kernel lookup attempt {attempt}/3 raised: {e}", flush=True)
+            r = None
+            time.sleep(10)
+            continue
+        if r.returncode == 0:
+            break
+        print(f"kernel lookup attempt {attempt}/3 failed (exit {r.returncode}): "
+              f"{r.stderr.strip()[:300]}", flush=True)
+        time.sleep(10)
+    if r is None or r.returncode != 0:
+        raise RuntimeError(
+            f"Could not list kernels for {user}/{base_slug} after 3 attempts -- refusing to "
+            f"assume this book has no art, because that would regenerate every panel and strand "
+            f"whatever is already rendered. Last error: "
+            f"{(r.stderr.strip() if r is not None else 'no result')[:500]}")
     import csv
     import io
     rows = []
