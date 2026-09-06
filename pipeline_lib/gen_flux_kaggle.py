@@ -492,7 +492,23 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after {max_polls * 30 // 60} min -- likely stuck")
 
     out_dir = os.path.join(kernel_dir, "out")
-    subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir], check=True, timeout=180)
+    # The kernel is already COMPLETE by this point -- a dropped connection here is a transient
+    # blip on the download, not a reason to throw away a finished build. Retry the fetch instead
+    # of letting `check=True` kill a 2-hour job over one reset connection (seen live 2026-09-06:
+    # ConnectionResetError partway through downloading an otherwise-finished output set).
+    for attempt in range(1, 6):
+        try:
+            r = subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir],
+                                capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            print(f"output fetch attempt {attempt}: timed out after 180s, retrying")
+            continue
+        if r.returncode == 0:
+            break
+        print(f"output fetch attempt {attempt}: {r.stdout} {r.stderr}")
+        time.sleep(15)
+    else:
+        raise RuntimeError(f"kaggle kernels output: still failing after 5 attempts for {kernel_id}")
 
     failed = []
     for p in panels:
