@@ -242,6 +242,69 @@ def list_case_kernels(user, base_slug):
     return [ref for _, ref in rows]
 
 
+def kernel_tail(kernel_id, lines=30):
+    """The end of a failed kernel's own log, so the reason travels with the failure.
+
+    ⭐⭐ WITHOUT THIS THE PIPELINE REPORTS FAILURES BLIND. `kaggle kernels status` returns the
+    word ERROR and nothing else, so the RuntimeError read
+    `Kaggle kernel failed: <slug> has status "KernelWorkerStatus.ERROR"` -- an empty payload
+    dressed as a message. Two different failures on two different days looked identical: a
+    3h21m OOM kill at panel ~380, and an 8-minute death on a brand-new account whose notebooks
+    had no internet, where pip could not reach PyPI and every install failed at DNS. One is a
+    book to resume, the other is an account to verify, and nothing in the alert distinguished
+    them. Both took a manual log download to tell apart.
+
+    The log is fetched with the SAME credentials the kernel ran under -- Kaggle scopes it to
+    the owning account -- so this works for whichever slot the build used, not just one.
+
+    Best-effort by definition: this runs while already raising, so a failure to explain the
+    failure must never replace it.
+    """
+    try:
+        d = tempfile.mkdtemp(prefix="kaggle_log_")
+        subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", d],
+                       capture_output=True, text=True, timeout=180)
+        logs = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".log")]
+        if not logs:
+            return "(kernel log not available)"
+        raw = open(logs[0], encoding="utf-8", errors="replace").read()
+        try:
+            entries = json.loads(raw)
+            out = [str(e.get("data", "")).rstrip() for e in entries]
+        except Exception:
+            out = raw.splitlines()
+        # Tracebacks are mostly frame lines; the causes are the ERROR/Exception rows, so keep
+        # those even when they scrolled past the tail.
+        # Frame lines are noise; keep the rows that name a cause. And keep the FIRST of them
+        # as well as the last: the earliest error is usually the cause and the final one only
+        # its symptom. Taking the tail alone reported "httpx.ConnectError" -- true, but it
+        # buried "Could not find a version that satisfies torch==2.4.1", which is the line that
+        # says the kernel had no network at all rather than one bad download.
+        noise = re.compile(r"^\s*(File \"|\^+\s*$|with |raise |response = |return |stream = |resp = |self\.gen)")
+        keyed = [l for l in out
+                 if re.search(r"error|exception|failed|killed|no such|denied|not found", l, re.I)
+                 and not noise.match(l)]
+        # Collapse repeats. pip retries a dead network five times with only the object address
+        # differing, which would otherwise fill the whole "first errors" slot with one fact.
+        seen, deduped = set(), []
+        for l in keyed:
+            sig = re.sub(r"0x[0-9a-f]+|\d+", "#", l)[:120]
+            if sig in seen:
+                continue
+            seen.add(sig)
+            deduped.append(l)
+        keyed = deduped
+        picked = []
+        if keyed:
+            picked += ["first errors:"] + keyed[:5]
+            if len(keyed) > 5:
+                picked += ["last errors:"] + keyed[-5:]
+        picked += ["--- tail ---"] + out[-lines:]
+        return "kernel log:\n" + "\n".join("  " + l[:220] for l in picked if l.strip())
+    except Exception as e:
+        return f"(could not fetch the kernel log: {e})"
+
+
 def next_kernel_id(user, base_slug):
     """A kernel id that does not exist yet, so pushing NEVER destroys art.
 
@@ -423,7 +486,8 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         if "COMPLETE" in status:
             break
         if "ERROR" in status or "CANCEL" in status:
-            raise RuntimeError(f"Kaggle kernel failed: {r.stdout} {r.stderr}")
+            raise RuntimeError(f"Kaggle kernel failed: {r.stdout} {r.stderr}\n"
+                               + kernel_tail(kernel_id))
     else:
         raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after {max_polls * 30 // 60} min -- likely stuck")
 
