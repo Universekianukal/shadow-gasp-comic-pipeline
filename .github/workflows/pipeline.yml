@@ -147,13 +147,20 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        # kaggle pinned to 2.2.2: unpinned installs pick up a later release
-        # whose CLI switched to a KAGGLE_API_TOKEN auth flow and silently
-        # fails auth with the legacy KAGGLE_USERNAME/KAGGLE_KEY kaggle.json
-        # pair, even on this pinned version -- same gotcha already hit and
-        # fixed on the shadow_gasp video pipeline. Auth is via KAGGLE_API_TOKEN
-        # env var directly on the steps that call the CLI, no kaggle.json.
-        run: pip install requests rapidocr-onnxruntime "kaggle==2.2.2" Pillow reportlab PyMuPDF
+        # kaggle was pinned to 2.2.2 because a later release switched the CLI to a
+        # KAGGLE_API_TOKEN auth flow that silently fails against the legacy
+        # KAGGLE_USERNAME/KAGGLE_KEY kaggle.json pair. That reason is spent: auth here is
+        # already KAGGLE_API_TOKEN as an env var on the steps that call the CLI, no
+        # kaggle.json anywhere, which IS the newer flow.
+        #
+        # Moved to 2.2.4 on 2026-09-07. On 2026-09-06 every READ call (kernels list /
+        # status / output) began returning "Permission 'kernels.get' was denied" on all
+        # three accounts within the same half hour, while push kept working -- and the
+        # denial text refers to benchmark_task_slug / get_benchmark_leaderboard, concepts
+        # from a newer server API than 2.2.2 knows about. A fault that appears on three
+        # independent accounts at once is a server change, not an account problem, so the
+        # client is what has to move. 2.2.2 was 2026-06-15; 2.2.4 is 2026-07-23.
+        run: pip install requests rapidocr-onnxruntime "kaggle==2.2.4" Pillow reportlab PyMuPDF
 
       - name: Install Gumroad CLI
         run: curl -fsSL https://gumroad.com/install-cli.sh | bash
