@@ -482,44 +482,63 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     # A run of empty replies now surfaces stderr so the next occurrence is diagnosable, and the
     # dead-poll fallback below tries a direct fetch before giving up, since that's the one call
     # that actually proves whether the kernel is done.
-    blank_streak = 0
-    for _ in range(max_polls):
+    # `kernels status` is NOT trusted as the completion signal any more.
+    #
+    # On 2026-09-06 it returned "Permission 'kernels.get' was denied" on EVERY poll, from the
+    # first one, on every account -- while `kernels push` and `kernels output` on the very same
+    # kernel worked fine. The read path was denied and the write path was not. That is survivable
+    # on its own, but the loop treated an unreadable status as "still generating", so it ran its
+    # whole fixed budget (panels x 2 polls x 30s = ~3h for a 177-panel book) and then declared the
+    # kernel "likely stuck" -- while Kaggle had actually finished the art around the 2-hour mark.
+    # Two books' worth of GPU was spent regenerating art that already existed.
+    #
+    # So: poll by attempting the FETCH, which is the operation that actually works and the one we
+    # ultimately want anyway. A successful fetch IS completion, whatever status claims. Status is
+    # still consulted, but only as a fast path and to catch genuine ERROR/CANCEL.
+    out_dir = os.path.join(kernel_dir, "out")
+    done = False
+    denied_streak = 0
+    for poll in range(max_polls):
         time.sleep(30)
         try:
             r = subprocess.run(["kaggle", "kernels", "status", kernel_id],
                                 capture_output=True, text=True, timeout=60)
+            status = r.stdout.strip()
         except subprocess.TimeoutExpired:
-            print("status check timed out, retrying")
+            status, r = "", None
+            print("status check timed out")
+        if status:
+            print(status)
+            denied_streak = 0
+            if "COMPLETE" in status:
+                done = True
+                break
+            if "ERROR" in status or "CANCEL" in status:
+                raise RuntimeError(f"Kaggle kernel failed: {r.stdout} {r.stderr}\n"
+                                   + kernel_tail(kernel_id))
             continue
-        status = r.stdout.strip()
-        print(status)
-        if "COMPLETE" in status:
-            break
-        if "ERROR" in status or "CANCEL" in status:
-            raise RuntimeError(f"Kaggle kernel failed: {r.stdout} {r.stderr}\n"
-                               + kernel_tail(kernel_id))
-        if not status:
-            blank_streak += 1
-            if blank_streak in (10, 60, 200):
-                print(f"status check has returned nothing {blank_streak} times in a row "
-                      f"(exit {r.returncode}): {r.stderr.strip()}")
-        else:
-            blank_streak = 0
-    else:
-        # The poll budget is exhausted with no COMPLETE ever observed. Before declaring the
-        # kernel stuck, ask it directly -- if `status` was the broken half, `output` still knows.
-        probe_dir = os.path.join(kernel_dir, "out")
-        probe = subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", probe_dir],
+        # Status is unreadable. Don't assume anything from that -- ask the kernel for its output
+        # instead. Early on this mostly fails because the kernel really is still running, which is
+        # fine and cheap; once it succeeds, the book is done and we stop waiting.
+        denied_streak += 1
+        if denied_streak == 1 and r is not None:
+            print(f"status unreadable (exit {r.returncode}): {r.stderr.strip()}\n"
+                  f"  -> falling back to polling the output fetch instead", flush=True)
+        probe = subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir],
                                 capture_output=True, text=True, timeout=180)
-        if probe.returncode != 0:
-            raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after "
-                               f"{max_polls * 30 // 60} min, and a direct output fetch also "
-                               f"failed ({probe.returncode}): {probe.stderr.strip()}\n"
-                               + kernel_tail(kernel_id))
-        print(f"status polling never confirmed COMPLETE, but a direct output fetch succeeded -- "
-              f"the kernel was done, not stuck ({blank_streak} blank status replies in a row)")
+        if probe.returncode == 0:
+            print(f"output fetch succeeded on poll {poll + 1} "
+                  f"({(poll + 1) * 30 // 60} min in) -- kernel is done", flush=True)
+            done = True
+            break
+        if denied_streak in (10, 60, 200):
+            print(f"still waiting: {denied_streak} unreadable status replies, "
+                  f"last fetch attempt said: {probe.stderr.strip()[:300]}", flush=True)
+    if not done:
+        raise RuntimeError(f"Kaggle kernel {kernel_id} never became fetchable after "
+                           f"{max_polls * 30 // 60} min ({denied_streak} unreadable status "
+                           f"replies)\n" + kernel_tail(kernel_id))
 
-    out_dir = os.path.join(kernel_dir, "out")
     # The kernel is already COMPLETE by this point -- a dropped connection here is a transient
     # blip on the download, not a reason to throw away a finished build. Retry the fetch instead
     # of letting `check=True` kill a 2-hour job over one reset connection (seen live 2026-09-06:
