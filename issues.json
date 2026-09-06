@@ -1,6 +1,7 @@
 {
   "issues": {
     "cerro-gordo-silver-mine-death-1878-calif": 14,
+    "disappearance-of-harold-holt-1967-austra": 16,
     "disappearance-of-michael-rockefeller-net": 12,
     "hanford-nuclear-reservation-contaminatio": 3,
     "heavens-gate": 2,
@@ -18,6 +19,7 @@
   },
   "kaggle": {
     "cerro-gordo-silver-mine-death-1878-calif": "C",
+    "disappearance-of-harold-holt-1967-austra": "-",
     "disappearance-of-michael-rockefeller-net": "-",
     "the-antikythera-mechanism-recovery-1901-": "B",
     "the-toxic-lady-gloria-ramirez-er-inciden": "B"
