@@ -473,6 +473,16 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     # ~1 min/panel (2 polls of 30s) plus headroom covers a normal-size comic
     # comfortably while still catching genuinely stuck kernels eventually.
     max_polls = max(90, len(panels) * 2)
+    # A blank status response used to be silently read as "still generating" -- indistinguishable
+    # from a slow build, since only r.stdout was ever looked at and r.returncode/r.stderr were
+    # thrown away. Seen live 2026-09-06 on two different accounts at once: the status call came
+    # back empty on EVERY single poll for 3+ hours while the underlying kernel had long since
+    # finished, so the job ran out its whole poll budget blind and reported "likely stuck" -- a
+    # misdiagnosis, since the kernel was fine and it was this status *check* that was broken.
+    # A run of empty replies now surfaces stderr so the next occurrence is diagnosable, and the
+    # dead-poll fallback below tries a direct fetch before giving up, since that's the one call
+    # that actually proves whether the kernel is done.
+    blank_streak = 0
     for _ in range(max_polls):
         time.sleep(30)
         try:
@@ -488,8 +498,26 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         if "ERROR" in status or "CANCEL" in status:
             raise RuntimeError(f"Kaggle kernel failed: {r.stdout} {r.stderr}\n"
                                + kernel_tail(kernel_id))
+        if not status:
+            blank_streak += 1
+            if blank_streak in (10, 60, 200):
+                print(f"status check has returned nothing {blank_streak} times in a row "
+                      f"(exit {r.returncode}): {r.stderr.strip()}")
+        else:
+            blank_streak = 0
     else:
-        raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after {max_polls * 30 // 60} min -- likely stuck")
+        # The poll budget is exhausted with no COMPLETE ever observed. Before declaring the
+        # kernel stuck, ask it directly -- if `status` was the broken half, `output` still knows.
+        probe_dir = os.path.join(kernel_dir, "out")
+        probe = subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", probe_dir],
+                                capture_output=True, text=True, timeout=180)
+        if probe.returncode != 0:
+            raise RuntimeError(f"Kaggle kernel {kernel_id} still not COMPLETE after "
+                               f"{max_polls * 30 // 60} min, and a direct output fetch also "
+                               f"failed ({probe.returncode}): {probe.stderr.strip()}\n"
+                               + kernel_tail(kernel_id))
+        print(f"status polling never confirmed COMPLETE, but a direct output fetch succeeded -- "
+              f"the kernel was done, not stuck ({blank_streak} blank status replies in a row)")
 
     out_dir = os.path.join(kernel_dir, "out")
     # The kernel is already COMPLETE by this point -- a dropped connection here is a transient
