@@ -41,7 +41,23 @@ jobs:
 
       - name: Install Gumroad CLI
         if: github.event.inputs.action == 'publish' || github.event.inputs.action == 'reject'
-        run: curl -fsSL https://gumroad.com/install-cli.sh | bash
+        # `curl ... | bash` REPORTS SUCCESS WHEN THE DOWNLOAD FAILS.
+        #
+        # curl -f exits non-zero, bash then reads an empty script and exits 0, and without
+        # pipefail the step takes bash's status -- so a green "Install Gumroad CLI" can install
+        # nothing at all. Seen 2026-09-07 (run 34078975314): "curl: (35) Recv failure:
+        # Connection reset by peer", step green, and the build died two steps later on
+        # "/home/runner/.local/bin/gumroad: No such file or directory" (exit 127) -- an error
+        # that says nothing about the transient network blip that actually caused it.
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            echo "install attempt $attempt failed, retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || {
+            echo "::error::Gumroad CLI did not install after 5 attempts"; exit 1; }
 
       - name: Authenticate Gumroad CLI
         if: github.event.inputs.action == 'publish' || github.event.inputs.action == 'reject'
