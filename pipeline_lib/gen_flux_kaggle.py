@@ -287,8 +287,14 @@ def list_case_kernels(user, base_slug):
         if not got:
             break
         rows.extend(got)
-        if len(got) < 200:
-            break
+        # ⭐⭐ DO NOT STOP ON A SHORT PAGE. We ask for --page-size 200; Kaggle silently caps it at
+        # 100 and returns 100. Treating "fewer than I asked for" as "last page" therefore ended
+        # the walk after page ONE, so only the 100 most recent kernels were ever considered --
+        # on an account holding 232. A book whose kernel sat outside that window read as "no art
+        # exists", which regenerates every panel and pushes over the only copy of the old ones.
+        # Measured on anuragmishra108: page 1 = 100 rows, page 2 = 100, page 3 = 32. The kernel
+        # this run needed was on page 2 and was invisible three rebuilds in a row.
+        # An empty page is the only trustworthy end-of-list signal.
         page += 1
 
     found = []
