@@ -240,51 +240,67 @@ def list_case_kernels(user, base_slug):
     if not user:
         return []
     base_slug = kaggle_slug(base_slug)
-    # Ask for each kernel BY NAME. Never search.
+    # List the ACCOUNT's kernels and filter locally. Do not search, do not probe ids.
     #
-    # This used to run `kernels list -s <slug>`, a fuzzy search against Kaggle's index. On
-    # 2026-09-07 that returned exit 0 with ZERO rows for a book whose kernel was sitting right
-    # there, finished, 39MB of art in it -- freshly pushed private notebooks are not reliably
-    # in the search index. Discovery reported "no existing kernel", the caller regenerated all
-    # 177 panels, and because next_kernel_id saw an empty list it reused the BASE slug and the
-    # push replaced the finished output. A search miss silently destroyed the thing it was
-    # meant to find, twice.
+    # Three ways this went wrong before, all on the same day:
+    #   1. `kernels list -s <slug>` (fuzzy SEARCH) returned zero rows for a kernel that
+    #      existed -- freshly pushed private notebooks are not reliably in the search index.
+    #   2. Probing candidate ids one by one looked right, but Kaggle answers a kernel that
+    #      does NOT EXIST with the very same "Permission 'kernels.get' was denied" text it
+    #      uses for a real auth failure, so the walk to the next candidate always exploded.
+    #   3. Treating that denial as "no art" regenerated finished books and overwrote them.
     #
-    # The ids are deterministic (next_kernel_id: base, base-2, base-3 ...), so there is nothing
-    # to search FOR -- we can name every candidate and ask about it directly. Exact-reference
-    # access is the call that has always worked, including the recovery that pulled 182 panels
-    # back on 2026-09-06.
-    found = []
-    misses = 0
-    for n in range(1, 41):
-        kid = f"{user}/{base_slug}" if n == 1 else f"{user}/{base_slug}-{n}"
-        try:
-            r = subprocess.run(["kaggle", "kernels", "status", kid],
-                               capture_output=True, text=True, timeout=60)
-        except Exception as e:
-            print(f"  probe {kid} raised: {e}", flush=True)
-            misses += 1
-            if misses >= 3:
+    # Listing by --user is neither a search nor a per-kernel get: it returns this account's
+    # own kernels with their REAL refs, which is how the doubled-dash bug was finally seen.
+    # A failure of THIS call is unambiguous -- the account is unreachable -- so it raises,
+    # while a book that simply has no kernel yet comes back as an empty, trustworthy list.
+    rows, page = [], 1
+    while page <= 20:
+        r = None
+        for attempt in range(1, 4):
+            try:
+                r = subprocess.run(["kaggle", "kernels", "list", "--user", user, "-v",
+                                    "--page-size", "200", "-p", str(page)],
+                                   capture_output=True, text=True, timeout=120)
+            except Exception as e:
+                print(f"kernel list p{page} attempt {attempt}/3 raised: {e}", flush=True)
+                r = None
+                time.sleep(5)
+                continue
+            if r.returncode == 0:
                 break
-            continue
-        blob = (r.stdout or "") + (r.stderr or "")
-        # An auth/permission fault is NOT "this kernel does not exist". Treating it as absence
-        # is what regenerated finished books, so it stops the run instead.
-        if "denied" in blob.lower() or "permission" in blob.lower():
+            print(f"kernel list p{page} attempt {attempt}/3 failed (exit {r.returncode}): "
+                  f"{r.stderr.strip()[:200]}", flush=True)
+            time.sleep(5)
+        if r is None or r.returncode != 0:
             raise RuntimeError(
-                f"Kaggle refused to answer about {kid} -- refusing to assume this book has no "
-                f"art, because that regenerates every panel and can overwrite the finished "
-                f"kernel. Error: {blob.strip()[:400]}")
-        if r.returncode == 0 and r.stdout.strip():
-            found.append(kid)
-            misses = 0
-        else:
-            misses += 1
-            if misses >= 3:
-                break
-    # Newest last-written first: higher numbers are later kernels, and recovery overlays in
-    # this order so the most recent render of a panel is the one that survives.
-    return list(reversed(found))
+                f"Could not list kernels for account {user} -- refusing to assume this book "
+                f"has no art, because that regenerates every panel and can overwrite a "
+                f"finished kernel. Last error: "
+                f"{(r.stderr.strip() if r is not None else 'no result')[:400]}")
+        body = (r.stdout or "").strip()
+        if not body or body.lower().startswith("no kernels"):
+            break
+        import csv
+        import io
+        got = list(csv.DictReader(io.StringIO(body)))
+        if not got:
+            break
+        rows.extend(got)
+        if len(got) < 200:
+            break
+        page += 1
+
+    found = []
+    for row in rows:
+        ref = (row.get("ref") or "").strip()
+        name = ref.split("/", 1)[-1]
+        # Only this book's kernels: the base slug and its numbered siblings.
+        if not re.fullmatch(re.escape(base_slug) + r"(-\d+)?", name):
+            continue
+        found.append(((row.get("lastRunTime") or ""), ref))
+    found.sort(reverse=True)          # most recently run first
+    return [ref for _, ref in found]
 
 
 def kernel_tail(kernel_id, lines=30):
