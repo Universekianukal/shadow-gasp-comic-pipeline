@@ -210,6 +210,26 @@ def target_px(p):
     return DIMS[p["shape"]]
 
 
+def kaggle_slug(s):
+    """The id Kaggle will ACTUALLY store, not the one we asked for.
+
+    ⭐⭐ Kaggle normalises a kernel slug on creation: runs of dashes collapse to one, and
+    leading/trailing dashes are dropped. Our case slugs are cut to 40 chars, which regularly
+    lands on a trailing dash -- "the-millennium-dome-diamond-heist-nov-7-" -- and appending
+    "-flux" then produced "...nov-7--flux". Kaggle stored "...nov-7-flux" and every later
+    status/output/list call asked for the double-dash name, which does not exist. Kaggle
+    reports a missing kernel as "Permission 'kernels.get' was denied ... most likely cause is
+    a wrong kernel slug", so this read as an auth failure for a full day: two books were
+    regenerated from scratch and their finished art overwritten, while the panels sat safe
+    under a name nobody was asking for.
+
+    The two cases that failed are exactly the two whose slugs ended in "-". Harold Holt and
+    Cerro Gordo, which do not, recovered fine.
+    """
+    s = re.sub(r"-{2,}", "-", s)
+    return s.strip("-")
+
+
 def list_case_kernels(user, base_slug):
     """Every kernel holding art for this case, most recently run FIRST.
 
@@ -219,6 +239,7 @@ def list_case_kernels(user, base_slug):
     """
     if not user:
         return []
+    base_slug = kaggle_slug(base_slug)
     # Ask for each kernel BY NAME. Never search.
     #
     # This used to run `kernels list -s <slug>`, a fuzzy search against Kaggle's index. On
@@ -342,6 +363,7 @@ def next_kernel_id(user, base_slug):
     Writing each batch to a fresh kernel makes the store append-only. Recovery then overlays all
     of a case's kernels, newest first, so every panel ever rendered stays reachable.
     """
+    base_slug = kaggle_slug(base_slug)
     used = set()
     for ref in list_case_kernels(user, base_slug):
         name = ref.split("/", 1)[-1]
