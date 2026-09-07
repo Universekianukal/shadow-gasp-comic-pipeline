@@ -147,20 +147,20 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        # kaggle was pinned to 2.2.2 because a later release switched the CLI to a
-        # KAGGLE_API_TOKEN auth flow that silently fails against the legacy
-        # KAGGLE_USERNAME/KAGGLE_KEY kaggle.json pair. That reason is spent: auth here is
-        # already KAGGLE_API_TOKEN as an env var on the steps that call the CLI, no
-        # kaggle.json anywhere, which IS the newer flow.
+        # kaggle stays pinned at 2.2.2. Two separate reasons, both learned the hard way:
         #
-        # Moved to 2.2.4 on 2026-09-07. On 2026-09-06 every READ call (kernels list /
-        # status / output) began returning "Permission 'kernels.get' was denied" on all
-        # three accounts within the same half hour, while push kept working -- and the
-        # denial text refers to benchmark_task_slug / get_benchmark_leaderboard, concepts
-        # from a newer server API than 2.2.2 knows about. A fault that appears on three
-        # independent accounts at once is a server change, not an account problem, so the
-        # client is what has to move. 2.2.2 was 2026-06-15; 2.2.4 is 2026-07-23.
-        run: pip install requests rapidocr-onnxruntime "kaggle==2.2.4" Pillow reportlab PyMuPDF
+        # 1. A later release switched the CLI to a KAGGLE_API_TOKEN auth flow that fails
+        #    against the legacy KAGGLE_USERNAME/KAGGLE_KEY kaggle.json pair.
+        # 2. 2.2.4 does NOT fetch a full output set -- `kernels output` on a ~180-panel book
+        #    returns only the first handful of files and stops. Recovery on 2.2.4 would look
+        #    like it worked and quietly hand back a fraction of the art. 2.2.2 pulled 182/182
+        #    panels back on 2026-09-06.
+        #
+        # 2.2.4 was briefly tried on 2026-09-07 while chasing "Permission 'kernels.get' was
+        # denied" errors. That was a misdiagnosis: the real cause was a kernel id with a
+        # doubled dash (see kaggle_slug in gen_flux_kaggle.py). The client version was never
+        # the problem, so it goes back to the version whose downloads are known to be complete.
+        run: pip install requests rapidocr-onnxruntime "kaggle==2.2.2" Pillow reportlab PyMuPDF
 
       - name: Install Gumroad CLI
         run: curl -fsSL https://gumroad.com/install-cli.sh | bash
