@@ -533,6 +533,33 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     else:
         raise RuntimeError("kaggle kernels push: GPU sessions still full / unreachable after 20 attempts")
 
+    # ⭐⭐ A SUCCESSFUL PUSH DOES NOT MEAN A KERNEL EXISTS.
+    #
+    # On an account whose GPU quota is spent, `kernels push` prints "successfully pushed" and
+    # exits 0, and NO KERNEL IS CREATED. Every later status and output call then 404s, and the
+    # poll below -- which cannot tell "not created" from "not finished yet" -- burned its full
+    # 45-minute budget twice on 2026-09-07 before failing with "never became fetchable", a
+    # message that points at the wrong thing entirely. The account was simply out of quota.
+    #
+    # Confirm the thing we just claimed to make actually exists, and say so plainly if it does
+    # not. Costs one API call against 45 minutes of waiting for something that will never come.
+    for attempt in range(1, 7):
+        time.sleep(10)
+        chk = subprocess.run(["kaggle", "kernels", "status", kernel_id],
+                             capture_output=True, text=True, timeout=60)
+        blob = (chk.stdout or "") + (chk.stderr or "")
+        if chk.returncode == 0 and "Status" in blob:
+            break
+        # "not found" and "permission denied" are the SAME answer from Kaggle for a kernel that
+        # does not exist, so neither can be treated as a real auth failure here.
+        if attempt == 6:
+            raise RuntimeError(
+                f"{kernel_id} does not exist {attempt * 10}s after a push that reported success.\n"
+                f"Kaggle accepted the push and created nothing, which is what an account with no "
+                f"GPU quota left does. Last reply: {blob.strip()[:200]}\n"
+                f"Check this account's GPU quota, or run this case on another kaggle_account "
+                f"slot -- but note its art store lives on the account that built it.")
+
     # Bounded poll, but scaled to the batch size: a flat 45-min cap killed the
     # Actions job's WAIT on a real 75pp/151-panel build that was still
     # legitimately generating -- the underlying Kaggle kernel isn't tied to
