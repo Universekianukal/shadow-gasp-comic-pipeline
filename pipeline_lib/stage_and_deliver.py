@@ -344,7 +344,7 @@ def _form_field(boundary, name, value):
 
 def register_with_worker(worker_url, shared_secret, token, case_name, product_id, title,
                          video_id="", product_url="", pages="", flagged=None,
-                         case_id="", issue_no="", hook=""):
+                         case_id="", issue_no="", hook="", kaggle_account=""):
     # video_id / product_url / pages are what the "Funnel to YouTube" button needs. They are
     # carried here because the case folder is deleted at the end of the run, so by the time the
     # button is tapped this KV record is the ONLY place the link between the comic and the
@@ -354,6 +354,11 @@ def register_with_worker(worker_url, shared_secret, token, case_name, product_id
         data=json.dumps({
             "token": token, "case": case_name, "product_id": product_id, "title": title,
             "video_id": video_id, "product_url": product_url, "pages": str(pages),
+            # ⭐⭐ The Kaggle slot this book's art lives on. A case is PINNED to the account that
+            # generated it -- list_case_kernels only ever searches the one it is handed -- and
+            # nothing used to record which that was, so /regen always searched the default pair
+            # and rebuilt books whose art sat on B or C.
+            "kaggle_account": kaggle_account,
             # Also feeds the durable per-comic index the Worker keeps for /links.
             "case_id": case_id, "issue_no": issue_no,
             # The selling line for the video description. The script writes one for exactly this
@@ -850,6 +855,10 @@ def main():
         # put it in a public description until the product is actually published.
         product_url=f"https://shadowgasp.gumroad.com/l/{slugify(script['title'])}",
         pages=args.target_pages,
+        # Straight from the workflow input. Blank means the default pair, which is a real answer
+        # and not a missing one -- /regen must be able to tell "built on the default account"
+        # from "we never wrote it down".
+        kaggle_account=os.environ.get("KAGGLE_ACCOUNT_SLOT", ""),
     )
     print(f"Registered with Worker, token={approval_token}")
 

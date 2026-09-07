@@ -2497,7 +2497,17 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     try {
       await dispatchPipeline(env, {
         case: rec.case,
-        target_pages: String(rec.pages || "35"),
+        // ⚠️ target_pages is part of the SCRIPT-CACHE KEY, so a wrong value is a cache miss: a
+        // freshly generated script, every panel prompt different, and recovery -- which matches
+        // art to captions per panel on the exact prompt text -- rejecting all of it. The re-roll
+        // then quietly becomes a full rebuild. "35" was a guess; the pipeline's default is 25.
+        target_pages: String(rec.pages || "25"),
+        // ⭐⭐ Search the account that actually HOLDS this book's art. A case is pinned to the
+        // account that generated it and list_case_kernels only ever looks at the one it is
+        // handed, so dispatching without a slot sent every re-roll to the default pair. PAPER
+        // GHOST was built on slot C; its re-roll found nothing on the default account and
+        // rebuilt all 164 panels instead of the one that was asked for.
+        kaggle_account: rec.kaggle_account || "",
         regen_panels: panels.join(" "),
         dry_run: "false"
       });
@@ -2711,7 +2721,8 @@ var worker_default = {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { token, case: caseName, product_id, title, video_id, product_url, pages } = body;
+      const { token, case: caseName, product_id, title, video_id, product_url, pages,
+              kaggle_account } = body;
       if (!token || !caseName || !product_id) {
         return new Response("missing fields", { status: 400 });
       }
@@ -2731,7 +2742,15 @@ var worker_default = {
       await env.PENDING.put(`pending:${token}`, JSON.stringify({
         case: caseName, product_id,
         video_id: video_id || "", product_url: product_url || "", pages: pages || "",
-        title: title || caseName
+        title: title || caseName,
+        // ⭐⭐ WHICH KAGGLE ACCOUNT HOLDS THIS BOOK'S ART.
+        //
+        // /make picks a slot per build, but nothing ever wrote down which one won -- and cases/
+        // is deleted at the end of the run, so this KV record is the only place the fact can
+        // survive. Without it /regen dispatched with no slot, searched the default pair for a
+        // book built on B or C, found nothing, and rebuilt every panel.
+        // "" is a real answer here (the default pair), not a missing one.
+        kaggle_account: kaggle_account || ""
       }));
       await sendApprovalMessage(env, {
         token, caseName, productId: product_id, title: title || caseName, videoId: video_id || ""
