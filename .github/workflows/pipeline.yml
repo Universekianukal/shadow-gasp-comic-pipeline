@@ -311,6 +311,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          # Recorded against the book so a later /regen searches the account that actually
+          # holds its art. A case is pinned to its account and nothing wrote down which one.
+          KAGGLE_ACCOUNT_SLOT: ${{ github.event.inputs.kaggle_account }}
         run: |
           python pipeline_lib/stage_and_deliver.py \
             --case-dir cases/${{ env.slug }} \

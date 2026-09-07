@@ -542,7 +542,17 @@ def render_panel(c, panel, x, y, w, h, panels_dir, missing, bleed=False,
 
     # resolve every speaker anchor up front — captions need them too, so they can
     # avoid covering a face that is about to be given a balloon
-    dialogue = panel.get("dialogue", [])
+    # ⚠️ A dialogue entry is {"text": ..., "speaker_at": ...}, but the model sometimes emits the
+    # line as a BARE STRING. That crashed the PDF build with
+    # `AttributeError: 'str' object has no attribute 'get'` two lines below -- after the art was
+    # generated and paid for, and inside a script that is CACHED, so every retry died in exactly
+    # the same place. (SS Ourang Medan, issue 25, run 34099899797.)
+    #
+    # A string is not ambiguous: it is the line, with no speaker anchor and default styling. Take
+    # it, rather than losing a finished book to a shape the schema never enforced. Normalise once
+    # here so both the anchor loop and draw_balloon below see dicts.
+    dialogue = [{"text": d} if isinstance(d, str) else d
+                for d in panel.get("dialogue", [])]
     anchors = []
     for item in dialogue:
         if item.get("speaker_at") and orig:

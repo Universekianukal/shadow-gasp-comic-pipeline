@@ -287,8 +287,14 @@ def list_case_kernels(user, base_slug):
         if not got:
             break
         rows.extend(got)
-        if len(got) < 200:
-            break
+        # ⭐⭐ DO NOT STOP ON A SHORT PAGE. We ask for --page-size 200; Kaggle silently caps it at
+        # 100 and returns 100. Treating "fewer than I asked for" as "last page" therefore ended
+        # the walk after page ONE, so only the 100 most recent kernels were ever considered --
+        # on an account holding 232. A book whose kernel sat outside that window read as "no art
+        # exists", which regenerates every panel and pushes over the only copy of the old ones.
+        # Measured on anuragmishra108: page 1 = 100 rows, page 2 = 100, page 3 = 32. The kernel
+        # this run needed was on page 2 and was invisible three rebuilds in a row.
+        # An empty page is the only trustworthy end-of-list signal.
         page += 1
 
     found = []
@@ -526,6 +532,33 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         raise RuntimeError(f"kaggle kernels push failed: {r.stdout} {r.stderr}")
     else:
         raise RuntimeError("kaggle kernels push: GPU sessions still full / unreachable after 20 attempts")
+
+    # ⭐⭐ A SUCCESSFUL PUSH DOES NOT MEAN A KERNEL EXISTS.
+    #
+    # On an account whose GPU quota is spent, `kernels push` prints "successfully pushed" and
+    # exits 0, and NO KERNEL IS CREATED. Every later status and output call then 404s, and the
+    # poll below -- which cannot tell "not created" from "not finished yet" -- burned its full
+    # 45-minute budget twice on 2026-09-07 before failing with "never became fetchable", a
+    # message that points at the wrong thing entirely. The account was simply out of quota.
+    #
+    # Confirm the thing we just claimed to make actually exists, and say so plainly if it does
+    # not. Costs one API call against 45 minutes of waiting for something that will never come.
+    for attempt in range(1, 7):
+        time.sleep(10)
+        chk = subprocess.run(["kaggle", "kernels", "status", kernel_id],
+                             capture_output=True, text=True, timeout=60)
+        blob = (chk.stdout or "") + (chk.stderr or "")
+        if chk.returncode == 0 and "Status" in blob:
+            break
+        # "not found" and "permission denied" are the SAME answer from Kaggle for a kernel that
+        # does not exist, so neither can be treated as a real auth failure here.
+        if attempt == 6:
+            raise RuntimeError(
+                f"{kernel_id} does not exist {attempt * 10}s after a push that reported success.\n"
+                f"Kaggle accepted the push and created nothing, which is what an account with no "
+                f"GPU quota left does. Last reply: {blob.strip()[:200]}\n"
+                f"Check this account's GPU quota, or run this case on another kaggle_account "
+                f"slot -- but note its art store lives on the account that built it.")
 
     # Bounded poll, but scaled to the batch size: a flat 45-min cap killed the
     # Actions job's WAIT on a real 75pp/151-panel build that was still
@@ -868,19 +901,50 @@ def main():
 
     panels_dir = os.path.join(args.case_dir, "panels")
     prompts = json.load(open(os.path.join(args.case_dir, "panel_prompts.json"), encoding="utf-8"))
+    forced = [f for f in re.split(r"[,\s]+", args.regen.strip()) if f]
+    forced = [f if f.endswith(".jpg") else f + ".jpg" for f in forced]
+
+    # Validate the names against the SCRIPT, not the filesystem. The old check tested whether the
+    # file was on disk, so whenever recovery came up empty it announced "p20_5.jpg is not a panel
+    # of this book" about a panel that was on page 20 all along -- blaming the reviewer's typing
+    # for a fault in the art store.
+    known = {p["file"] for p in prompts}
+    if forced and (unknown := [f for f in forced if f not in known]):
+        raise SystemExit(
+            f"/regen names {len(unknown)} panel(s) that are not in this book: {', '.join(unknown)}\n"
+            f"This book has {len(prompts)} panels. Use the gold labels on the OCR contact sheets.")
+
     recover_from_previous_kernel(args.kaggle_user, args.slug, prompts, panels_dir)
+
+    # ⭐⭐ A TARGETED RE-ROLL MUST NEVER DEGRADE INTO A FULL REBUILD.
+    #
+    # /regen means "this book is right except for these panels". If none of the existing art came
+    # back, the run cannot honour that: it would re-render every panel at a new seed, replacing
+    # pictures the reviewer had already approved, and deliver a book that STILL contains the
+    # panel they asked to replace. That is what shipped on 2026-09-07 -- twice, both reported as
+    # success, because the art was on a Kaggle account /regen never passes on.
+    #
+    # Recovery is best-effort for a normal build (a new case legitimately has no art) and
+    # mandatory for a re-roll, so the check belongs here rather than inside recovery.
+    if forced:
+        have = sum(1 for p in prompts
+                   if os.path.exists(os.path.join(panels_dir, p["file"])))
+        if not have:
+            raise SystemExit(
+                f"/regen asked to re-roll {len(forced)} panel(s), but none of this book's "
+                f"existing art could be recovered from account '{args.kaggle_user}'.\n"
+                "Refusing to continue: rebuilding every panel at a new seed is not what was "
+                "asked for, and would overwrite the only copy of the approved art.\n"
+                "This book was almost certainly built on a different Kaggle account -- re-run "
+                "with the kaggle_account slot that built it.")
 
     # Forced re-rolls, requested per panel from Telegram after a human looked at the OCR contact
     # sheets. Deleting AFTER recovery is what makes this work: recovery restores the full set,
     # then these few are dropped so the missing-panel path below regenerates exactly them.
-    forced = [f for f in re.split(r"[,\s]+", args.regen.strip()) if f]
     for f in forced:
-        f = f if f.endswith(".jpg") else f + ".jpg"
         path = os.path.join(panels_dir, f)
         if os.path.exists(path):
             os.remove(path)
-        else:
-            print(f"  /regen: {f} is not a panel of this book, ignoring", flush=True)
     if forced:
         print(f"forced re-roll of {len(forced)} panel(s): {forced}", flush=True)
     missing = [p for p in prompts if not os.path.exists(os.path.join(panels_dir, p["file"]))]
