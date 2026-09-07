@@ -96,6 +96,12 @@ jobs:
       KAGGLE_API_TOKEN: ${{ github.event.inputs.kaggle_account != '' && secrets[format('KAGGLE_{0}_API_TOKEN', github.event.inputs.kaggle_account)] || secrets.KAGGLE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, because the ledger commit below rebases. The default
+          # shallow clone has no commit in common with anything it rebases
+          # onto, which turns an ordinary rebase into add/add conflicts on
+          # every shared file.
+          fetch-depth: 0
 
       # A build spends ~2h of one account's weekly GPU budget, and because the username is a
       # masked secret nothing in the log says which account paid. Two failure modes are worth
@@ -393,6 +399,16 @@ jobs:
           # Rebase before pushing: a push from a 3-hour build races anything committed to main
           # while it ran, and losing the ledger to a non-fast-forward is how a case gets built
           # twice.
-          git pull --rebase --autostash origin main || true
-          git push
+          # Rebase onto THIS branch, not a hardcoded main. Dispatching the
+          # workflow on a feature branch used to rebase that branch onto main;
+          # combined with the shallow checkout there was no merge base, so all
+          # five shared files conflicted add/add, `|| true` swallowed it, and
+          # the rebase left HEAD detached. The push then died with "You are not
+          # currently on a branch" -- 11 consecutive builds on 2026-09-07, each
+          # after its art had already been generated and paid for.
+          if ! git pull --rebase --autostash origin "$GITHUB_REF_NAME"; then
+            echo "::warning::rebase onto $GITHUB_REF_NAME failed -- aborting it so HEAD is not left detached, then pushing anyway"
+            git rebase --abort || true
+          fi
+          git push origin "HEAD:${GITHUB_REF_NAME}"
           rm -rf cases/
