@@ -680,20 +680,39 @@ def main():
     # was about to write "READ THE COMIC: Hanford Nuclear Reservation contamination cover-up"
     # into a public description instead of the comic's actual title.
     product_name = f"{script['series']} #{script['issue_no']}: {script['title']}"
-    product_id = stage_draft(
-        name=product_name,
-        pdf_path=pdf_path, cover_path=cover_path, price=args.price,
-        description=description, tags=tags, category=DEFAULT_CATEGORY,
-        preview_paths=previews, thumbnail_path=thumb_path,
-        permalink=slugify(script["title"]),
-    )
-    print(f"Staged Gumroad draft: {product_id}")
+    # ⭐⭐ A STOREFRONT PROBLEM MUST NOT DESTROY A FINISHED BOOK.
+    #
+    # Telegram delivery is ~60 lines below this and cases/ is rm -rf'd at the end of the run, so
+    # until now ANY Gumroad failure threw away a complete, correct PDF that had just cost ~2h of
+    # GPU. On 2026-09-07 the failure was "Sorry, you can only create 10 products per day" -- a
+    # rate limit with nothing to do with the book, reached because the day's earlier bugs had
+    # each burned a product on a rebuild nobody wanted. The comic was fine; nobody ever saw it.
+    #
+    # Same rule the OCR step already follows: an optional commercial step must never be fatal to
+    # the artefact. Deliver the PDF, say plainly that the draft was not staged, let the reviewer
+    # re-run once the cap clears.
+    product_id, gumroad_error = None, ""
+    try:
+        product_id = stage_draft(
+            name=product_name,
+            pdf_path=pdf_path, cover_path=cover_path, price=args.price,
+            description=description, tags=tags, category=DEFAULT_CATEGORY,
+            preview_paths=previews, thumbnail_path=thumb_path,
+            permalink=slugify(script["title"]),
+        )
+        print(f"Staged Gumroad draft: {product_id}")
+    except Exception as e:
+        gumroad_error = " ".join(str(e).split())[:300]
+        print(f"WARNING: Gumroad draft NOT staged ({gumroad_error}) -- delivering the PDF anyway",
+              file=sys.stderr, flush=True)
 
     # Custom landing page, built from the same script data, using the
     # product's own just-uploaded cover URL. Only ever published if Gumroad's
     # own sanitizer reports it clean -- a broken landing page would make the
     # product unpurchasable, worse than just leaving the default page.
     try:
+        if not product_id:
+            raise RuntimeError("no Gumroad product was staged")
         import gen_landing_page
         cover_data = gumroad(["products", "view", product_id])
         cover_url = (cover_data.get("product", cover_data)).get("thumbnail_url")
@@ -747,8 +766,11 @@ def main():
         bot_token, chat_id, send_path, filename=_unique,
         caption=(f"{args.title} — issue {script.get('issue_no', '?')} — {note}\n"
                  f"back cover prints {rendered_price} · Gumroad ${args.price}"
-                 f"{_bounds}\n"
-                 "(approval buttons in the next message)"),
+                 f"{_bounds}"
+                 + (f"\n\n⚠️ GUMROAD DRAFT NOT STAGED: {gumroad_error}\n"
+                    "The comic itself is fine — this PDF is the finished book. Re-run the "
+                    "build to stage the draft once the limit clears."
+                    if gumroad_error else "\n(approval buttons in the next message)")),
     )
     if not result.get("ok"):
         raise SystemExit(f"Telegram send failed: {result}")
@@ -838,6 +860,14 @@ def main():
                 print(f"sent {len(sheets)} {label} contact sheet(s) to Telegram", flush=True)
         except Exception as e:
             print(f"WARNING: could not send {label} contact sheets ({e}) -- not fatal", flush=True)
+    # The approval record is ABOUT a Gumroad product -- Publish/Reject act on it -- so with no
+    # product there is nothing to approve, and the Worker rejects the registration outright
+    # ("missing fields"). Skip it rather than fail the run: the PDF has already been delivered
+    # above, which is the part that cost two hours to make.
+    if not product_id:
+        print("Gumroad draft was not staged, so there is nothing to approve -- "
+              "skipping Worker registration. The PDF is in Telegram.", flush=True)
+        return
     register_with_worker(
         worker_url=os.environ["WORKER_URL"],
         shared_secret=os.environ["WORKER_SHARED_SECRET"],
