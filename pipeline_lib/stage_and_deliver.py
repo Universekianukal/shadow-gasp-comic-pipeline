@@ -387,6 +387,24 @@ def _case_head(name):
     return " ".join(head.split()).strip().lower()
 
 
+def _case_key(name):
+    """A case reduced to letters and digits, so a SLUG and a human title compare equal.
+
+    The funnel lookup used to compare the dispatched --title against the ledger's descriptive
+    name. That works when a human types "Operation Nimrod" at /make, and fails silently the
+    moment a case is dispatched by its issues.json key instead -- the 40-char slug
+    "the-millennium-dome-diamond-heist-nov-7-" can never equal
+    "The Millennium Dome Diamond Heist (Nov 7, 2000, London)", and _case_head does not help
+    because it compares spaces against dashes. Three comics shipped with no funnel button on
+    2026-09-07 for exactly that reason, while their videos sat in the ledger all along.
+
+    Dropping every separator makes the two forms the same string. The slug is also truncated to
+    40 chars, so compare on the shorter of the two -- a prefix match on this alphabet is safe:
+    no two different cases in the ledger agree for 40 characters.
+    """
+    return re.sub(r"[^a-z0-9]+", "", (name or "").lower())
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case-dir", required=True)
@@ -430,6 +448,18 @@ def main():
             if not hits:
                 hits = [c for c in entries if _case_head(c.get("case", "")) == _case_head(want)]
                 how = "case name"
+            if not hits:
+                # Slug-vs-title: compare with separators removed, on the shorter length, since
+                # the dispatched form may be the truncated issues.json key.
+                wk = _case_key(want)
+                if wk:
+                    hits = []
+                    for c in entries:
+                        ck = _case_key(c.get("case", ""))
+                        n = min(len(ck), len(wk))
+                        if n >= 20 and ck[:n] == wk[:n]:
+                            hits.append(c)
+                    how = "slug"
             if hits:
                 pick = max(hits, key=lambda c: c.get("publishedAt", ""))
                 args.video_id = pick["videoId"]
