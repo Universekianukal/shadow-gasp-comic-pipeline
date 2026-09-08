@@ -626,28 +626,28 @@
       "publishedAt": "2026-08-15"
     },
     {
-      "videoId": null,
+      "videoId": "3sUxBfxR2_s",
       "case": "The Zong Massacre (1781, British slave ship)",
       "publishedAt": "2026-08-16",
       "comicAt": "2026-09-03T20:00:23.382073+00:00"
     },
     {
-      "videoId": null,
+      "videoId": "3nNjxCSVPjk",
       "case": "USS Cyclops disappearance (1918)",
       "publishedAt": "2026-08-18"
     },
     {
-      "videoId": null,
+      "videoId": "7vCrUn8wIw0",
       "case": "Disappearance of Michael Rockefeller (Netherlands New Guinea, 1961)",
       "publishedAt": "2026-08-20"
     },
     {
-      "videoId": null,
+      "videoId": "T0itLlMWfEY",
       "case": "The Dancing Plague of 1518 (Strasbourg, Holy Roman Empire)",
       "publishedAt": "2026-08-21"
     },
     {
-      "videoId": null,
+      "videoId": "5zeBJA2lGhY",
       "case": "The Tichborne Claimant (England, 1866-1874)",
       "publishedAt": "2026-08-22"
     },
@@ -725,6 +725,21 @@
       "videoId": "UJy2YloIuSA",
       "case": "Radium Girls (full long-form documentary)",
       "publishedAt": "2026-08-01"
+    },
+    {
+      "videoId": null,
+      "case": "The Stolen Boeing 727 (N844AA, Luanda Airport, Angola, May 25 2003)",
+      "publishedAt": "2026-09-04"
+    },
+    {
+      "videoId": null,
+      "case": "Disappearance of Glen and Bessie Hyde (1928, Grand Canyon)",
+      "publishedAt": "2026-09-07"
+    },
+    {
+      "videoId": null,
+      "case": "The Tarrare Case (France, 1772-1798)",
+      "publishedAt": "2026-09-08"
     }
   ]
 }
