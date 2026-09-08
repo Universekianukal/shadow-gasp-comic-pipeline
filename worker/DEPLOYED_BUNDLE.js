@@ -1291,11 +1291,58 @@ async function autoFunnelForCase(env, caseName, videoId, chatId) {
   }
 }
 
+// ---------------------------------------------------------------- BOT_MODE
+//
+// Which surface a command or button belongs to. Anything NOT named here counts as shared and
+// is answered by both bots (/commands, /help), which is the safe default: an unrecognised new
+// command keeps working rather than silently disappearing from both bots at once.
+var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending"];
+var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel"];
+var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen"];
+var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "tkag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry"];
+
+function commandSurface(text) {
+  const cmd = text.split(/[\s@]/)[0].toLowerCase();
+  if (VIDEO_COMMANDS.includes(cmd)) return "video";
+  if (COMIC_COMMANDS.includes(cmd)) return "comics";
+  return "shared";
+}
+__name(commandSurface, "commandSurface");
+
+function actionSurface(action) {
+  if (VIDEO_ACTIONS.includes(action)) return "video";
+  if (COMIC_ACTIONS.includes(action)) return "comics";
+  return "shared";
+}
+__name(actionSurface, "actionSurface");
+
+function botModeAllows(env, surface) {
+  const mode = (env.BOT_MODE || "all").toLowerCase();
+  if (mode === "all" || surface === "shared") return true;
+  return mode === surface;
+}
+__name(botModeAllows, "botModeAllows");
+
+function otherBotHint(env) {
+  const mode = (env.BOT_MODE || "all").toLowerCase();
+  return mode === "comics"
+    ? "\u{1F4DA} This is the COMICS bot — it only handles /make, /regen, /topics, /gencode, /freeclaims, /links, /promo and /funnel.\n\nVideo commands (/day, /publish, /short, /title…) and hook clips go to the original Shadow Gasp bot."
+    : "\u{1F3AC} This is the VIDEO bot — comic commands moved to the Shadow Gasp Comics bot.\n\nSend /make, /regen, /topics, /gencode, /freeclaims, /links, /promo or /funnel there instead.";
+}
+__name(otherBotHint, "otherBotHint");
+
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
   const chatId = cq.message.chat.id;
   const messageId = cq.message.message_id;
+  if (!botModeAllows(env, actionSurface(action))) {
+    // Answer the query regardless: an unanswered callback leaves Telegram's spinner turning on
+    // the user's button forever, which reads as a hung bot rather than a wrong one.
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Wrong bot for this button." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
+    return;
+  }
   if (action === "clip") {
     const chosen = token;
     const raw2 = await env.PENDING.get(`pendingclip:${chatId}`);
@@ -2001,7 +2048,27 @@ var COMMAND_LIST = [
 async function handleMessage(env, msg) {
   const text = (msg.text || "").trim();
   const chatId = msg.chat.id;
+  // BOT_MODE splits ONE bundle across TWO bots instead of forking the code.
+  //
+  // A hand-split of this file is how two copies drift apart, and this project has paid that
+  // bill twice already (two cases_used.json ledgers at 107 vs 74 videos; two comic-approval
+  // pipelines where only one was ever live). So the comics bot and the video bot run the SAME
+  // deployment and this var decides which half of the surface each answers. Turning the old
+  // bot video-only is then a variable change, not a code change, reversible in seconds.
+  //
+  // Unset (or "all") keeps every command -- exactly what the single bot did -- so deploying
+  // this on its own changes nothing until a BOT_MODE is actually set.
+  if (text.startsWith("/") && !botModeAllows(env, commandSurface(text))) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
+    return;
+  }
   const videoObj = msg.video || (msg.document && msg.document.mime_type?.startsWith("video/") ? msg.document : null);
+  if (videoObj && !botModeAllows(env, "video")) {
+    // A hook clip sent to the comics bot: say so, never swallow it. A clip that vanishes looks
+    // exactly like a clip that was accepted -- and that is how day 45 and 46 went unnoticed.
+    await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
+    return;
+  }
   if (videoObj) {
     const repliedTo = msg.reply_to_message;
     const repliedText = repliedTo ? repliedTo.caption || repliedTo.text || "" : "";

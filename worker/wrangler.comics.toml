@@ -1,0 +1,29 @@
+# Second deployment of the SAME bundle, as the comics-only bot.
+#
+# Not a fork. `BOT_MODE = "comics"` makes this instance answer only the comic half of the
+# surface (/make, /regen, /topics, /gencode, /freeclaims, /links, /promo, /funnel and the
+# Approve / Reject / Increase-Pages buttons); everything video-side is answered with a pointer
+# to the original bot. See the BOT_MODE comment in DEPLOYED_BUNDLE.js for why this is one
+# bundle deployed twice rather than two copies of the code.
+#
+# ⚠️ main = DEPLOYED_BUNDLE.js, deliberately. The sibling wrangler.toml still says
+# `main = "worker.js"`, and worker.js is NOT what is running in production -- it drifted from
+# the deployed bundle and deploying it would revert live behaviour. Always the bundle.
+#
+# ⚠️ The KV namespace id is the SAME as the original bot's, and must stay that way. Approval
+# state (the `token` minted by stage_and_deliver.py's /register call), the comic index, issue
+# numbers and the script cache all live in there. Point this at a fresh namespace and every
+# comic currently awaiting an Approve tap loses its token and the buttons go dead.
+name = "shadow-gasp-comics-bot"
+main = "DEPLOYED_BUNDLE.js"
+compatibility_date = "2026-06-01"
+
+kv_namespaces = [
+  { binding = "PENDING", id = "90c6d41668444b85a2026be78718abf3" }
+]
+
+[vars]
+BOT_MODE = "comics"
+
+# No [triggers] cron, same reason as the original: the account is at the Workers Free plan's
+# 5-cron cap. The comic sweep is driven by a GitHub Actions cron, not by this Worker.
