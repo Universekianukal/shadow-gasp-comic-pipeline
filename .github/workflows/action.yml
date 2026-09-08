@@ -39,6 +39,23 @@ jobs:
         with:
           python-version: "3.11"
 
+      # ⛔ THIS WORKFLOW INSTALLED NO PYTHON DEPS AT ALL until 2026-09-08, and the publish step
+      # runs gen_promo.py, which imports llm.py, which imports `requests`.
+      #
+      # The damage was invisible because of WHERE it landed: `gumroad products publish` runs on
+      # the first line of the publish step and succeeds, the "✅ LIVE" edit goes out on the
+      # third -- and only then does gen_promo.py die on ModuleNotFoundError. So the job goes
+      # red, the failure notify fires "❌ Action FAILED: publish", and the product is LIVE
+      # anyway. EVERY publish tap from 2026-09-02 to 2026-09-08 did this: ~20 books published
+      # while telling the owner they had failed, and not one promo post generated. THE DANCING
+      # PLAGUE OF 1518 was published this way on 2026-09-07 (yvVgKVeMGpKqeQZ2k_GUzg==), which
+      # is why its rebuild the next day hit the published-product guard with no explanation.
+      #
+      # pipeline.yml installs its own deps and was never affected -- which is exactly why this
+      # went unnoticed: the long build worked, only the 20-second button action broke.
+      - name: Install Python deps
+        run: pip install requests
+
       - name: Install Gumroad CLI
         if: github.event.inputs.action == 'publish' || github.event.inputs.action == 'reject'
         # `curl ... | bash` REPORTS SUCCESS WHEN THE DOWNLOAD FAILS.
