@@ -1,15 +1,20 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// DEPLOYED_BUNDLE.js
+// worker.js
 var __defProp2 = Object.defineProperty;
 var __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, "name", { value, configurable: true }), "__name");
 var __defProp22 = Object.defineProperty;
 var __name22 = /* @__PURE__ */ __name2((target, value) => __defProp22(target, "name", { value, configurable: true }), "__name");
 var __defProp222 = Object.defineProperty;
 var __name222 = /* @__PURE__ */ __name22((target, value) => __defProp222(target, "name", { value, configurable: true }), "__name");
+var __defProp2222 = Object.defineProperty;
+var __name2222 = /* @__PURE__ */ __name222((target, value) => __defProp2222(target, "name", { value, configurable: true }), "__name");
+var __defProp22222 = Object.defineProperty;
+var __name22222 = /* @__PURE__ */ __name2222((target, value) => __defProp22222(target, "name", { value, configurable: true }), "__name");
 var GITHUB_REPO = "Universekianukal/shadow-gasp-comic-pipeline";
 var VIDEO_REPO = "Universekianukal/shadow-gasp-pipeline";
+var KAGGLE_SLOTS = [["IMAGE", "anuragmishra108"], ["VIDEO", "kianukal"], ["MAHADEVI", "mahadevi108"]];
 async function tg(env, method, params) {
   const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
@@ -20,6 +25,19 @@ async function tg(env, method, params) {
   if (!body.ok) {
     console.log(`tg ${method} failed: ${body.error_code} ${body.description}`);
     const chatId = params && params.chat_id;
+    if (chatId && method === "sendMessage") {
+      try {
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `\u26A0\uFE0F A reply could not be delivered: ${body.description || body.error_code || "unknown"}`.slice(0, 300)
+          })
+        });
+      } catch (e) {
+      }
+    }
     if (chatId && method !== "sendMessage" && method !== "answerCallbackQuery") {
       await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
@@ -37,6 +55,8 @@ __name(tg, "tg");
 __name2(tg, "tg");
 __name22(tg, "tg");
 __name222(tg, "tg");
+__name2222(tg, "tg");
+__name22222(tg, "tg");
 async function dispatchAction(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/action.yml/dispatches`,
@@ -58,6 +78,8 @@ __name(dispatchAction, "dispatchAction");
 __name2(dispatchAction, "dispatchAction");
 __name22(dispatchAction, "dispatchAction");
 __name222(dispatchAction, "dispatchAction");
+__name2222(dispatchAction, "dispatchAction");
+__name22222(dispatchAction, "dispatchAction");
 async function dispatchPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -77,7 +99,8 @@ __name(dispatchPipeline, "dispatchPipeline");
 __name2(dispatchPipeline, "dispatchPipeline");
 __name22(dispatchPipeline, "dispatchPipeline");
 __name222(dispatchPipeline, "dispatchPipeline");
-
+__name2222(dispatchPipeline, "dispatchPipeline");
+__name22222(dispatchPipeline, "dispatchPipeline");
 async function dispatchPostPromo(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_promo.yml/dispatches`,
@@ -93,10 +116,8 @@ async function dispatchPostPromo(env, inputs) {
   );
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
-
-// The storefront is the authority on what can be promoted -- a comic is promotable exactly
-// when it is PUBLISHED, and only Gumroad knows that. Reading the KV comic records instead
-// would offer drafts, and a post linking to an unpublished product sends every click to a 404.
+__name(dispatchPostPromo, "dispatchPostPromo");
+__name2(dispatchPostPromo, "dispatchPostPromo");
 async function gumroadProducts(env) {
   const r = await fetch(
     `https://api.gumroad.com/v2/products?access_token=${encodeURIComponent(env.GUMROAD_ACCESS_TOKEN || "")}`,
@@ -106,63 +127,44 @@ async function gumroadProducts(env) {
   const j = await r.json();
   return (j.products || []).filter((p) => p.published);
 }
-
-// Which comics have already gone out, read from the markers the posting job commits. Without
-// this the list would happily offer a book a second time, and the whole point of the marker is
-// that a duplicate post is what cost this page its reach.
+__name(gumroadProducts, "gumroadProducts");
+__name2(gumroadProducts, "gumroadProducts");
 async function promoPosted(env) {
   try {
-    const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/promo?ref=main`,
-                          { headers: ghHeaders(env) });
-    if (!r.ok) return new Set();
+    const r = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/contents/promo?ref=main`,
+      { headers: ghHeaders(env) }
+    );
+    if (!r.ok) return /* @__PURE__ */ new Set();
     const files = await r.json();
-    return new Set((Array.isArray(files) ? files : [])
-      .filter((f) => f.name && f.name.endsWith(".json"))
-      .map((f) => f.name.replace(/\.json$/, "")));
+    return new Set((Array.isArray(files) ? files : []).filter((f) => f.name && f.name.endsWith(".json")).map((f) => f.name.replace(/\.json$/, "")));
   } catch (e) {
-    return new Set();
+    return /* @__PURE__ */ new Set();
   }
 }
-
-// ---- per-case registry: the issue number, and the Kaggle account that holds the art ----
-//
-// Both facts are decided HERE, at the tap, and written to issues.json in the comic repo before
-// anything is dispatched. That file is the single authority for both.
-//
-// Why not leave it to the build, which is where it used to happen? issue_registry.assign() runs
-// at checkout and its result is only committed 2-3 hours later, so two builds started inside
-// that window both read the same file and are both handed the same number -- a number printed
-// into the PDF and into the Gumroad title, which cannot be corrected without a full rebuild.
-//
-// The Kaggle pin is the same shape of problem with a quieter failure. The kernel is the ONLY
-// art store: cases/ is deleted after every run, and list_case_kernels() searches only the
-// account it is handed. Build a case on a different account than last time and it finds
-// nothing, prints "generating from scratch", and re-renders every panel at a new seed --
-// silently replacing art that was already approved. So the first build of a case fixes its
-// account, and every later build inherits it. The picker asks once, not every time.
+__name(promoPosted, "promoPosted");
+__name2(promoPosted, "promoPosted");
 var REGISTRY_PATH = "issues.json";
 var KAGGLE_ACCOUNTS_FALLBACK = "-:anuragmishra108,B:mahadevi108,C:kianukal";
-
 function caseSlug(name) {
-  // Must match pipeline.yml byte for byte:
-  //   echo "$CASE" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-40
-  // A slug that disagrees files the number under a key the build never looks up, which would
-  // hand out a fresh number on every single build while looking like it was working.
   return String(name || "").toLowerCase().replace(/ /g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 40);
 }
-
+__name(caseSlug, "caseSlug");
+__name2(caseSlug, "caseSlug");
 function b64decode(s) {
   const bin = atob(String(s).replace(/\s/g, ""));
   return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
 }
-
+__name(b64decode, "b64decode");
+__name2(b64decode, "b64decode");
 function b64encode(text) {
   const bytes = new TextEncoder().encode(text);
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin);
 }
-
+__name(b64encode, "b64encode");
+__name2(b64encode, "b64encode");
 function ghHeaders(env) {
   return {
     Authorization: `Bearer ${env.GITHUB_TOKEN}`,
@@ -171,18 +173,13 @@ function ghHeaders(env) {
     "User-Agent": "shadow-gasp-bot"
   };
 }
-
+__name(ghHeaders, "ghHeaders");
+__name2(ghHeaders, "ghHeaders");
 function parseKaggleAccounts(s) {
-  return String(s || "").split(",")
-    .map((p) => p.split(":"))
-    .filter((p) => p.length === 2 && p[0].trim() && p[1].trim())
-    .map((p) => ({ slot: p[0].trim(), handle: p[1].trim() }));
+  return String(s || "").split(",").map((p) => p.split(":")).filter((p) => p.length === 2 && p[0].trim() && p[1].trim()).map((p) => ({ slot: p[0].trim(), handle: p[1].trim() }));
 }
-
-// Read the slot -> handle map from the repo VARIABLE rather than hardcoding it here, so adding
-// a fourth account is `gh variable set` and not a Worker deploy. The fallback only covers the
-// token lacking actions:read; if the two ever disagree the build's own guard refuses, which is
-// the safe direction.
+__name(parseKaggleAccounts, "parseKaggleAccounts");
+__name2(parseKaggleAccounts, "parseKaggleAccounts");
 async function kaggleAccounts(env) {
   try {
     const r = await fetch(
@@ -199,7 +196,8 @@ async function kaggleAccounts(env) {
   }
   return parseKaggleAccounts(KAGGLE_ACCOUNTS_FALLBACK);
 }
-
+__name(kaggleAccounts, "kaggleAccounts");
+__name2(kaggleAccounts, "kaggleAccounts");
 async function readRegistry(env) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/contents/${REGISTRY_PATH}?ref=main`,
@@ -218,10 +216,8 @@ async function readRegistry(env) {
   data.kaggle = data.kaggle || {};
   return { data, sha: j.sha };
 }
-
-// What this case would get, without writing anything. Used to skip the account question when
-// the case is already pinned -- offering a choice that will be overridden is worse than not
-// offering it.
+__name(readRegistry, "readRegistry");
+__name2(readRegistry, "readRegistry");
 async function peekCase(env, caseName) {
   const cur = await readRegistry(env);
   if (!cur) return null;
@@ -232,10 +228,8 @@ async function peekCase(env, caseName) {
     slot: cur.data.kaggle[slug]
   };
 }
-
-// Returns { issue, slot, pinned, error }. `error` is deliberately non-fatal: the caller falls
-// back to issue_no="auto", which is exactly what the build did before this existed. A registry
-// the Worker cannot write must not be able to block a book.
+__name(peekCase, "peekCase");
+__name2(peekCase, "peekCase");
 async function reserveCase(env, caseName, wantSlot) {
   const slug = caseSlug(caseName);
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -245,21 +239,12 @@ async function reserveCase(env, caseName, wantSlot) {
     const kaggle = cur.data.kaggle;
     const haveIssue = Object.prototype.hasOwnProperty.call(issues, slug);
     const havePin = Object.prototype.hasOwnProperty.call(kaggle, slug);
-    // A pin already on file WINS over whatever was tapped. The art is where the art is.
-    const slot = havePin ? kaggle[slug] : (wantSlot || "-");
+    const slot = havePin ? kaggle[slug] : wantSlot || "-";
     const nums = Object.values(issues).filter((n) => typeof n === "number");
     const issue = haveIssue ? issues[slug] : (nums.length ? Math.max.apply(null, nums) : 0) + 1;
-
-    // Nothing to write. Idempotent on purpose -- a rebuild must return the number it already
-    // has, or the reprint would contradict the copy already delivered.
     if (haveIssue && havePin) return { issue, slot, pinned: true };
-
     issues[slug] = issue;
     kaggle[slug] = slot;
-
-    // Match what issue_registry.py writes -- sort_keys=True, indent=2, every top-level key
-    // preserved -- so a build's own ledger commit is not a whole-file reformat, and so a key
-    // added there later is not silently dropped here.
     const out = {};
     for (const k of Object.keys(cur.data).sort()) out[k] = cur.data[k];
     const si = {};
@@ -268,7 +253,6 @@ async function reserveCase(env, caseName, wantSlot) {
     for (const k of Object.keys(kaggle).sort()) sk[k] = kaggle[k];
     out.issues = si;
     out.kaggle = sk;
-
     const put = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/contents/${REGISTRY_PATH}`,
       {
@@ -283,17 +267,15 @@ async function reserveCase(env, caseName, wantSlot) {
       }
     );
     if (put.ok) return { issue, slot, pinned: havePin };
-    // 409/422 = the file moved under us between the read and the write. That IS the race this
-    // whole mechanism exists to catch, so re-read and retry rather than clobber their number.
     if (put.status !== 409 && put.status !== 422) {
       return { error: `${put.status} ${(await put.text()).slice(0, 120)}` };
     }
   }
   return { error: "issues.json kept changing underneath the reservation" };
 }
+__name(reserveCase, "reserveCase");
+__name2(reserveCase, "reserveCase");
 async function dispatchFunnelComicLink(env, inputs) {
-  // Lives in the VIDEO repo, not the comic repo: it edits a published YouTube video's
-  // description, so it needs that repo's YouTube OAuth secrets and GITHUB_TOKEN_VIDEO.
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/funnel_comic_link.yml/dispatches`,
     {
@@ -310,6 +292,8 @@ async function dispatchFunnelComicLink(env, inputs) {
 }
 __name(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 __name2(dispatchFunnelComicLink, "dispatchFunnelComicLink");
+__name22(dispatchFunnelComicLink, "dispatchFunnelComicLink");
+__name222(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 async function dispatchGenCode(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/gen_code.yml/dispatches`,
@@ -329,6 +313,8 @@ __name(dispatchGenCode, "dispatchGenCode");
 __name2(dispatchGenCode, "dispatchGenCode");
 __name22(dispatchGenCode, "dispatchGenCode");
 __name222(dispatchGenCode, "dispatchGenCode");
+__name2222(dispatchGenCode, "dispatchGenCode");
+__name22222(dispatchGenCode, "dispatchGenCode");
 async function dispatchVideoPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -348,9 +334,11 @@ __name(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name2(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name22(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name222(dispatchVideoPipeline, "dispatchVideoPipeline");
-var sleep = /* @__PURE__ */ __name222((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
+__name2222(dispatchVideoPipeline, "dispatchVideoPipeline");
+__name22222(dispatchVideoPipeline, "dispatchVideoPipeline");
+var sleep = /* @__PURE__ */ __name22222((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
 async function dispatchWorkflowVerified(env, workflowFile, inputs) {
-  const dispatchOnce = /* @__PURE__ */ __name222(async () => {
+  const dispatchOnce = /* @__PURE__ */ __name22222(async () => {
     const beforeMs2 = Date.now();
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/dispatches`,
@@ -367,7 +355,7 @@ async function dispatchWorkflowVerified(env, workflowFile, inputs) {
     if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
     return beforeMs2;
   }, "dispatchOnce");
-  const runAppeared = /* @__PURE__ */ __name222(async (afterMs) => {
+  const runAppeared = /* @__PURE__ */ __name22222(async (afterMs) => {
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5`,
       { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
@@ -388,6 +376,8 @@ __name(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name2(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name22(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
+__name2222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
+__name22222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 async function dispatchFinishBatchDay(env, inputs) {
   return dispatchWorkflowVerified(env, "finish_batch_day.yml", inputs);
 }
@@ -395,6 +385,8 @@ __name(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name2(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name22(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
+__name2222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
+__name22222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 async function dispatchBatchPregen(env, inputs) {
   return dispatchWorkflowVerified(env, "batch_pregen.yml", inputs);
 }
@@ -402,6 +394,8 @@ __name(dispatchBatchPregen, "dispatchBatchPregen");
 __name2(dispatchBatchPregen, "dispatchBatchPregen");
 __name22(dispatchBatchPregen, "dispatchBatchPregen");
 __name222(dispatchBatchPregen, "dispatchBatchPregen");
+__name2222(dispatchBatchPregen, "dispatchBatchPregen");
+__name22222(dispatchBatchPregen, "dispatchBatchPregen");
 function pregenKeyboard() {
   return {
     inline_keyboard: [
@@ -414,6 +408,8 @@ __name(pregenKeyboard, "pregenKeyboard");
 __name2(pregenKeyboard, "pregenKeyboard");
 __name22(pregenKeyboard, "pregenKeyboard");
 __name222(pregenKeyboard, "pregenKeyboard");
+__name2222(pregenKeyboard, "pregenKeyboard");
+__name22222(pregenKeyboard, "pregenKeyboard");
 async function ghRaw(env, path) {
   const r = await fetch(`https://raw.githubusercontent.com/${VIDEO_REPO}/main/${path}`, {
     headers: { "User-Agent": "shadow-gasp-bot" }
@@ -425,6 +421,8 @@ __name(ghRaw, "ghRaw");
 __name2(ghRaw, "ghRaw");
 __name22(ghRaw, "ghRaw");
 __name222(ghRaw, "ghRaw");
+__name2222(ghRaw, "ghRaw");
+__name22222(ghRaw, "ghRaw");
 async function hookStillUrl(env, dd) {
   const candidates = [
     `_pipeline/batch/day${dd}/shot1.jpeg`,
@@ -444,6 +442,8 @@ async function hookStillUrl(env, dd) {
 __name(hookStillUrl, "hookStillUrl");
 __name2(hookStillUrl, "hookStillUrl");
 __name22(hookStillUrl, "hookStillUrl");
+__name222(hookStillUrl, "hookStillUrl");
+__name2222(hookStillUrl, "hookStillUrl");
 async function dayPublishState(env, dayNum) {
   let entry = null;
   try {
@@ -453,10 +453,6 @@ async function dayPublishState(env, dayNum) {
     return null;
   }
   if (!entry) return null;
-  // state.json's `done` is written by _batch_pregen.py the moment the 16 stills
-  // are committed -- it means PREGENERATED, not published, which is why 53 of 55
-  // days carry it. Never use it as the publish signal. Refuse only on positive
-  // evidence, so an unpublished day always stays workable.
   let queueStatus = null;
   try {
     const q = await (await ghRaw(env, "_pipeline/batch/queue.json")).json();
@@ -465,13 +461,8 @@ async function dayPublishState(env, dayNum) {
   } catch (err) {
     queueStatus = null;
   }
-  // Anything parked mid-flight (held, pending_render, ...) is explicitly NOT done.
   if (queueStatus && queueStatus !== "published") return null;
   if (queueStatus === "published") return { ...entry, queueStatus };
-  // Otherwise the only real proof is a stamped videoId in the ledger, matched on
-  // case text. Note the id itself can be stale if a video was replaced by hand
-  // (days 33/34/35) -- it still proves the day published at least once, which is
-  // all this guard claims.
   try {
     const led = await (await ghRaw(env, "_pipeline/cases_used.json")).json();
     const hit = (led.cases || []).find((c) => c && c.case === entry.case && c.videoId);
@@ -483,6 +474,8 @@ async function dayPublishState(env, dayNum) {
 __name(dayPublishState, "dayPublishState");
 __name2(dayPublishState, "dayPublishState");
 __name22(dayPublishState, "dayPublishState");
+__name222(dayPublishState, "dayPublishState");
+__name2222(dayPublishState, "dayPublishState");
 async function sendHookStill(env, chatId, imgUrl, caption) {
   const r = await fetch(imgUrl, { headers: { "User-Agent": "shadow-gasp-bot" } });
   if (!r.ok) throw new Error(`couldn't fetch the still: ${r.status}`);
@@ -504,7 +497,9 @@ async function sendHookStill(env, chatId, imgUrl, caption) {
 __name(sendHookStill, "sendHookStill");
 __name2(sendHookStill, "sendHookStill");
 __name22(sendHookStill, "sendHookStill");
-__name222(hookStillUrl, "hookStillUrl");
+__name222(sendHookStill, "sendHookStill");
+__name2222(sendHookStill, "sendHookStill");
+__name22222(hookStillUrl, "hookStillUrl");
 async function dispatchCrosspostDecision(env, inputs) {
   return dispatchWorkflowVerified(env, "crosspost_decision.yml", inputs);
 }
@@ -512,6 +507,8 @@ __name(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name2(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name22(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
+__name2222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
+__name22222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 function fbIgDecisionKeyboard(day) {
   return {
     inline_keyboard: [
@@ -530,6 +527,8 @@ __name(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name2(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name22(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
+__name2222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
+__name22222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 async function dispatchGenerateTitleVariant(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/generate_title_variant.yml/dispatches`,
@@ -549,6 +548,8 @@ __name(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name2(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name22(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
+__name2222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
+__name22222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 async function dispatchRetitlePublished(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/retitle_published.yml/dispatches`,
@@ -568,6 +569,8 @@ __name(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name2(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name22(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name222(dispatchRetitlePublished, "dispatchRetitlePublished");
+__name2222(dispatchRetitlePublished, "dispatchRetitlePublished");
+__name22222(dispatchRetitlePublished, "dispatchRetitlePublished");
 function titleStyleKeyboard(day) {
   return {
     inline_keyboard: [
@@ -586,6 +589,8 @@ __name(titleStyleKeyboard, "titleStyleKeyboard");
 __name2(titleStyleKeyboard, "titleStyleKeyboard");
 __name22(titleStyleKeyboard, "titleStyleKeyboard");
 __name222(titleStyleKeyboard, "titleStyleKeyboard");
+__name2222(titleStyleKeyboard, "titleStyleKeyboard");
+__name22222(titleStyleKeyboard, "titleStyleKeyboard");
 function titleDraftKeyboard(day, style) {
   return {
     inline_keyboard: [
@@ -604,6 +609,8 @@ __name(titleDraftKeyboard, "titleDraftKeyboard");
 __name2(titleDraftKeyboard, "titleDraftKeyboard");
 __name22(titleDraftKeyboard, "titleDraftKeyboard");
 __name222(titleDraftKeyboard, "titleDraftKeyboard");
+__name2222(titleDraftKeyboard, "titleDraftKeyboard");
+__name22222(titleDraftKeyboard, "titleDraftKeyboard");
 async function getCurrentTitle(env, dayNum) {
   const dayDir = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}`;
   const overrideR = await fetch(
@@ -636,6 +643,8 @@ __name(getCurrentTitle, "getCurrentTitle");
 __name2(getCurrentTitle, "getCurrentTitle");
 __name22(getCurrentTitle, "getCurrentTitle");
 __name222(getCurrentTitle, "getCurrentTitle");
+__name2222(getCurrentTitle, "getCurrentTitle");
+__name22222(getCurrentTitle, "getCurrentTitle");
 async function commitTitleOverride(env, dayNum, title, tags) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/TITLE_OVERRIDE.json`;
   let sha;
@@ -666,6 +675,8 @@ __name(commitTitleOverride, "commitTitleOverride");
 __name2(commitTitleOverride, "commitTitleOverride");
 __name22(commitTitleOverride, "commitTitleOverride");
 __name222(commitTitleOverride, "commitTitleOverride");
+__name2222(commitTitleOverride, "commitTitleOverride");
+__name22222(commitTitleOverride, "commitTitleOverride");
 async function commitHookVideo(env, dayNum, videoBytes) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/images/seq/01.mp4`;
   let sha;
@@ -701,6 +712,8 @@ __name(commitHookVideo, "commitHookVideo");
 __name2(commitHookVideo, "commitHookVideo");
 __name22(commitHookVideo, "commitHookVideo");
 __name222(commitHookVideo, "commitHookVideo");
+__name2222(commitHookVideo, "commitHookVideo");
+__name22222(commitHookVideo, "commitHookVideo");
 async function queueDayForScheduledPublish(env, dayNum, chatId) {
   const path = "_pipeline/batch/queue.json";
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -741,6 +754,8 @@ __name(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name2(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name22(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
+__name2222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
+__name22222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 function describeNextIST(hh, mm) {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -759,6 +774,8 @@ __name(describeNextIST, "describeNextIST");
 __name2(describeNextIST, "describeNextIST");
 __name22(describeNextIST, "describeNextIST");
 __name222(describeNextIST, "describeNextIST");
+__name2222(describeNextIST, "describeNextIST");
+__name22222(describeNextIST, "describeNextIST");
 function nextDayFiveFifteenIST() {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -777,6 +794,8 @@ __name(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name2(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name22(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
+__name2222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
+__name22222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 function istTimeToPublishAt(hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -801,6 +820,8 @@ __name(istTimeToPublishAt, "istTimeToPublishAt");
 __name2(istTimeToPublishAt, "istTimeToPublishAt");
 __name22(istTimeToPublishAt, "istTimeToPublishAt");
 __name222(istTimeToPublishAt, "istTimeToPublishAt");
+__name2222(istTimeToPublishAt, "istTimeToPublishAt");
+__name22222(istTimeToPublishAt, "istTimeToPublishAt");
 function istDateTimeToPublishAt(dd, mm, yyyy, hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return { error: `Couldn't parse time "${hhmm}" \u2014 use HH:MM` };
@@ -824,6 +845,8 @@ __name(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name2(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name22(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
+__name2222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
+__name22222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 function hookGateKeyboard(runId) {
   return {
     inline_keyboard: [[
@@ -836,14 +859,14 @@ __name(hookGateKeyboard, "hookGateKeyboard");
 __name2(hookGateKeyboard, "hookGateKeyboard");
 __name22(hookGateKeyboard, "hookGateKeyboard");
 __name222(hookGateKeyboard, "hookGateKeyboard");
+__name2222(hookGateKeyboard, "hookGateKeyboard");
+__name22222(hookGateKeyboard, "hookGateKeyboard");
 function approvalKeyboard(token, videoId) {
   const rows = [[
     { text: "\u2705 Approve", callback_data: `approve:${token}` },
     { text: "\u274C Reject", callback_data: `reject:${token}` },
     { text: "\u{1F4C4} Increase Pages", callback_data: `pages_menu:${token}` }
   ]];
-  // Only offered when the case came from a published short -- with no video there is nothing
-  // to funnel into, and a dead button is worse than no button.
   if (videoId) {
     rows.push([{ text: "\u{1F517} Funnel to YouTube", callback_data: `funnel:${token}` }]);
   }
@@ -853,11 +876,8 @@ __name(approvalKeyboard, "approvalKeyboard");
 __name2(approvalKeyboard, "approvalKeyboard");
 __name22(approvalKeyboard, "approvalKeyboard");
 __name222(approvalKeyboard, "approvalKeyboard");
-// ⚠️ A COPY. The authority is PAGE_PRICE_TIERS in pipeline_lib/stage_and_deliver.py, which is
-// what Gumroad is actually charged. This copy exists only so the buttons can be labelled
-// without a round trip, and nothing keeps the two in step -- change one, change both in the
-// same commit, or Telegram will quote a price the storefront does not honour.
-// Round numbers on purpose: ".99" is charm pricing and reads as a discount bin.
+__name2222(approvalKeyboard, "approvalKeyboard");
+__name22222(approvalKeyboard, "approvalKeyboard");
 var PAGE_PRICE_TIERS = { 20: "0", 25: "19", 35: "24", 50: "29", 75: "39", 100: "49" };
 function priceLabel(n) {
   return PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`;
@@ -866,6 +886,8 @@ __name(priceLabel, "priceLabel");
 __name2(priceLabel, "priceLabel");
 __name22(priceLabel, "priceLabel");
 __name222(priceLabel, "priceLabel");
+__name2222(priceLabel, "priceLabel");
+__name22222(priceLabel, "priceLabel");
 function makePageCountKeyboard() {
   return {
     inline_keyboard: [[20, 25, 35, 50, 75, 100].map((n) => ({
@@ -878,6 +900,8 @@ __name(makePageCountKeyboard, "makePageCountKeyboard");
 __name2(makePageCountKeyboard, "makePageCountKeyboard");
 __name22(makePageCountKeyboard, "makePageCountKeyboard");
 __name222(makePageCountKeyboard, "makePageCountKeyboard");
+__name2222(makePageCountKeyboard, "makePageCountKeyboard");
+__name22222(makePageCountKeyboard, "makePageCountKeyboard");
 var STYLE_BUTTONS = [
   ["cinematic", "\u{1F3AC}"],
   ["mosaic", "\u{1F9E9}"],
@@ -887,7 +911,7 @@ var STYLE_BUTTONS = [
   ["documentary", "\u{1F4C1}"]
 ];
 function makeStyleKeyboard() {
-  const btn = /* @__PURE__ */ __name2(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
+  const btn = /* @__PURE__ */ __name222(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
   return {
     inline_keyboard: [
       STYLE_BUTTONS.slice(0, 3).map(btn),
@@ -900,30 +924,27 @@ __name(makeStyleKeyboard, "makeStyleKeyboard");
 __name2(makeStyleKeyboard, "makeStyleKeyboard");
 __name22(makeStyleKeyboard, "makeStyleKeyboard");
 __name222(makeStyleKeyboard, "makeStyleKeyboard");
-// The /topics build wizard: account -> pages -> style. Kept next to STYLE_BUTTONS so the two
-// keyboards cannot drift apart on which styles exist.
-// Prices come from PAGE_PRICE_TIERS rather than being written into the text, so this question
-// cannot quote a figure the storefront has stopped charging. The tier is chosen from PAGES
-// ACTUALLY DELIVERED, which runs ~40-55% above the target, so the label shows the tier the book
-// will most likely land in rather than the one its target number would suggest.
-var PAGE_QUESTION = "How many pages?\n\n"
-  + `25 — ~41pp delivered, $${PAGE_PRICE_TIERS[35]} tier\n`
-  + `35 — ~50-55pp, $${PAGE_PRICE_TIERS[50]} tier (the usual choice)\n`
-  + `50 — bigger book, roughly double the art time, $${PAGE_PRICE_TIERS[75]} tier\n`
-  + `75 — the largest that has built cleanly, $${PAGE_PRICE_TIERS[100]} tier`;
+__name2222(makeStyleKeyboard, "makeStyleKeyboard");
+__name22222(makeStyleKeyboard, "makeStyleKeyboard");
+var PAGE_QUESTION = `How many pages?
 
+25 \u2014 ~41pp delivered, $${PAGE_PRICE_TIERS[35]} tier
+35 \u2014 ~50-55pp, $${PAGE_PRICE_TIERS[50]} tier (the usual choice)
+50 \u2014 bigger book, roughly double the art time, $${PAGE_PRICE_TIERS[75]} tier
+75 \u2014 the largest that has built cleanly, $${PAGE_PRICE_TIERS[100]} tier`;
 function pagesKeyboard(token, idx, slot) {
   return { inline_keyboard: [[25, 35, 50, 75].map((n) => ({
     text: String(n),
     callback_data: `tpag:${token}:${idx}|${slot}|${n}`
   }))] };
 }
-
+__name(pagesKeyboard, "pagesKeyboard");
+__name2(pagesKeyboard, "pagesKeyboard");
 function topicStyleKeyboard(token, idx, slot, pages) {
-  const btn = ([name, icon]) => ({
+  const btn = /* @__PURE__ */ __name2(([name, icon]) => ({
     text: `${icon} ${name}`,
     callback_data: `topicgo:${token}:${idx}|${slot}|${pages}|${name}`
-  });
+  }), "btn");
   return {
     inline_keyboard: [
       STYLE_BUTTONS.slice(0, 3).map(btn),
@@ -932,7 +953,8 @@ function topicStyleKeyboard(token, idx, slot, pages) {
     ]
   };
 }
-
+__name(topicStyleKeyboard, "topicStyleKeyboard");
+__name2(topicStyleKeyboard, "topicStyleKeyboard");
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
@@ -945,6 +967,8 @@ __name(pageCountKeyboard, "pageCountKeyboard");
 __name2(pageCountKeyboard, "pageCountKeyboard");
 __name22(pageCountKeyboard, "pageCountKeyboard");
 __name222(pageCountKeyboard, "pageCountKeyboard");
+__name2222(pageCountKeyboard, "pageCountKeyboard");
+__name22222(pageCountKeyboard, "pageCountKeyboard");
 function confirmPublishKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -957,38 +981,17 @@ __name(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name2(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name22(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name222(confirmPublishKeyboard, "confirmPublishKeyboard");
-
-// ---- /topics : browse what can be turned into a comic, and build it on a tap ----
-//
-// Two lists, because they answer different questions. UPCOMING days are shorts that have not
-// gone out yet, so the comic can land with the launch traffic; the BACKLOG is every published
-// short that still has no comic. The Batch sheet was the obvious source and turned out to be
-// the wrong one: it tracks pregenerated days only (58 rows) while the ledger holds 104
-// published shorts with no comic, most predating the batch system entirely.
-//
-// Reads the two repos' raw JSON directly. No Google credentials in the Worker -- the sheet
-// would have needed service-account JWT signing here for a strictly smaller list.
+__name2222(confirmPublishKeyboard, "confirmPublishKeyboard");
+__name22222(confirmPublishKeyboard, "confirmPublishKeyboard");
 var RAW_COMIC = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-comic-pipeline/main";
 var RAW_VIDEO = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main";
 var TOPICS_PER_PAGE = 8;
-
 function normCase(s) {
-  // Matches pick_case.norm_case: the two repos spell the same case differently (an em dash in
-  // state.json where the ledger stores U+0097), so an == join silently misses.
   return (s || "").normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLowerCase();
 }
-
+__name(normCase, "normCase");
+__name2(normCase, "normCase");
 async function loadTopics(env) {
-  // ⚠️ TWO LEDGERS, AND ONLY ONE IS THE AUTHORITY ON VIDEOS.
-  //
-  // The comic repo's cases_used.json is a COPY, refreshed by sync_from_video_repo -- which runs
-  // inside pick_case, and pick_case is SKIPPED whenever a build names its case explicitly. Every
-  // recent build did exactly that, so the copy silently fell behind and /topics could not offer
-  // day 38 (the Edmund Fitzgerald) for two days after its video was recorded.
-  //
-  // So: videos and dates come from the VIDEO repo, which the pipeline writes as it publishes.
-  // Only comicAt comes from the comic repo, because that is the thing only the comic repo knows.
-  // Nothing here can go stale waiting for a build to run.
   const [comicR, videoR, stR] = await Promise.all([
     fetch(`${RAW_COMIC}/cases_used.json`, { headers: { "User-Agent": "shadow-gasp-bot" } }),
     fetch(`${RAW_VIDEO}/_pipeline/cases_used.json`, { headers: { "User-Agent": "shadow-gasp-bot" } }),
@@ -996,22 +999,28 @@ async function loadTopics(env) {
   ]);
   if (!videoR.ok) throw new Error(`video ledger fetch ${videoR.status}`);
   const cases = (await videoR.json()).cases || [];
-
-  // comicAt lives only in the comic repo. If that fetch fails, fall back to offering nothing as
-  // drawn rather than hiding the whole list -- a duplicate build is recoverable, an empty
-  // /topics is just broken.
-  let drawn = new Set();
+  let drawn = /* @__PURE__ */ new Set();
   if (comicR.ok) {
     const comicCases = (await comicR.json()).cases || [];
     drawn = new Set(comicCases.filter((c) => c.comicAt).map((c) => normCase(c.case)));
   }
+  const doneRecords = [];
+  try {
+    const recs = await env.PENDING.list({ prefix: "comic:" });
+    for (const k of recs.keys) {
+      const raw = await env.PENDING.get(k.name);
+      if (!raw) continue;
+      const rec = JSON.parse(raw);
+      doneRecords.push(rec);
+      if (rec.case) drawn.add(normCase(rec.case));
+    }
+  } catch (e) {
+  }
   const published = new Set(cases.filter((c) => c.videoId).map((c) => normCase(c.case)));
-
   const upcoming = [];
   if (stR.ok) {
     const days = (await stR.json()).days || {};
     const nums = Object.keys(days).map(Number).sort((a, b) => a - b);
-    // Work from the publishing frontier: low unpublished days are stalled, not imminent.
     let frontier = 0;
     for (const n of nums) if (published.has(normCase(days[String(n)].case))) frontier = n;
     for (const n of nums) {
@@ -1021,158 +1030,77 @@ async function loadTopics(env) {
       upcoming.push({ label: `day ${n}`, case: d.case });
     }
   }
-
-  // ⭐⭐ A MISSING DATE MUST NOT READ AS "OLDEST".
-  //
-  // The backlog sorts newest-first on publishedAt, and a null compares below every real date --
-  // so an undated row sank to the end of the last page, which is where nobody looks. 25 of 116
-  // published shorts sat there: a fifth of the channel, already carrying an audience and with
-  // no comic, silently absent from the list whose entire job is to surface exactly that. The
-  // Georgia Guidestones short was row 108 of 108.
-  //
-  // A row with a videoId IS published; "no date recorded" is a gap in the ledger, not evidence
-  // about when it went out. The ledger is written in publication order, so the nearest
-  // PRECEDING date is a sound stand-in and puts the row back among its neighbours. The label
-  // shows it as approximate (~) so an inferred date is never mistaken for a recorded one.
-  //
-  // The 25 have since been backfilled from YouTube, so this currently changes nothing. It is
-  // here because the writer that dropped those dates has not been fixed, and the failure was
-  // invisible for months precisely because it looked like an ordering quirk rather than a loss.
   let carried = "";
   const sortKey = /* @__PURE__ */ new Map();
   for (const c of cases) {
     if (c.publishedAt) carried = c.publishedAt;
     sortKey.set(c, c.publishedAt || carried);
   }
-  const backlog = cases
-    // `drawn`, NOT c.comicAt: these rows come from the VIDEO ledger now, which has no comicAt
-    // field at all -- so testing it would be vacuously true and every shipped comic would be
-    // offered for rebuilding again, which is the exact bug the comicAt backfill just fixed.
-    .filter((c) => c.videoId && !drawn.has(normCase(c.case)))
-    .sort((a, b) => (sortKey.get(b) || "").localeCompare(sortKey.get(a) || ""))
-    .map((c) => ({
-      label: c.publishedAt
-        ? c.publishedAt.slice(0, 10)
-        : (sortKey.get(c) ? `~${sortKey.get(c).slice(0, 10)}` : "undated"),
-      case: c.case
-    }));
-
-  // ⭐ THE THIRD STATE. A case is not simply "has a comic or not": a comic can exist and still
-  // reach nobody, because the link from the short to the store is what actually earns. Before
-  // this, a built-but-unlinked comic vanished from /topics entirely and looked finished.
-  //
-  // Linkage lives in the KV comic records (linked_at), not in either ledger, because it is a
-  // fact about a YouTube description rather than about a case.
-  const done = [];
-  try {
-    const recs = await env.PENDING.list({ prefix: "comic:" });
-    for (const k of recs.keys) {
-      const raw = await env.PENDING.get(k.name);
-      if (!raw) continue;
-      const c = JSON.parse(raw);
-      if (!c.linked_at) continue;
-      done.push({ label: c.issue ? `#${c.issue}` : "linked",
-                  case: `${c.title || c.case} → youtu.be/${c.video_id || "?"}` });
-    }
-  } catch (e) { /* a missing record list must not hide the other two lists */ }
-
+  const backlog = cases.filter((c) => c.videoId && !drawn.has(normCase(c.case))).sort((a, b) => (sortKey.get(b) || "").localeCompare(sortKey.get(a) || "")).map((c) => ({
+    label: c.publishedAt ? c.publishedAt.slice(0, 10) : sortKey.get(c) ? `~${sortKey.get(c).slice(0, 10)}` : "undated",
+    case: c.case
+  }));
+  const done = doneRecords.filter((c) => c.linked_at).map((c) => ({
+    label: c.issue ? `#${c.issue}` : "linked",
+    case: `${c.title || c.case} \u2192 youtu.be/${c.video_id || "?"}`
+  }));
   return { upcoming, backlog, done };
 }
-
+__name(loadTopics, "loadTopics");
+__name2(loadTopics, "loadTopics");
 async function sendTopicsPage(env, chatId, kind, page, messageId) {
   let lists;
   try {
     lists = await loadTopics(env);
   } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't load the topic lists: ${e.message}` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't load the topic lists: ${e.message}` });
     return;
   }
-  const items = kind === "up" ? lists.upcoming : (kind === "dn" ? lists.done : lists.backlog);
+  const items = kind === "up" ? lists.upcoming : kind === "dn" ? lists.done : lists.backlog;
   if (!items.length) {
-    const blank = kind === "up" ? "No upcoming days are waiting for a comic."
-      : kind === "dn" ? "No comic is linked to its short yet."
-      : "Every published short already has a comic.";
+    const blank = kind === "up" ? "No upcoming days are waiting for a comic." : kind === "dn" ? "No comic is linked to its short yet." : "Every published short already has a comic.";
     await tg(env, "sendMessage", { chat_id: chatId, text: blank });
     return;
   }
   const pages = Math.ceil(items.length / TOPICS_PER_PAGE);
   page = Math.max(0, Math.min(page, pages - 1));
   const slice = items.slice(page * TOPICS_PER_PAGE, (page + 1) * TOPICS_PER_PAGE);
-
-  // The chosen page goes in KV so a button can carry an INDEX rather than a case name --
-  // callback_data is capped at 64 bytes and these names run past that. Keyed per page so a
-  // stale button cannot resolve to whatever has since shifted into that slot.
   const token = Math.random().toString(36).slice(2, 10);
   await env.PENDING.put(`topics:${token}`, JSON.stringify(slice.map((x) => x.case)), { expirationTtl: 86400 });
-
-  // A COMPLETED row is a statement of fact, not an offer -- tapping it must not rebuild a comic
-  // that already exists and is already linked. Those are rendered as text instead.
-  // NUMBERED, and the full name goes in the message body below. A button label is truncated
-  // by Telegram's own rendering no matter what we send, so the button carries the number and
-  // the text carries the truth. Before this the ONLY place a case name appeared was the
-  // button, cut at 42 chars -- and the documented way to ask for a bigger book,
-  // "/make <case> | 50", requires typing that name in full. The truncation therefore hid the
-  // escape hatch it made necessary: you cannot type a name you were never shown.
   const rows = kind === "dn" ? [] : slice.map((x, i) => [{
-    text: `${i + 1}. ${x.label} · ${x.case.length > 38 ? x.case.slice(0, 37) + "…" : x.case}`,
+    text: `${i + 1}. ${x.label} \xB7 ${x.case.length > 38 ? x.case.slice(0, 37) + "\u2026" : x.case}`,
     callback_data: `topic:${token}:${i}`
   }]);
-  const nav = [];
-  if (page > 0) nav.push({ text: "‹ prev", callback_data: `topicpg:${kind}:${page - 1}` });
-  if (page < pages - 1) nav.push({ text: "next ›", callback_data: `topicpg:${kind}:${page + 1}` });
-  // Always offer the two lists you are NOT looking at, so every view reaches the other two.
-  for (const nk of [["up", "upcoming", lists.upcoming.length],
-                    ["bk", "backlog", lists.backlog.length],
-                    ["dn", "completed", lists.done.length]]) {
-    if (nk[0] !== kind) nav.push({ text: `${nk[1]} (${nk[2]})`, callback_data: `topicpg:${nk[0]}:0` });
+  const pageNav = [];
+  if (page > 0) pageNav.push({ text: `\u2039 page ${page}`, callback_data: `topicpg:${kind}:${page - 1}` });
+  if (page < pages - 1) pageNav.push({ text: `page ${page + 2} \u203A`, callback_data: `topicpg:${kind}:${page + 1}` });
+  const listNav = [];
+  for (const nk of [
+    ["up", "upcoming", lists.upcoming.length],
+    ["bk", "backlog", lists.backlog.length],
+    ["dn", "completed", lists.done.length]
+  ]) {
+    if (nk[0] !== kind) listNav.push({ text: `${nk[1]} (${nk[2]})`, callback_data: `topicpg:${nk[0]}:0` });
   }
-  if (nav.length) rows.push(nav);
-
-  const head = kind === "up"
-    ? `\u{1F680} UPCOMING shorts — not published yet, so the comic lands with the launch. ${items.length} waiting.`
-    : kind === "dn"
-    ? `✅ COMPLETED — comic built AND linked into its short's description. ${items.length} done.`
-    : `\u{1F4DA} BACKLOG — published shorts with no comic yet. ${items.length} waiting, newest first.`;
-  // Every list prints its full case names now, not just the completed one. The numbers match
-  // the buttons above, so a long name is both readable and tappable.
-  const listing = "\n\n" + slice
-    .map((x, i) => `${kind === "dn" ? "" : `${i + 1}. `}${x.label} · ${x.case}`)
-    .join("\n");
-  const body = `${head}\nPage ${page + 1}/${pages}.` +
-    (kind === "dn" ? " Nothing to do here — these are already earning."
-                   : " Tap one to choose its page count.") +
-    listing;
+  if (pageNav.length) rows.push(pageNav);
+  if (listNav.length) rows.push(listNav);
+  const head = kind === "up" ? `\u{1F680} UPCOMING shorts \u2014 not published yet, so the comic lands with the launch. ${items.length} waiting.` : kind === "dn" ? `\u2705 COMPLETED \u2014 comic built AND linked into its short's description. ${items.length} done.` : `\u{1F4DA} BACKLOG \u2014 published shorts with no comic yet. ${items.length} waiting, newest first.`;
+  const listing = "\n\n" + slice.map((x, i) => `${kind === "dn" ? "" : `${i + 1}. `}${x.label} \xB7 ${x.case}`).join("\n");
+  const body = `${head}
+Page ${page + 1}/${pages}.` + (kind === "dn" ? " Nothing to do here \u2014 these are already earning." : " Tap one to choose its page count.") + listing;
   const params = { chat_id: chatId, text: body, reply_markup: { inline_keyboard: rows } };
   if (messageId) await tg(env, "editMessageText", { ...params, message_id: messageId });
   else await tg(env, "sendMessage", params);
 }
-
-
-// ---- resolve a comic's short from the LEDGER, not just from the record written at build time ----
-//
-// A `comic:` KV record is written ONCE, by stage_and_deliver, at build time. If the ledger lookup
-// failed then -- as it did for every book before the case-name matching was fixed, and as it does
-// for any comic built BEFORE its short is published -- video_id is stored empty and stays empty
-// forever. Nothing re-reads it. PRINCES GATE therefore reported "no short recorded" while the
-// ledger held tfGcnEM8FXo all along, and could not be repaired by rebuilding either: stage_draft
-// refuses to overwrite a PUBLISHED product.
-//
-// With launch-timed comics (built deliberately before the short goes out) an empty video_id at
-// build time is now the NORMAL case, not the exception. So resolve on demand.
-//
-// Reads the video repo's ledger, which is the authority on video ids -- the comic repo's copy
-// only refreshes during a build. No credentials: the repo is public. No cron, no KV copy of 115
-// videos to keep in sync, and nothing that can silently stop refreshing.
+__name(sendTopicsPage, "sendTopicsPage");
+__name2(sendTopicsPage, "sendTopicsPage");
 var RAW_VIDEO_LEDGER = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main/_pipeline/cases_used.json";
-
 function caseHead(name) {
-  // Mirrors stage_and_deliver._case_head: the leading name, before any " / " qualifier or a
-  // trailing parenthetical. "Operation Nimrod" and "Operation Nimrod / Iranian Embassy Siege 1980
-  // (full long-form documentary)" are the same case, and only this reduction sees that.
   let head = (name || "").split("/")[0].replace(/\(.*?\)/g, "");
   return head.replace(/\s+/g, " ").trim().toLowerCase();
 }
-
+__name(caseHead, "caseHead");
+__name2(caseHead, "caseHead");
 var _ledgerCache = null;
 async function ledgerCases() {
   if (_ledgerCache) return _ledgerCache;
@@ -1181,30 +1109,25 @@ async function ledgerCases() {
   _ledgerCache = (await r.json()).cases || [];
   return _ledgerCache;
 }
-
+__name(ledgerCases, "ledgerCases");
+__name2(ledgerCases, "ledgerCases");
 async function resolveShort(rec) {
-  // What the record already knows wins: it was chosen for this book deliberately.
   if (rec && rec.video_id) return rec.video_id;
-  const name = (rec && (rec.case || rec.title)) || "";
+  const name = rec && (rec.case || rec.title) || "";
   if (!name) return "";
   try {
     const cases = await ledgerCases();
     const want = caseHead(name);
-    const hits = cases.filter((c) => c.videoId && (
-      (c.case || "").trim().toLowerCase() === name.trim().toLowerCase() || caseHead(c.case) === want));
+    const hits = cases.filter((c) => c.videoId && ((c.case || "").trim().toLowerCase() === name.trim().toLowerCase() || caseHead(c.case) === want));
     if (!hits.length) return "";
-    // Newest of a case's videos -- a teaser and a long-form both match, and the fuller video is
-    // the better thing to send a reader to. Same rule stage_and_deliver uses.
     hits.sort((a, b) => (b.publishedAt || "").localeCompare(a.publishedAt || ""));
     return hits[0].videoId || "";
   } catch (e) {
     return "";
   }
 }
-
-
-// Which case a given video IS, per the ledger. Used to refuse a funnel that would advertise one
-// comic on another story's video.
+__name(resolveShort, "resolveShort");
+__name2(resolveShort, "resolveShort");
 async function caseOfVideo(videoId) {
   try {
     const cases = await ledgerCases();
@@ -1214,56 +1137,51 @@ async function caseOfVideo(videoId) {
     return "";
   }
 }
-
-// Dispatch the funnel for ONE named comic record. The typed /funnel resolves the book as
-// "whatever is newest", which is what put OVERBOARD's link on the Operation Nimrod video; this
-// takes the book by case id, so it cannot drift.
+__name(caseOfVideo, "caseOfVideo");
+__name2(caseOfVideo, "caseOfVideo");
 async function funnelComic(env, chatId, caseId, videoIdOverride) {
   const raw = await env.PENDING.get("comic:" + caseId);
   if (!raw) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ I have no record for that comic any more." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C I have no record for that comic any more." });
     return;
   }
   const c = JSON.parse(raw);
   const videoId = videoIdOverride || c.video_id || await resolveShort(c);
   if (!videoId) {
-    await tg(env, "sendMessage", { chat_id: chatId,
-      text: `❌ No short found for "${c.title || c.case}" — its video is not published yet.` });
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: `\u274C No short found for "${c.title || c.case}" \u2014 its video is not published yet.`
+    });
     return;
   }
   if (!c.product_url) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ No Gumroad URL recorded for that book." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C No Gumroad URL recorded for that book." });
     return;
   }
   try {
     await dispatchFunnelComicLink(env, {
-      video_id: videoId, product_url: c.product_url, product_name: c.title || c.case,
-      pages: String(c.pages || ""), hook: c.hook || "", position: "top",
+      video_id: videoId,
+      product_url: c.product_url,
+      product_name: c.title || c.case,
+      pages: String(c.pages || ""),
+      hook: c.hook || "",
+      position: "top",
       notify_chat_id: String(chatId)
     });
   } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the funnel job: ${e.message}` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the funnel job: ${e.message}` });
     return;
   }
-  await tg(env, "sendMessage", { chat_id: chatId,
-    text: `\u{1F517} Linking ${c.title || c.case}\n  → https://youtu.be/${videoId}\n  ${c.product_url}\nResult follows here.` });
+  await tg(env, "sendMessage", {
+    chat_id: chatId,
+    text: `\u{1F517} Linking ${c.title || c.case}
+  \u2192 https://youtu.be/${videoId}
+  ${c.product_url}
+Result follows here.`
+  });
 }
-
-
-// ---- auto-funnel: a day just uploaded, and its comic may already be waiting ----
-//
-// ⭐ THE POINT IS THE TIMING. Comics are now built AHEAD of their shorts, so by the time a day
-// uploads the book often already exists -- and the link is worth most in the first hours, when a
-// short gets its impressions. Funnelling by hand afterwards means the earliest viewers, the
-// biggest group, never saw it.
-//
-// Works on a video that is still PRIVATE or scheduled: the YouTube API edits the snippet of any
-// video you own, and scheduling only governs when it becomes visible. So the description is
-// written while the video is dark and goes live already carrying the link.
-//
-// Deliberately does NOT check whether the comic is published -- funnel_comic_link.yml already
-// refuses a draft product (a draft URL 404s for viewers), and duplicating that check here would
-// give two places to keep in step. If the comic is not ready, the job declines and says so.
+__name(funnelComic, "funnelComic");
+__name2(funnelComic, "funnelComic");
 async function autoFunnelForCase(env, caseName, videoId, chatId) {
   if (!caseName || !videoId) return;
   try {
@@ -1275,31 +1193,34 @@ async function autoFunnelForCase(env, caseName, videoId, chatId) {
       const c = JSON.parse(raw);
       const name = c.case || c.title || "";
       if (!c.product_url || caseHead(name) !== want) continue;
-      // Already linked to this very video: nothing to do, and re-dispatching would spend a
-      // workflow run to be told ALREADY_LINKED.
       if (c.linked_at && c.video_id === videoId) return;
       await dispatchFunnelComicLink(env, {
-        video_id: videoId, product_url: c.product_url, product_name: c.title || c.case,
-        pages: String(c.pages || ""), hook: c.hook || "", position: "top",
+        video_id: videoId,
+        product_url: c.product_url,
+        product_name: c.title || c.case,
+        pages: String(c.pages || ""),
+        hook: c.hook || "",
+        position: "top",
         notify_chat_id: chatId ? String(chatId) : ""
       });
       return;
     }
   } catch (e) {
-    // Never let bookkeeping break an upload notification: the video is already live.
     console.log("autoFunnel failed (non-fatal): " + e.message);
   }
 }
-
+__name(autoFunnelForCase, "autoFunnelForCase");
+__name2(autoFunnelForCase, "autoFunnelForCase");
 // ---------------------------------------------------------------- BOT_MODE
 //
-// Which surface a command or button belongs to. Anything NOT named here counts as shared and
-// is answered by both bots (/commands, /help), which is the safe default: an unrecognised new
-// command keeps working rather than silently disappearing from both bots at once.
+// Which surface a command or button belongs to. Anything NOT named here counts as SHARED and is
+// answered by both bots -- the safe default, so a command added later keeps working instead of
+// silently vanishing from both at once. /quota, /help, /commands and the Kaggle slot buttons
+// (kag/tkag) are shared on purpose: both pipelines spend the same Kaggle GPU accounts.
 var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending"];
 var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel"];
 var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen"];
-var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "tkag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry"];
+var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry"];
 
 function commandSurface(text) {
   const cmd = text.split(/[\s@]/)[0].toLowerCase();
@@ -1307,29 +1228,25 @@ function commandSurface(text) {
   if (COMIC_COMMANDS.includes(cmd)) return "comics";
   return "shared";
 }
-__name(commandSurface, "commandSurface");
 
 function actionSurface(action) {
   if (VIDEO_ACTIONS.includes(action)) return "video";
   if (COMIC_ACTIONS.includes(action)) return "comics";
   return "shared";
 }
-__name(actionSurface, "actionSurface");
 
 function botModeAllows(env, surface) {
   const mode = (env.BOT_MODE || "all").toLowerCase();
   if (mode === "all" || surface === "shared") return true;
   return mode === surface;
 }
-__name(botModeAllows, "botModeAllows");
 
 function otherBotHint(env) {
   const mode = (env.BOT_MODE || "all").toLowerCase();
   return mode === "comics"
-    ? "\u{1F4DA} This is the COMICS bot — it only handles /make, /regen, /topics, /gencode, /freeclaims, /links, /promo and /funnel.\n\nVideo commands (/day, /publish, /short, /title…) and hook clips go to the original Shadow Gasp bot."
-    : "\u{1F3AC} This is the VIDEO bot — comic commands moved to the Shadow Gasp Comics bot.\n\nSend /make, /regen, /topics, /gencode, /freeclaims, /links, /promo or /funnel there instead.";
+    ? "\u{1F4DA} This is the COMICS bot \u2014 it handles /make, /regen, /topics, /gencode, /freeclaims, /links, /promo, /funnel (plus shared /quota).\n\nVideo commands (/day, /publish, /short, /title\u2026) and hook clips go to the original Shadow Gasp bot."
+    : "\u{1F3AC} This is the VIDEO bot \u2014 comic commands moved to the Shadow Gasp Comics bot.\n\nSend /make, /regen, /topics, /gencode, /freeclaims, /links, /promo or /funnel there instead.";
 }
-__name(otherBotHint, "otherBotHint");
 
 async function handleCallback(env, cq) {
   const data = cq.data || "";
@@ -1338,9 +1255,27 @@ async function handleCallback(env, cq) {
   const messageId = cq.message.message_id;
   if (!botModeAllows(env, actionSurface(action))) {
     // Answer the query regardless: an unanswered callback leaves Telegram's spinner turning on
-    // the user's button forever, which reads as a hung bot rather than a wrong one.
+    // the button forever, which reads as a hung bot rather than a wrong one.
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Wrong bot for this button." });
     await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
+    return;
+  }
+  if (action === "kag") {
+    const day = token;
+    const slot = extra;
+    const handle = (KAGGLE_SLOTS.find((r) => r[0] === slot) || [slot, slot])[1];
+    try {
+      await dispatchWorkflowVerified(env, "backfill_stills.yml", { day: String(day), kaggle_account: slot });
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Retrying day ${day} on ${handle}` });
+      await tg(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } });
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u{1F504} Day ${day}'s stills are being regenerated on ${handle} (slot ${slot}). ~25-35 min.`
+      });
+    } catch (e) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Dispatch failed" });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Could not retry day ${day} on ${handle}: ${e.message}` });
+    }
     return;
   }
   if (action === "clip") {
@@ -1383,69 +1318,66 @@ async function handleCallback(env, cq) {
   if (action === "promo" || action === "promogo") {
     const rawP = await env.PENDING.get(`promo:${token}`);
     if (!rawP) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That promo list has expired — run /promo again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That promo list has expired \u2014 run /promo again." });
       return;
     }
     const item = JSON.parse(rawP)[parseInt(extra, 10)];
     if (!item) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that comic — run /promo again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't resolve that comic \u2014 run /promo again." });
       return;
     }
     if (action === "promo") {
-      // Ask WHERE first. Facebook and Instagram get different images and different captions --
-      // an IG caption cannot carry a clickable link at all -- so this is not one post sent to
-      // two places, and pretending otherwise would publish the wrong thing to one of them.
       await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: `\u{1F4E2} ${item.n}\n$${Math.round((item.pr || 0) / 100)}\n${item.u}\n\nPost where?`,
+        text: `\u{1F4E2} ${item.n}
+$${Math.round((item.pr || 0) / 100)}
+${item.u}
+
+Post where?`,
         reply_markup: { inline_keyboard: [[
-          { text: "📘 Facebook", callback_data: `promopv:${token}:${extra}|fb` },
-          { text: "📸 Instagram", callback_data: `promopv:${token}:${extra}|ig` }
+          { text: "\u{1F4D8} Facebook", callback_data: `promopv:${token}:${extra}|fb` },
+          { text: "\u{1F4F8} Instagram", callback_data: `promopv:${token}:${extra}|ig` }
         ]] }
       });
       return;
     }
-    // promogo -- the Accept button on a draft. extra is "<i>|<platform>".
     const [idxG, platG] = String(extra).split("|");
     const itemG = JSON.parse(rawP)[parseInt(idxG, 10)];
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Publishing..." });
     try {
       await dispatchPostPromo(env, {
-        case: (itemG && (itemG.c || itemG.n)) || item.c || item.n,
+        case: itemG && (itemG.c || itemG.n) || item.c || item.n,
         platform: platG === "ig" ? "ig" : "fb",
         mode: "post",
         force: "false"
       });
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the post: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the post: ${e.message}` });
       return;
     }
     await tg(env, "editMessageCaption", {
       chat_id: chatId,
       message_id: messageId,
-      caption: `\u{1F4E2} Publishing to ${platG === "ig" ? "Instagram" : "Facebook"}…\nI'll confirm here when it lands.`
+      caption: `\u{1F4E2} Publishing to ${platG === "ig" ? "Instagram" : "Facebook"}\u2026
+I'll confirm here when it lands.`
     });
     return;
   }
   if (action === "promopv") {
-    // Build the DRAFT. The workflow resolves which of the five covers is postable and what the
-    // caption says, then sends the real image back -- so what you approve is what goes out,
-    // rather than a description of it.
     const [idxV, platV] = String(extra).split("|");
     const rawV = await env.PENDING.get(`promo:${token}`);
     if (!rawV) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That promo list has expired — run /promo again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That promo list has expired \u2014 run /promo again." });
       return;
     }
     const itemV = JSON.parse(rawV)[parseInt(idxV, 10)];
     if (!itemV) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that comic — run /promo again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't resolve that comic \u2014 run /promo again." });
       return;
     }
-    // The preview callback carries no list token, so stash what Accept will need.
     await env.PENDING.put(`promodraft:${token}`, JSON.stringify({ token, idx: idxV }), { expirationTtl: 86400 });
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Building the draft…" });
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Building the draft\u2026" });
     try {
       await dispatchPostPromo(env, {
         case: itemV.c || itemV.n,
@@ -1454,21 +1386,22 @@ async function handleCallback(env, cq) {
         force: "false"
       });
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't build the draft: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't build the draft: ${e.message}` });
       return;
     }
     await tg(env, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
-      text: `\u{1F5BC} Building the ${platV === "ig" ? "Instagram" : "Facebook"} draft for "${itemV.n}" — the image and caption land here in about a minute.`
+      text: `\u{1F5BC} Building the ${platV === "ig" ? "Instagram" : "Facebook"} draft for "${itemV.n}" \u2014 the image and caption land here in about a minute.`
     });
     return;
   }
   if (action === "promono") {
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Cancelled" });
     await tg(env, "editMessageText", {
-      chat_id: chatId, message_id: messageId,
-      text: "✖ Cancelled — nothing was posted."
+      chat_id: chatId,
+      message_id: messageId,
+      text: "\u2716 Cancelled \u2014 nothing was posted."
     });
     return;
   }
@@ -1477,46 +1410,29 @@ async function handleCallback(env, cq) {
     return;
   }
   if (action === "topic") {
-    const raw = await env.PENDING.get(`topics:${token}`);
-    if (!raw) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+    const raw2 = await env.PENDING.get(`topics:${token}`);
+    if (!raw2) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That topic list has expired \u2014 run /topics again." });
       return;
     }
-    const picked = JSON.parse(raw)[parseInt(extra, 10)];
+    const picked = JSON.parse(raw2)[parseInt(extra, 10)];
     if (!picked) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't resolve that topic \u2014 run /topics again." });
       return;
     }
-    // ASK, don't assume. A tap used to dispatch 35 pages immediately, and the only way to get
-    // a bigger book was to retype the full case name into /make -- a name the truncated button
-    // never showed you. The build is now chosen in steps.
-    //
-    // It also puts a deliberate stop between a stray tap and a build that costs ~2h of the
-    // weekly Kaggle budget plus a paid generation.
-    //
-    // callback_data is capped at 64 bytes, which is why every step reuses the SAME page token
-    // and index rather than carrying the case name. The longest link in the chain is
-    // "topicgo:<8>:<i>|<slot>|<pages>|documentary" -- about 40 bytes.
-    //
-    // ⚠️ "|" NOT ":" between the fields. The shared router is
-    // `const [action, token, extra] = data.split(":")`, which keeps only the THIRD segment --
-    // anything after a fourth ":" is silently dropped, and the build would quietly fall back to
-    // defaults while looking like the buttons had worked.
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
-
-    // If this case already has an account on file, the choice is already made -- its art lives
-    // there and building anywhere else would re-render every panel. Skip straight to pages
-    // rather than offer a choice that reserveCase() is going to override anyway.
     const known = await peekCase(env, picked);
     if (known && known.slot) {
-      const accts = await kaggleAccounts(env);
-      const hit = accts.find((a) => a.slot === known.slot);
+      const accts2 = await kaggleAccounts(env);
+      const hit = accts2.find((a) => a.slot === known.slot);
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: `\u{1F4D6} ${picked}\n\n`
-            + `\u{1F512} Kaggle: ${hit ? hit.handle : known.slot} — fixed, this book's art is already there`
-            + (known.issue ? `\n\u{1F516} Issue #${String(known.issue).padStart(2, "0")}` : "")
-            + `\n\n${PAGE_QUESTION}`,
+        text: `\u{1F4D6} ${picked}
+
+\u{1F512} Kaggle: ${hit ? hit.handle : known.slot} \u2014 fixed, this book's art is already there` + (known.issue ? `
+\u{1F516} Issue #${String(known.issue).padStart(2, "0")}` : "") + `
+
+${PAGE_QUESTION}`,
         reply_markup: pagesKeyboard(token, extra, known.slot)
       });
       return;
@@ -1524,10 +1440,12 @@ async function handleCallback(env, cq) {
     const accts = await kaggleAccounts(env);
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F4D6} ${picked}\n\nWhich Kaggle account should build it?\n\n`
-          + "Each build spends ~2h of that account's 30h weekly GPU quota.\n"
-          + "⚠️ This is a one-time choice: the panels are stored on whichever account "
-          + "renders them, so every later rebuild of this book stays here too.",
+      text: `\u{1F4D6} ${picked}
+
+Which Kaggle account should build it?
+
+Each build spends ~2h of that account's 30h weekly GPU quota.
+\u26A0\uFE0F This is a one-time choice: the panels are stored on whichever account renders them, so every later rebuild of this book stays here too.`,
       reply_markup: { inline_keyboard: accts.map((a) => [{
         text: a.slot === "-" ? `${a.handle} (default)` : a.handle,
         callback_data: `tkag:${token}:${extra}|${a.slot}`
@@ -1536,16 +1454,15 @@ async function handleCallback(env, cq) {
     return;
   }
   if (action === "tkag") {
-    // extra is "<index>|<slot>"
     const [idxK, slotK] = String(extra).split("|");
     const rawK = await env.PENDING.get(`topics:${token}`);
     if (!rawK) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That topic list has expired \u2014 run /topics again." });
       return;
     }
     const pickedK = JSON.parse(rawK)[parseInt(idxK, 10)];
     if (!pickedK) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't resolve that topic \u2014 run /topics again." });
       return;
     }
     const acctsK = await kaggleAccounts(env);
@@ -1554,66 +1471,66 @@ async function handleCallback(env, cq) {
     await tg(env, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
-      text: `\u{1F4D6} ${pickedK}\n\n\u{1F5A5}️ Kaggle: ${hitK ? hitK.handle : slotK}\n\n${PAGE_QUESTION}`,
+      text: `\u{1F4D6} ${pickedK}
+
+\u{1F5A5}\uFE0F Kaggle: ${hitK ? hitK.handle : slotK}
+
+${PAGE_QUESTION}`,
       reply_markup: pagesKeyboard(token, idxK, slotK)
     });
     return;
   }
   if (action === "tpag") {
-    // extra is "<index>|<slot>|<pages>"
     const [idxP, slotP, pagesP] = String(extra).split("|");
     const rawP = await env.PENDING.get(`topics:${token}`);
     if (!rawP) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That topic list has expired \u2014 run /topics again." });
       return;
     }
     const pickedP = JSON.parse(rawP)[parseInt(idxP, 10)];
     if (!pickedP) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't resolve that topic \u2014 run /topics again." });
       return;
     }
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `${pagesP} pages` });
     await tg(env, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
-      text: `\u{1F4D6} ${pickedP}\n\n${pagesP} pages\n\nWhich page style?\n`
-          + "\u{1F3AC} cinematic — widescreen, wide tiers, splashes used generously\n"
-          + "\u{1F9E9} mosaic — restless, tier structure changes every page\n"
-          + "\u{1F4D6} classic — house rhythm, wide establishing then tighter beats\n"
-          + "\u{1F512} chamber — close and claustrophobic, paired tall panels\n"
-          + "⚡ staccato — fast cutting, abrupt changes of size\n"
-          + "\u{1F4C1} documentary — dense evidential grid, splashes rare",
+      text: `\u{1F4D6} ${pickedP}
+
+${pagesP} pages
+
+Which page style?
+\u{1F3AC} cinematic \u2014 widescreen, wide tiers, splashes used generously
+\u{1F9E9} mosaic \u2014 restless, tier structure changes every page
+\u{1F4D6} classic \u2014 house rhythm, wide establishing then tighter beats
+\u{1F512} chamber \u2014 close and claustrophobic, paired tall panels
+\u26A1 staccato \u2014 fast cutting, abrupt changes of size
+\u{1F4C1} documentary \u2014 dense evidential grid, splashes rare`,
       reply_markup: topicStyleKeyboard(token, idxP, slotP, pagesP)
     });
     return;
   }
   if (action === "topicgo") {
-    const raw = await env.PENDING.get(`topics:${token}`);
-    if (!raw) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That topic list has expired — run /topics again." });
+    const raw2 = await env.PENDING.get(`topics:${token}`);
+    if (!raw2) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That topic list has expired \u2014 run /topics again." });
       return;
     }
-    // extra is "<index>|<slot>|<pages>|<style>". The router already consumed the ":"
-    // separators, so every field after the index rides in on a character it does not split on.
     const [idxStr, slotStr, pagesStr, styleStr] = String(extra).split("|");
-    const picked2 = JSON.parse(raw)[parseInt(idxStr, 10)];
+    const picked2 = JSON.parse(raw2)[parseInt(idxStr, 10)];
     const pages2 = String(parseInt(pagesStr, 10) || 35);
-    const profile2 = (!styleStr || styleStr === "auto") ? "" : styleStr;
+    const profile2 = !styleStr || styleStr === "auto" ? "" : styleStr;
     if (!picked2) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Couldn't resolve that topic — run /topics again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Couldn't resolve that topic \u2014 run /topics again." });
       return;
     }
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Reserving the issue number..." });
-
-    // Reserve BEFORE dispatching. This is the whole point of the wizard: the number and the
-    // account are settled against issues.json now, in one place, rather than by a build that
-    // will not commit its answer for another three hours.
     const res = await reserveCase(env, picked2, slotStr || "-");
     const accts2 = await kaggleAccounts(env);
-    const slotFinal = res.error ? (slotStr || "-") : res.slot;
+    const slotFinal = res.error ? slotStr || "-" : res.slot;
     const hit2 = accts2.find((a) => a.slot === slotFinal);
     const acctLabel = hit2 ? hit2.handle : slotFinal;
-
     try {
       await dispatchPipeline(env, {
         case: picked2,
@@ -1626,26 +1543,27 @@ async function handleCallback(env, cq) {
         dry_run: "false"
       });
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the build: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the build: ${e.message}` });
       return;
     }
-
     let note = "";
     if (res.error) {
-      // Say so plainly. Falling back silently is how you end up with two books numbered the
-      // same and no idea when it started.
-      note = `\n\n⚠️ Couldn't reserve the issue number (${res.error}) — the build will pick one`
-           + " itself, so don't start a second build until this one finishes.";
+      note = `
+
+\u26A0\uFE0F Couldn't reserve the issue number (${res.error}) \u2014 the build will pick one itself, so don't start a second build until this one finishes.`;
     } else if (res.pinned && slotStr && slotStr !== res.slot) {
-      note = `\n\n\u{1F512} Ignored the account you picked: this book's art is already on `
-           + `${acctLabel}, and building elsewhere would re-render every panel.`;
+      note = `
+
+\u{1F512} Ignored the account you picked: this book's art is already on ${acctLabel}, and building elsewhere would re-render every panel.`;
     }
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F4D6} Building "${picked2}"\n`
-          + (res.error ? "" : `\u{1F516} Issue #${String(res.issue).padStart(2, "0")}\n`)
-          + `\u{1F4C4} ${pages2} pages · ${profile2 || "auto"} layout\n`
-          + `\u{1F5A5}️ Kaggle: ${acctLabel}\n\nThe draft lands here when it's done.${note}`
+      text: `\u{1F4D6} Building "${picked2}"
+` + (res.error ? "" : `\u{1F516} Issue #${String(res.issue).padStart(2, "0")}
+`) + `\u{1F4C4} ${pages2} pages \xB7 ${profile2 || "auto"} layout
+\u{1F5A5}\uFE0F Kaggle: ${acctLabel}
+
+The draft lands here when it's done.${note}`
     });
     return;
   }
@@ -1665,12 +1583,12 @@ async function handleCallback(env, cq) {
     return;
   }
   if (action === "retry") {
-    const raw = await env.PENDING.get("retry:" + token);
-    if (!raw) {
+    const raw2 = await env.PENDING.get("retry:" + token);
+    if (!raw2) {
       await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This retry has expired -- use /make" });
       return;
     }
-    const b = JSON.parse(raw);
+    const b = JSON.parse(raw2);
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Retrying..." });
     try {
       await dispatchPipeline(env, {
@@ -1684,19 +1602,19 @@ async function handleCallback(env, cq) {
       return;
     }
     await tg(env, "editMessageText", {
-      chat_id: chatId, message_id: messageId,
-      text: "\u{1F501} Retrying \"" + (b.case || "auto-picked case") + "\" after the failure at " + b.step +
-            ".\nCached script, recovered art \u2014 only what broke is redone."
+      chat_id: chatId,
+      message_id: messageId,
+      text: '\u{1F501} Retrying "' + (b.case || "auto-picked case") + '" after the failure at ' + b.step + ".\nCached script, recovered art \u2014 only what broke is redone."
     });
     return;
   }
   if (action === "funnel") {
-    const raw = await env.PENDING.get(`pending:${token}`);
-    if (!raw) {
+    const raw2 = await env.PENDING.get(`pending:${token}`);
+    if (!raw2) {
       await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "This draft has expired -- rebuild it with /make" });
       return;
     }
-    const rec = JSON.parse(raw);
+    const rec = JSON.parse(raw2);
     if (!rec.video_id) {
       await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "No published short is linked to this case" });
       return;
@@ -1718,7 +1636,7 @@ async function handleCallback(env, cq) {
 The job refuses if the Gumroad product is still a draft -- tap Approve first so the link isn't a 404 for viewers. I'll report back here.`
       });
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the funnel job: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the funnel job: ${e.message}` });
     }
     return;
   }
@@ -1978,6 +1896,8 @@ __name(handleCallback, "handleCallback");
 __name2(handleCallback, "handleCallback");
 __name22(handleCallback, "handleCallback");
 __name222(handleCallback, "handleCallback");
+__name2222(handleCallback, "handleCallback");
+__name22222(handleCallback, "handleCallback");
 async function acceptHookClip(env, chatId, dayNum, fileId) {
   dayNum = String(dayNum);
   await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it \u2014 committing as day ${dayNum}'s hook video, then queuing it for the scheduled 04:30/05:15 IST render+publish slot. I'll confirm here once it's live.` });
@@ -2010,6 +1930,8 @@ Want a different title than the AI-generated one? Tap below -- only works before
 }
 __name(acceptHookClip, "acceptHookClip");
 __name2(acceptHookClip, "acceptHookClip");
+__name22(acceptHookClip, "acceptHookClip");
+__name222(acceptHookClip, "acceptHookClip");
 var COMMAND_LIST = [
   "\u{1F4D6} SHADOW GASP BOT \u2014 all commands",
   "",
@@ -2039,33 +1961,24 @@ var COMMAND_LIST = [
   "/title <N>  \u2014 draft an alt title (Shock/Curiosity/Open-loop/Direct), tap Apply to use it",
   "",
   "\u{1F4CA} REPORTS (nothing is built)",
+  "/quota  \u2014 remaining weekly Kaggle GPU on all three accounts, before you spend any of it",
   "/trending  \u2014 trending true-crime stories not yet covered",
   "/retention  \u2014 last 21 days views/retention/drop-off, ranked by retention and by reach",
   "",
   "/help  \u2014 this list"
 ].join("\n");
-
 async function handleMessage(env, msg) {
   const text = (msg.text || "").trim();
   const chatId = msg.chat.id;
-  // BOT_MODE splits ONE bundle across TWO bots instead of forking the code.
-  //
-  // A hand-split of this file is how two copies drift apart, and this project has paid that
-  // bill twice already (two cases_used.json ledgers at 107 vs 74 videos; two comic-approval
-  // pipelines where only one was ever live). So the comics bot and the video bot run the SAME
-  // deployment and this var decides which half of the surface each answers. Turning the old
-  // bot video-only is then a variable change, not a code change, reversible in seconds.
-  //
-  // Unset (or "all") keeps every command -- exactly what the single bot did -- so deploying
-  // this on its own changes nothing until a BOT_MODE is actually set.
+  // BOT_MODE splits ONE bundle across TWO bots instead of forking the code. Unset (or "all")
+  // keeps every command, which is what the single bot did, so this is a no-op until a mode is set.
   if (text.startsWith("/") && !botModeAllows(env, commandSurface(text))) {
     await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
     return;
   }
   const videoObj = msg.video || (msg.document && msg.document.mime_type?.startsWith("video/") ? msg.document : null);
   if (videoObj && !botModeAllows(env, "video")) {
-    // A hook clip sent to the comics bot: say so, never swallow it. A clip that vanishes looks
-    // exactly like a clip that was accepted -- and that is how day 45 and 46 went unnoticed.
+    // Say so rather than swallowing it: a clip that vanishes looks exactly like one accepted.
     await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
     return;
   }
@@ -2159,7 +2072,7 @@ Tip: replying directly to a day's hook-request message skips this question.`,
       if (st) {
         await tg(env, "sendMessage", {
           chat_id: chatId,
-          text: `✅ Day ${dayNum} is already published${st.case ? ` — "${st.case}"` : ""}${st.videoId ? `
+          text: `\u2705 Day ${dayNum} is already published${st.case ? ` \u2014 "${st.case}"` : ""}${st.videoId ? `
 https://youtu.be/${st.videoId}${st.publishedAt ? ` (${st.publishedAt})` : ""}` : ""}.
 
 I haven't armed a hook wait, so replying with a clip here can't re-render or re-upload it. If you really do want to replace its hook video, send \`/day ${dayNum} force\`.`
@@ -2223,7 +2136,7 @@ Reply here with the finished Flow video when ready.`);
       if (pst) {
         await tg(env, "sendMessage", {
           chat_id: chatId,
-          text: `✅ Day ${dayNum} is already published${pst.case ? ` — "${pst.case}"` : ""}${pst.videoId ? `
+          text: `\u2705 Day ${dayNum} is already published${pst.case ? ` \u2014 "${pst.case}"` : ""}${pst.videoId ? `
 https://youtu.be/${pst.videoId}${pst.publishedAt ? ` (${pst.publishedAt})` : ""}` : ""}.
 
 Publishing again would render it and upload a SECOND copy to YouTube. Nothing has been dispatched. If that's genuinely what you want, send \`/publish ${dayNum} force\` (the \`at <time>\` forms still work alongside it).`
@@ -2356,10 +2269,8 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     return;
   }
   if (text.startsWith("/topics")) {
-    const rest = text.slice("/topics".length).trim().toLowerCase();
-    const kind = rest.startsWith("back") ? "bk"
-      : (rest.startsWith("done") || rest.startsWith("comp") || rest.startsWith("link")) ? "dn"
-      : "up";
+    const rest2 = text.slice("/topics".length).trim().toLowerCase();
+    const kind = rest2.startsWith("back") ? "bk" : rest2.startsWith("done") || rest2.startsWith("comp") || rest2.startsWith("link") ? "dn" : "up";
     await sendTopicsPage(env, chatId, kind, 0, null);
     return;
   }
@@ -2368,39 +2279,35 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     try {
       [products, posted] = await Promise.all([gumroadProducts(env), promoPosted(env)]);
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't read the storefront: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't read the storefront: ${e.message}` });
       return;
     }
     if (!products.length) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "No PUBLISHED comics to promote. Drafts are skipped — a link to a draft is a 404." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "No PUBLISHED comics to promote. Drafts are skipped \u2014 a link to a draft is a 404." });
       return;
     }
     products.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     const token = Math.random().toString(36).slice(2, 10);
-    await env.PENDING.put(`promo:${token}`,
+    await env.PENDING.put(
+      `promo:${token}`,
       JSON.stringify(products.map((p) => ({ n: p.name, u: p.short_url, c: p.custom_permalink, pr: p.price }))),
-      { expirationTtl: 86400 });
-
+      { expirationTtl: 86400 }
+    );
     const lines = [];
     const buttons = [];
     products.forEach((p, i) => {
       const done = posted.has(p.custom_permalink || "");
-      lines.push(`${i + 1}. ${p.name}  — $${Math.round((p.price || 0) / 100)}${done ? "  ✅ posted" : ""}`);
-      // Already-posted books are TEXT, not buttons. The marker stops a duplicate server-side
-      // anyway, but offering a tap that will be refused wastes the tap and teaches you to
-      // ignore the refusal.
+      lines.push(`${i + 1}. ${p.name}  \u2014 $${Math.round((p.price || 0) / 100)}${done ? "  \u2705 posted" : ""}`);
       if (!done) buttons.push({ text: String(i + 1), callback_data: `promo:${token}:${i}` });
     });
     const rows = [];
     for (let i = 0; i < buttons.length; i += 4) rows.push(buttons.slice(i, i + 4));
-
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: "\u{1F4E2} PROMOTE A COMIC ON FACEBOOK\n\n" + lines.join("\n") +
-            "\n\nTap a number to see the exact post before anything goes out. " +
-            `The page has ~1,336 followers and the link goes IN the post.` +
-            (rows.length ? "" : "\n\n✅ Every published comic has already been posted."),
-      reply_markup: rows.length ? { inline_keyboard: rows } : undefined
+      text: "\u{1F4E2} PROMOTE A COMIC ON FACEBOOK\n\n" + lines.join("\n") + `
+
+Tap a number to see the exact post before anything goes out. The page has ~1,336 followers and the link goes IN the post.` + (rows.length ? "" : "\n\n\u2705 Every published comic has already been posted."),
+      reply_markup: rows.length ? { inline_keyboard: rows } : void 0
     });
     return;
   }
@@ -2416,53 +2323,54 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       const raw = await env.PENDING.get(k.name);
       if (!raw) continue;
       const c = JSON.parse(raw);
-      // A record minted before its short existed (or before the lookup was fixed) carries no
-      // video_id. Resolve it now rather than reporting "(none recorded)" for a video the ledger
-      // knows perfectly well.
       if (!c.video_id) c.video_id = await resolveShort(c);
-      // Only claim a link when one was actually recorded. Saying "link it" beside a video that
-      // already carries the link reads as outstanding work when there is none.
-      const state = c.linked_at
-        ? "  \u2705 linked " + c.linked_at + "  (re-check: /funnel " + c.video_id + ")"
-        : "  \u{1F517} not linked yet \u2014 " + (c.video_id ? "/funnel " + c.video_id : "/funnel <videoId>");
+      const state = c.linked_at ? "  \u2705 linked " + c.linked_at + "  (re-check: /funnel " + c.video_id + ")" : "  \u{1F517} not linked yet \u2014 " + (c.video_id ? "/funnel " + c.video_id : "/funnel <videoId>");
       rows.push(
-        (c.issue ? "#" + c.issue + " " : "") + (c.title || c.case) + "\n" +
-        "  store: " + (c.product_url || "(not staged)") + "\n" +
-        "  short: " + (c.video_id ? "https://youtu.be/" + c.video_id : "(none recorded)") + "\n" +
-        state
+        (c.issue ? "#" + c.issue + " " : "") + (c.title || c.case) + "\n  store: " + (c.product_url || "(not staged)") + "\n  short: " + (c.video_id ? "https://youtu.be/" + c.video_id : "(none recorded)") + "\n" + state
       );
-      // ⚠️ A BUTTON, not a typed command. /links used to print "/funnel <videoId>", and typing
-      // that pairs the video with the LATEST book rather than this one -- following this very
-      // suggestion is what put OVERBOARD's link on the Operation Nimrod video. The button carries
-      // the case id, so the book cannot drift between reading the list and tapping.
       if (!c.linked_at && c.video_id) {
-        buttons.push([{ text: `\u{1F517} Funnel ${c.issue ? "#" + c.issue : (c.title || c.case).slice(0, 24)}`,
-                        callback_data: `funnelc:${k.name.slice("comic:".length)}` }]);
+        buttons.push([{
+          text: `\u{1F517} Funnel ${c.issue ? "#" + c.issue : (c.title || c.case).slice(0, 24)}`,
+          callback_data: `funnelc:${k.name.slice("comic:".length)}`
+        }]);
       }
     }
-    await tg(env, "sendMessage", {
-      chat_id: chatId,
-      text: "\u{1F4DA} COMICS\n\n" + rows.join("\n\n") +
-            "\n\nTap a button to link one \u2014 it pins that exact book. Typing /funnel <videoId> " +
-            "uses whichever comic is NEWEST, which is rarely what you mean when more than one is " +
-            "in flight.",
-      reply_markup: buttons.length ? { inline_keyboard: buttons } : undefined
-    });
+    const LIMIT = 3500;
+    const footer = "\n\nTap a button to link one \u2014 it pins that exact book. Typing /funnel <videoId> uses whichever comic is NEWEST, which is rarely what you mean when more than one is in flight.";
+    const pages = [];
+    let cur = "";
+    for (const row of rows) {
+      const candidate = cur ? cur + "\n\n" + row : row;
+      if (candidate.length > LIMIT && cur) {
+        pages.push(cur);
+        cur = row;
+      } else {
+        cur = candidate;
+      }
+    }
+    if (cur) pages.push(cur);
+    for (let i = 0; i < pages.length; i++) {
+      const head = pages.length > 1 ? `\u{1F4DA} COMICS (${i + 1}/${pages.length})
+
+` : "\u{1F4DA} COMICS\n\n";
+      const last = i === pages.length - 1;
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: head + pages[i] + (last ? footer : ""),
+        // Buttons ride on the final page so one keyboard covers the whole list.
+        reply_markup: last && buttons.length ? { inline_keyboard: buttons } : void 0
+      });
+    }
     return;
   }
   if (text.startsWith("/funnel")) {
-    // Put a published comic's link into the description of the short it was made from.
-    //
-    // Manual counterpart to the draft's Funnel button. Args are all optional and order does not
-    // matter: a YouTube id looks like 11 chars of [A-Za-z0-9_-], a book token starts with the
-    // letters we mint, so they can be told apart without asking the user to remember an order.
-    // Position, not pattern. An approval token from secrets.token_urlsafe(8) is 11 base64url
-    // characters -- exactly the shape of a YouTube id -- so guessing which is which reads one as
-    // the other. One argument means the video; two mean token then video.
     const args = text.trim().split(/\s+/).slice(1);
     let token = null, vid = null;
     if (args.length === 1) vid = args[0];
-    else if (args.length >= 2) { token = args[0]; vid = args[1]; }
+    else if (args.length >= 2) {
+      token = args[0];
+      vid = args[1];
+    }
     if (!token) token = await env.PENDING.get("latest_pending");
     const raw = token ? await env.PENDING.get("pending:" + token) : null;
     if (!raw) {
@@ -2474,21 +2382,18 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     }
     const rec = JSON.parse(raw);
     const videoId = vid || rec.video_id || await resolveShort(rec);
-    // ⚠️ REFUSE A MISMATCH. With no token, `rec` is whatever book is NEWEST -- not the one the
-    // reader had in mind when they copied a video id out of /links. That silently advertised
-    // OVERBOARD on the Operation Nimrod video. If the named video belongs to a different case,
-    // stop: the fix is a tap in /links, or the explicit token form.
     if (vid && videoId) {
       const owner = await caseOfVideo(videoId);
       const book = rec.case || rec.title || "";
       if (owner && book && caseHead(owner) !== caseHead(book)) {
         await tg(env, "sendMessage", {
           chat_id: chatId,
-          text: `\u26A0\uFE0F That pairing looks wrong, so nothing was dispatched.\n\n` +
-                `https://youtu.be/${videoId} is "${owner}"\n` +
-                `but the newest comic is "${book}".\n\n` +
-                `Use /links and tap the button for the comic you mean \u2014 that pins the book. ` +
-                `To force this pairing anyway: /funnel ${token} ${videoId}`
+          text: `\u26A0\uFE0F That pairing looks wrong, so nothing was dispatched.
+
+https://youtu.be/${videoId} is "${owner}"
+but the newest comic is "${book}".
+
+Use /links and tap the button for the comic you mean \u2014 that pins the book. To force this pairing anyway: /funnel ${token} ${videoId}`
         });
         return;
       }
@@ -2496,7 +2401,7 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     if (!videoId) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
-        text: "\u274C No short found for \"" + (rec.title || rec.case) + "\" \u2014 not in the record and not in the ledger either.\nPass the video id: /funnel <videoId>"
+        text: '\u274C No short found for "' + (rec.title || rec.case) + '" \u2014 not in the record and not in the ledger either.\nPass the video id: /funnel <videoId>'
       });
       return;
     }
@@ -2522,26 +2427,16 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     }
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: "\u{1F50E} Checking \"" + (rec.title || rec.case) + "\" against https://youtu.be/" + videoId +
-            "\nIf the link is already there it changes nothing and says so; otherwise it adds it. " +
-            "Refuses while the product is a draft, since a draft URL 404s for viewers. " +
-            "Result follows in under a minute."
+      text: '\u{1F50E} Checking "' + (rec.title || rec.case) + '" against https://youtu.be/' + videoId + "\nIf the link is already there it changes nothing and says so; otherwise it adds it. Refuses while the product is a draft, since a draft URL 404s for viewers. Result follows in under a minute."
     });
     return;
   }
   if (text.startsWith("/regen")) {
-    // Re-roll specific panels after a human looked at the OCR contact sheets. The pipeline no
-    // longer regenerates anything on its own: the detector misses the defect it exists for and
-    // its fix-kernel has never succeeded, so the judgement belongs here.
-    // The token is OPTIONAL. It only ever appears in a contact-sheet caption, so it is
-    // unfindable once the chat scrolls -- and "re-roll these panels" almost always means the
-    // book that just arrived. A panel name always looks like p<digits>_<something>, so anything
-    // that does not is taken as a token; with none given, fall back to the newest book.
     const parts = text.trim().split(/\s+/).slice(1);
     let token = null;
     if (parts.length && !/^p\d+[_-]/i.test(parts[0])) token = parts.shift();
     if (!token) token = await env.PENDING.get("latest_pending");
-    const panels = parts.map((p) => (p.endsWith(".jpg") ? p : p + ".jpg"));
+    const panels = parts.map((p) => p.endsWith(".jpg") ? p : p + ".jpg");
     if (!panels.length) {
       await tg(env, "sendMessage", {
         chat_id: chatId,
@@ -2550,12 +2445,12 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       return;
     }
     if (!token) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ No recent book to re-roll. Build one with /make first." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C No recent book to re-roll. Build one with /make first." });
       return;
     }
     const raw = await env.PENDING.get(`pending:${token}`);
     if (!raw) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That token has expired or is not a book I know about." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That token has expired or is not a book I know about." });
       return;
     }
     const rec = JSON.parse(raw);
@@ -2564,30 +2459,32 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     try {
       await dispatchPipeline(env, {
         case: rec.case,
-        // ⚠️ target_pages is part of the SCRIPT-CACHE KEY, so a wrong value is a cache miss: a
-        // freshly generated script, every panel prompt different, and recovery -- which matches
-        // art to captions per panel on the exact prompt text -- rejecting all of it. The re-roll
-        // then quietly becomes a full rebuild. "35" was a guess; the pipeline's default is 25.
-        target_pages: String(rec.pages || "25"),
-        // ⭐⭐ Search the account that actually HOLDS this book's art. A case is pinned to the
-        // account that generated it and list_case_kernels only ever looks at the one it is
-        // handed, so dispatching without a slot sent every re-roll to the default pair. PAPER
-        // GHOST was built on slot C; its re-roll found nothing on the default account and
-        // rebuilt all 164 panels instead of the one that was asked for.
-        kaggle_account: rec.kaggle_account || "",
+        target_pages: String(rec.pages || "35"),
         regen_panels: panels.join(" "),
         dry_run: "false"
       });
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the re-roll: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the re-roll: ${e.message}` });
       return;
     }
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: `\u{1F3A8} Re-rolling ${panels.length} panel(s) on a fresh seed: ${panels.join(", ")}` +
-            (unknown.length ? `\n⚠️ not in this book's flagged list, will be ignored: ${unknown.join(", ")}` : "") +
-            `\nEverything else is recovered, so only these are rendered. You'll get the rebuilt PDF here.`
+      text: `\u{1F3A8} Re-rolling ${panels.length} panel(s) on a fresh seed: ${panels.join(", ")}` + (unknown.length ? `
+\u26A0\uFE0F not in this book's flagged list, will be ignored: ${unknown.join(", ")}` : "") + `
+Everything else is recovered, so only these are rendered. You'll get the rebuilt PDF here.`
     });
+    return;
+  }
+  if (text.startsWith("/quota")) {
+    try {
+      await dispatchWorkflowVerified(env, "kaggle_quota.yml", {});
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: "\u{1F4CA} Checking Kaggle GPU quota on all three accounts \u2014 the table lands here in about 30s."
+      });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Could not start the quota check: " + e.message });
+    }
     return;
   }
   if (!text.startsWith("/make")) {
@@ -2631,17 +2528,17 @@ __name(handleMessage, "handleMessage");
 __name2(handleMessage, "handleMessage");
 __name22(handleMessage, "handleMessage");
 __name222(handleMessage, "handleMessage");
+__name2222(handleMessage, "handleMessage");
+__name22222(handleMessage, "handleMessage");
 function b_case_id(b) {
-  // The slug the pipeline uses for a case; falls back to deriving one from the case name so an
-  // older caller that does not send it still lands in the index.
   return b.case_id || (b.case || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 }
 __name(b_case_id, "b_case_id");
-
+__name2(b_case_id, "b_case_id");
+__name22(b_case_id, "b_case_id");
 async function sendApprovalMessage(env, { token, caseName, productId, title, videoId }) {
-  const funnelLine = videoId
-    ? `\n\u{1F517} From published short: https://youtu.be/${videoId}`
-    : "";
+  const funnelLine = videoId ? `
+\u{1F517} From published short: https://youtu.be/${videoId}` : "";
   return tg(env, "sendMessage", {
     chat_id: env.TELEGRAM_CHAT_ID,
     text: `${title} \u2014 draft ready for review (Gumroad draft: ${productId})${funnelLine}`,
@@ -2652,6 +2549,8 @@ __name(sendApprovalMessage, "sendApprovalMessage");
 __name2(sendApprovalMessage, "sendApprovalMessage");
 __name22(sendApprovalMessage, "sendApprovalMessage");
 __name222(sendApprovalMessage, "sendApprovalMessage");
+__name2222(sendApprovalMessage, "sendApprovalMessage");
+__name22222(sendApprovalMessage, "sendApprovalMessage");
 async function sweepExpiredHookWaits(env) {
   const list = await env.PENDING.list({ prefix: "awaiting_short_hook:" });
   for (const key of list.keys) {
@@ -2689,6 +2588,8 @@ __name(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name22(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
+__name2222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
+__name22222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -2763,22 +2664,14 @@ var worker_default = {
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
       const b = await request.json();
-      // A failed build used to be silent -- you learned about it by not receiving a comic.
-      // Retrying is cheap: the script comes back from the KV cache and the art from the
-      // completed Kaggle kernel, so a retry resumes at whatever actually broke.
       const token = "r" + Math.random().toString(36).slice(2, 10);
       await env.PENDING.put("retry:" + token, JSON.stringify(b), { expirationTtl: 604800 });
       await tg(env, "sendMessage", {
         chat_id: env.TELEGRAM_CHAT_ID,
-        text: "\u274C Build FAILED at: " + b.step + "\n\n" +
-              "Case: " + (b.case || "(auto-picked)") + "\n" +
-              "Pages: " + (b.target_pages || "default") + (b.profile ? " \u00b7 style " + b.profile : "") + "\n" +
-              "Log: " + b.run_url + "\n\n" +
-              "Retrying skips what already succeeded \u2014 the script is cached and the art is " +
-              "recovered from the Kaggle kernel, so it picks up at the step that broke.",
+        text: "\u274C Build FAILED at: " + b.step + "\n\nCase: " + (b.case || "(auto-picked)") + "\nPages: " + (b.target_pages || "default") + (b.profile ? " \xB7 style " + b.profile : "") + "\nLog: " + b.run_url + "\n\nRetrying skips what already succeeded \u2014 the script is cached and the art is recovered from the Kaggle kernel, so it picks up at the step that broke.",
         reply_markup: { inline_keyboard: [[
           { text: "\u{1F501} Retry from here", callback_data: "retry:" + token }
-        ]]}
+        ]] }
       });
       return new Response("ok", { status: 200 });
     }
@@ -2788,39 +2681,36 @@ var worker_default = {
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { token, case: caseName, product_id, title, video_id, product_url, pages,
-              kaggle_account } = body;
+      const { token, case: caseName, product_id, title, video_id, product_url, pages } = body;
       if (!token || !caseName || !product_id) {
         return new Response("missing fields", { status: 400 });
       }
-      // The token is only ever shown in a contact-sheet caption, so it is unfindable once the
-      // chat scrolls. Remember the newest book too and let /regen default to it.
       await env.PENDING.put("latest_pending", token);
-      // A DURABLE record per comic, separate from the approval token which expires. This is
-      // what /links reads: without it there was no way to answer "which video goes with which
-      // comic" except grepping cases_used.json by hand.
       if (b_case_id(body)) {
         await env.PENDING.put("comic:" + b_case_id(body), JSON.stringify({
-          title: body.title || body.case, case: body.case,
-          product_url: body.product_url || "", video_id: body.video_id || "",
-          issue: body.issue_no || "", pages: body.pages || "", hook: body.hook || ""
+          title: body.title || body.case,
+          case: body.case,
+          product_url: body.product_url || "",
+          video_id: body.video_id || "",
+          issue: body.issue_no || "",
+          pages: body.pages || "",
+          hook: body.hook || ""
         }));
       }
       await env.PENDING.put(`pending:${token}`, JSON.stringify({
-        case: caseName, product_id,
-        video_id: video_id || "", product_url: product_url || "", pages: pages || "",
-        title: title || caseName,
-        // ⭐⭐ WHICH KAGGLE ACCOUNT HOLDS THIS BOOK'S ART.
-        //
-        // /make picks a slot per build, but nothing ever wrote down which one won -- and cases/
-        // is deleted at the end of the run, so this KV record is the only place the fact can
-        // survive. Without it /regen dispatched with no slot, searched the default pair for a
-        // book built on B or C, found nothing, and rebuilt every panel.
-        // "" is a real answer here (the default pair), not a missing one.
-        kaggle_account: kaggle_account || ""
+        case: caseName,
+        product_id,
+        video_id: video_id || "",
+        product_url: product_url || "",
+        pages: pages || "",
+        title: title || caseName
       }));
       await sendApprovalMessage(env, {
-        token, caseName, productId: product_id, title: title || caseName, videoId: video_id || ""
+        token,
+        caseName,
+        productId: product_id,
+        title: title || caseName,
+        videoId: video_id || ""
       });
       return new Response("ok", { status: 200 });
     }
@@ -2834,10 +2724,6 @@ var worker_default = {
       if (!key || !script || !panel_prompts) {
         return new Response("missing fields", { status: 400 });
       }
-      // No TTL. This was 7 days, on the assumption the cache only had to survive a same-week
-      // retry -- but cases/ is deleted after every run and the repo is public, so KV is the
-      // ONLY durable copy of a script that costs real money to produce. An expiry here means
-      // silently losing it. A script is a few hundred KB against a 1GB namespace.
       await env.PENDING.put(`script_cache:${key}`, JSON.stringify({ script, panel_prompts }));
       return new Response("ok", { status: 200 });
     }
@@ -2863,11 +2749,7 @@ var worker_default = {
       if (!day || !video_id && !fb_post_id && !ig_media_id) {
         return new Response("missing fields", { status: 400 });
       }
-      // Fire and forget, before composing the message: if a comic for this case is already
-      // published, its link should be on the video from the first minute rather than whenever
-      // somebody remembers to run /funnel.
       await autoFunnelForCase(env, caseName, video_id, chat_id);
-
       const lines = [];
       if (video_id) {
         lines.push(`\u2705 Day ${day} is LIVE on YouTube: https://youtu.be/${video_id}`);
@@ -3019,27 +2901,31 @@ No answer in 15 min defaults to STOP.`,
         return new Response("forbidden", { status: 403 });
       }
       const body = await request.json();
-      const { day, job, step, run_url, chat_id } = body;
+      const { day, job, step, run_url, chat_id, account, reason } = body;
       if (!day || !job) {
         return new Response("missing fields", { status: 400 });
+      }
+      let markup = void 0;
+      let extraText = "";
+      if (reason === "stills" && /^\d+$/.test(String(day))) {
+        const others = KAGGLE_SLOTS.filter((r) => r[0] !== account);
+        if (others.length) {
+          markup = { inline_keyboard: [others.map((r) => ({ text: `\u{1F504} Retry on ${r[1]}`, callback_data: `kag:${day}:${r[0]}` }))] };
+          const ranOn = (KAGGLE_SLOTS.find((r) => r[0] === account) || [account, account])[1];
+          extraText = `
+
+It ran on ${ranOn}. Out of GPU quota Kaggle queues instead of failing, so this can simply be the weekly limit. /quota shows all three.`;
+        }
       }
       await tg(env, "sendMessage", {
         chat_id: chat_id || env.TELEGRAM_CHAT_ID,
         text: `\u274C Day ${day}'s "${job}" job failed at step "${step || "unknown"}".
-${run_url || ""}`
+${run_url || ""}` + extraText,
+        reply_markup: markup
       });
       return new Response("ok", { status: 200 });
     }
     if (request.method === "POST" && url.pathname === "/comic/sweep") {
-      // ⚠️ THE AUTO-FUNNEL HAS A WINDOW, AND THIS CLOSES IT.
-      //
-      // autoFunnelForCase fires once, when a day uploads. If the comic is still a Gumroad draft
-      // at that moment the funnel job refuses -- correctly, a draft URL 404s -- and NOTHING ever
-      // comes back. A comic published an hour later stays unlinked for good.
-      //
-      // That window is not a rare edge: whether a comic is ready depends on a human reviewing
-      // the art, which does not align with a 05:15 cron. So sweep periodically for comics that
-      // are publishable, have a live video, and carry no link yet.
       const auth = request.headers.get("X-Batch-Notify-Secret");
       if (auth !== env.BATCH_NOTIFY_SECRET) {
         return new Response("forbidden", { status: 403 });
@@ -3051,25 +2937,35 @@ ${run_url || ""}`
         if (!raw) continue;
         const c = JSON.parse(raw);
         const name = c.title || c.case || k.name;
-        if (c.linked_at) continue;                       // already carries its link
-        if (!c.product_url) { skipped.push(`${name}: not staged`); continue; }
+        if (c.linked_at) continue;
+        if (!c.product_url) {
+          skipped.push(`${name}: not staged`);
+          continue;
+        }
         const videoId = c.video_id || await resolveShort(c);
-        if (!videoId) { skipped.push(`${name}: short not published`); continue; }
-
-        // Check the storefront BEFORE dispatching. funnel_comic_link.yml is still the authority
-        // and refuses drafts itself -- this only avoids burning a workflow run every sweep on a
-        // book that cannot be linked yet. A draft permalink is not publicly reachable.
+        if (!videoId) {
+          skipped.push(`${name}: short not published`);
+          continue;
+        }
         let live = false;
         try {
           const r = await fetch(c.product_url, { method: "GET", headers: { "User-Agent": "shadow-gasp-bot" } });
           live = r.ok;
-        } catch (e) { live = false; }
-        if (!live) { skipped.push(`${name}: still a draft`); continue; }
-
+        } catch (e) {
+          live = false;
+        }
+        if (!live) {
+          skipped.push(`${name}: still a draft`);
+          continue;
+        }
         try {
           await dispatchFunnelComicLink(env, {
-            video_id: videoId, product_url: c.product_url, product_name: name,
-            pages: String(c.pages || ""), hook: c.hook || "", position: "top",
+            video_id: videoId,
+            product_url: c.product_url,
+            product_name: name,
+            pages: String(c.pages || ""),
+            hook: c.hook || "",
+            position: "top",
             notify_chat_id: String(env.TELEGRAM_CHAT_ID || "")
           });
           sent.push(`${name} -> ${videoId}`);
@@ -3077,57 +2973,52 @@ ${run_url || ""}`
           skipped.push(`${name}: dispatch failed (${e.message})`);
         }
       }
-      // Only speak when something happened. A sweep that reports "nothing to do" every few hours
-      // trains you to ignore it, and then it is silent when it matters.
       if (sent.length) {
         await tg(env, "sendMessage", {
           chat_id: env.TELEGRAM_CHAT_ID,
-          text: `\u{1F517} Link sweep: funnelling ${sent.length} comic(s) whose short was already live.\n` +
-                sent.join("\n")
+          text: `\u{1F517} Link sweep: funnelling ${sent.length} comic(s) whose short was already live.
+` + sent.join("\n")
         });
       }
       return new Response(JSON.stringify({ sent, skipped }), {
-        status: 200, headers: { "Content-Type": "application/json" }
+        status: 200,
+        headers: { "Content-Type": "application/json" }
       });
     }
     if (request.method === "POST" && url.pathname === "/promo/preview") {
-      // THE DRAFT. Sends the actual image that will be published, with the actual caption,
-      // and Accept/Reject beneath it. Approving a description of a post is not the same as
-      // approving the post: the image is chosen by shape from five candidate covers, and
-      // seeing which one won is the entire point of a draft.
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
       const p = await request.json();
       if (p.outcome !== "success" || !p.image) {
         await tg(env, "sendMessage", {
           chat_id: env.TELEGRAM_CHAT_ID,
-          text: `❌ Couldn't build the promo draft for "${p.case || "?"}".\n${p.run_url || ""}`
+          text: `\u274C Couldn't build the promo draft for "${p.case || "?"}".
+${p.run_url || ""}`
         });
         return new Response("ok");
       }
       const plat = p.platform === "ig" ? "Instagram" : "Facebook";
       const token = Math.random().toString(36).slice(2, 10);
-      await env.PENDING.put(`promo:${token}`,
+      await env.PENDING.put(
+        `promo:${token}`,
         JSON.stringify([{ n: p.case, u: p.url, c: p.permalink, pr: (p.price || 0) * 100 }]),
-        { expirationTtl: 86400 });
-      const warn = p.already
-        ? "\n\n⚠️ This comic has ALREADY been posted here. Accepting will publish a SECOND copy — a duplicate is what cost this page its reach in August."
-        : "";
+        { expirationTtl: 86400 }
+      );
+      const warn = p.already ? "\n\n\u26A0\uFE0F This comic has ALREADY been posted here. Accepting will publish a SECOND copy \u2014 a duplicate is what cost this page its reach in August." : "";
       await tg(env, "sendPhoto", {
         chat_id: env.TELEGRAM_CHAT_ID,
         photo: p.image,
-        caption: `\u{1F5BC} ${plat} DRAFT — nothing is published yet\n\n${(p.caption || "").slice(0, 800)}${warn}`,
+        caption: `\u{1F5BC} ${plat} DRAFT \u2014 nothing is published yet
+
+${(p.caption || "").slice(0, 800)}${warn}`,
         reply_markup: { inline_keyboard: [[
-          { text: `✅ Post to ${plat}`, callback_data: `promogo:${token}:0|${p.platform === "ig" ? "ig" : "fb"}` },
-          { text: "✖ Reject", callback_data: `promono:${token}:0` }
+          { text: `\u2705 Post to ${plat}`, callback_data: `promogo:${token}:0|${p.platform === "ig" ? "ig" : "fb"}` },
+          { text: "\u2716 Reject", callback_data: `promono:${token}:0` }
         ]] }
       });
       return new Response("ok");
     }
     if (request.method === "POST" && url.pathname === "/promo/posted") {
-      // The posting job reports back so a tap does not end in silence. A promo that failed
-      // quietly is worse than one that never ran: you would believe the store had a funnel
-      // pointing at it and stop wondering why nothing arrives.
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) {
         return new Response("forbidden", { status: 403 });
@@ -3137,22 +3028,13 @@ ${run_url || ""}`
       const dry = String(b.dry_run) === "true";
       await tg(env, "sendMessage", {
         chat_id: env.TELEGRAM_CHAT_ID,
-        text: dry
-          ? `\u{1F9EA} Promo DRY RUN for "${b.case}" — ${ok ? "token and product check out; nothing posted." : "failed."}\n${b.run_url || ""}`
-          : ok
-            ? `✅ Posted "${b.case}" to Facebook.`
-            : `❌ Facebook post FAILED for "${b.case}".\n${b.run_url || ""}`
+        text: dry ? `\u{1F9EA} Promo DRY RUN for "${b.case}" \u2014 ${ok ? "token and product check out; nothing posted." : "failed."}
+${b.run_url || ""}` : ok ? `\u2705 Posted "${b.case}" to Facebook.` : `\u274C Facebook post FAILED for "${b.case}".
+${b.run_url || ""}`
       });
       return new Response("ok");
     }
     if (request.method === "POST" && url.pathname === "/comic/linked") {
-      // ⚠️ THE MISSING WRITE. /links renders `linked_at`, and nothing in the Worker ever set it
-      // -- the field appeared only in reads. The first three comics showed a tick because their
-      // records were minted carrying one; #04 reported "not linked yet" no matter how many times
-      // it was successfully funnelled, because no code path could ever say otherwise.
-      //
-      // The Worker cannot check for itself: it has no YouTube credentials, so it cannot read a
-      // description. The funnel job can, and now reports back.
       const auth = request.headers.get("X-Batch-Notify-Secret");
       if (auth !== env.BATCH_NOTIFY_SECRET) {
         return new Response("forbidden", { status: 403 });
@@ -3167,8 +3049,7 @@ ${run_url || ""}`
         if (!raw) continue;
         const c = JSON.parse(raw);
         if ((c.product_url || "") !== product_url) continue;
-        c.linked_at = linked_at || new Date().toISOString().slice(0, 10);
-        // A book funnelled to a video it had no record of should remember that video.
+        c.linked_at = linked_at || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
         if (video_id && !c.video_id) c.video_id = video_id;
         await env.PENDING.put(k.name, JSON.stringify(c));
         hits++;
@@ -3251,4 +3132,4 @@ Reply here with the finished Flow video within 5 hours, or I'll fall back to a s
 export {
   worker_default as default
 };
-//# sourceMappingURL=DEPLOYED_BUNDLE.js.map
+//# sourceMappingURL=worker.js.map
