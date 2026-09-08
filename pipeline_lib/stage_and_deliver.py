@@ -441,12 +441,27 @@ def main():
     # several videos each (Nimrod and David Koresh), and in both the entries are the same case's
     # teaser and its long-form -- take the most recently published, which is the fuller video and
     # the better thing to send a reader to.
+    #
+    # ⚠️ AND THE LEDGER MUST BE REFRESHED FIRST, or none of that matching gets a chance to run.
+    # This file is a COPY of the video pipeline's ledger and it rots; the refresh
+    # (pick_case.sync_from_video_repo) lived ONLY inside pick_case -- which is skipped for an
+    # explicitly named case, i.e. every manual /make and every rebuild. So THE DANCING PLAGUE
+    # OF 1518 shipped 2026-09-08 with no funnel button while its short (T0itLlMWfEY) had been
+    # live since 2026-08-21: the video repo's ledger carried the id, this copy still said null,
+    # and the filter below drops a null-videoId entry before any matching happens. Syncing here
+    # rather than only in the picker means the lookup consults what has actually been published.
     if not args.video_id:
         try:
             ledger = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                   "cases_used.json")
-            entries = [c for c in json.load(open(ledger, encoding="utf-8"))["cases"]
-                       if c.get("videoId")]
+            data = json.load(open(ledger, encoding="utf-8"))
+            try:
+                import pick_case
+                data = pick_case.sync_from_video_repo(data)
+            except Exception as e:
+                print(f"WARNING: could not refresh the video ledger ({e}) -- using the local copy",
+                      flush=True)
+            entries = [c for c in data["cases"] if c.get("videoId")]
             want = " ".join((args.title or "").split()).strip().lower()
             hits = [c for c in entries if c.get("case", "").strip().lower() == want]
             how = "exact name"
