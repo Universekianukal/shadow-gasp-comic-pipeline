@@ -79,6 +79,27 @@ on:
         description: "Issue number to use, or 'auto' to take the next one from issues.json"
         required: false
         default: "auto"
+      # Repair mode for a book that was PUBLISHED with the wrong storefront images.
+      #
+      # A build whose Kaggle art has not landed still produces a complete-looking PDF -- missing
+      # panels render as "ART PENDING" grey boxes -- and the cover, hero and thumbnail generated
+      # from that cover page go to Gumroad looking blank. Re-running fixes the PDF but NOT the
+      # storefront: stage_draft() refuses to touch a published product, correctly, because that
+      # path would also replace the file and the price under buyers who already paid.
+      #
+      # This input runs the same rebuild and then refreshes IMAGES ONLY on the named product.
+      # It skips Telegram delivery, the Worker approval registration and the OCR re-roll, so it
+      # costs a few minutes of runner and no GPU: the script comes from the KV cache and the art
+      # from the case's existing Kaggle kernel. Pass the same case, target_pages, profile,
+      # issue_no and kaggle_account the original build used, or the rebuild will not match.
+      store_assets_only:
+        description: "Repair mode: rebuild and refresh ONLY the Gumroad cover/thumbnail images on refresh_product (no file, price or Telegram)"
+        required: false
+        default: "false"
+      refresh_product:
+        description: "For store_assets_only: the Gumroad product id or permalink to re-image"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -283,7 +304,9 @@ jobs:
 
       - name: OCR check + one auto-fix retry
         id: ocr
-        if: github.event.inputs.dry_run != 'true'
+        # Skipped in store_assets_only mode: re-rolling panels would change the art AFTER the
+        # book is on sale, so the repair would ship a cover the buyer's PDF does not have.
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.store_assets_only != 'true'
         # NEVER fatal. This step is optional polish that re-rolls flagged panels on a second
         # Kaggle kernel, and it is blind to the garbled text it exists to catch anyway -- the
         # human reading the Telegram draft is the real gate. On 2026-09-01 that second kernel
@@ -303,9 +326,25 @@ jobs:
           cp pipeline_lib/build_comic.py pipeline_lib/lettering.py pipeline_lib/frontback.py cases/${{ env.slug }}/
           cp -r fonts cases/${{ env.slug }}/fonts
 
+      # Repair mode. Rebuilds the book from the cached script and the kernel's art, then puts
+      # the resulting cover on the EXISTING published product -- images only. Nothing else about
+      # the product is touched, and the reviewer is not sent another copy of a comic they
+      # already approved.
+      - name: Refresh Gumroad store images on the published product
+        id: refresh
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.store_assets_only == 'true'
+        run: |
+          if [ -z "${{ github.event.inputs.refresh_product }}" ]; then
+            echo "::error::store_assets_only needs refresh_product (the Gumroad product id or permalink)."
+            exit 1
+          fi
+          python pipeline_lib/refresh_store_assets.py \
+            --case-dir cases/${{ env.slug }} \
+            --product "${{ github.event.inputs.refresh_product }}"
+
       - name: Build PDF, stage Gumroad draft, deliver to Telegram
         id: deliver
-        if: github.event.inputs.dry_run != 'true'
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.store_assets_only != 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -344,6 +383,7 @@ jobs:
           C_FLUX: ${{ steps.flux.conclusion }}
           C_OCR: ${{ steps.ocr.conclusion }}
           C_DELIVER: ${{ steps.deliver.conclusion }}
+          C_REFRESH: ${{ steps.refresh.conclusion }}
         run: |
           STEP="an unknown step"
           [ "$C_PICK" = "failure" ]    && STEP="picking the case"
@@ -352,6 +392,7 @@ jobs:
           [ "$C_FLUX" = "failure" ]    && STEP="FLUX art on Kaggle"
           [ "$C_OCR" = "failure" ]     && STEP="OCR check"
           [ "$C_DELIVER" = "failure" ] && STEP="building the PDF / Gumroad / Telegram"
+          [ "$C_REFRESH" = "failure" ] && STEP="refreshing the Gumroad store images"
           echo "failed at: $STEP"
           # ⚠️ EXPORT. STEP was a plain shell variable, so the inline python3 -- a separate
           # process -- could not see it and died with KeyError: 'STEP'. The payload was never

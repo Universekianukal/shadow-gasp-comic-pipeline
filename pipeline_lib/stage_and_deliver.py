@@ -171,9 +171,16 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
             raise
         if existing.get("published") or (existing.get("sales_count") or 0) > 0:
             # Never silently overwrite something buyers can already see.
+            #
+            # Say what to do next, though. The refusal is right but on its own it reads as a
+            # dead end, and BELLA IN THE WYCH ELM (#30) sat on sale with placeholder "ART
+            # PENDING" cover images because the rerun that fixed its art stopped here: the PDF
+            # was repaired by hand and the storefront kept the blanks nobody knew were fixable.
             raise RuntimeError(
                 f"permalink '{permalink}' belongs to a PUBLISHED product ({existing['id']}); "
-                "refusing to overwrite it automatically")
+                "refusing to overwrite it automatically. To repair only its storefront IMAGES "
+                "(never the file, price or published state), re-run this workflow with "
+                f"store_assets_only=true and refresh_product={existing['id']}")
         print(f"permalink '{permalink}' already on draft {existing['id']} -- updating it",
               flush=True)
         upd = ["products", "update", existing["id"], "--name", name, "--price", price,
