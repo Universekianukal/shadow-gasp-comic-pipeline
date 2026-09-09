@@ -1,5 +1,6 @@
 {
   "issues": {
+    "bella-in-the-wych-elm-hagley-wood-englan": 30,
     "cerro-gordo-silver-mine-death-1878-calif": 14,
     "disappearance-of-harold-holt-1967-austra": 16,
     "disappearance-of-michael-rockefeller-net": 12,
@@ -31,6 +32,7 @@
     "uss-cyclops-disappearance-1918": 8
   },
   "kaggle": {
+    "bella-in-the-wych-elm-hagley-wood-englan": "C",
     "cerro-gordo-silver-mine-death-1878-calif": "C",
     "disappearance-of-harold-holt-1967-austra": "-",
     "disappearance-of-michael-rockefeller-net": "-",
