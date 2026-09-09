@@ -100,6 +100,13 @@ on:
         description: "For store_assets_only: the Gumroad product id or permalink to re-image"
         required: false
         default: ""
+      # Covers and the thumbnail are separate uploads, and `covers add` APPENDS -- so a refresh
+      # that got the covers up and then failed cannot simply be re-run: the second attempt would
+      # add a duplicate of every cover. Narrow the re-run to the half that is still wrong.
+      refresh_only:
+        description: "For store_assets_only: both | covers | thumbnail"
+        required: false
+        default: "both"
 
 jobs:
   build:
@@ -340,7 +347,8 @@ jobs:
           fi
           python pipeline_lib/refresh_store_assets.py \
             --case-dir cases/${{ env.slug }} \
-            --product "${{ github.event.inputs.refresh_product }}"
+            --product "${{ github.event.inputs.refresh_product }}" \
+            --only "${{ github.event.inputs.refresh_only || 'both' }}"
 
       - name: Build PDF, stage Gumroad draft, deliver to Telegram
         id: deliver

@@ -143,7 +143,11 @@ def replace_covers(product_id, images):
         gumroad(["products", "covers", "add", product_id, "--image", path])
         print(f"  added {os.path.basename(path)}", flush=True)
     for cid in before:
-        gumroad(["products", "covers", "remove", product_id, cid])
+        # --yes, because `covers remove` PROMPTS. On a runner stdin is not a terminal and the
+        # CLI fails with "confirmation required but stdin is not interactive" -- which lands
+        # exactly here, after the new covers are already up, leaving the product showing both
+        # sets. `covers add` does not prompt, so nothing warned that this one would.
+        gumroad(["products", "covers", "remove", product_id, cid, "--yes"])
         print(f"  removed old cover {cid}", flush=True)
 
 
@@ -152,6 +156,11 @@ def main():
     ap.add_argument("--case-dir", required=True)
     ap.add_argument("--product", required=True,
                     help="Gumroad product id or custom permalink")
+    # Two independent assets, and a half-finished refresh has to be finishable. When the first
+    # attempt at BELLA got its covers up and then died before the thumbnail, re-running the
+    # whole thing would have added a SECOND copy of all five covers rather than resuming.
+    ap.add_argument("--only", choices=("both", "covers", "thumbnail"), default="both",
+                    help="Refresh only the gallery covers, only the thumbnail, or both")
     ap.add_argument("--expect-account", default="Shadow Gasp",
                     help="Seller name that must be logged in; '' to skip the check")
     ap.add_argument("--allow-placeholder-art", action="store_true",
@@ -183,9 +192,11 @@ def main():
         print("dry run -- nothing written to Gumroad", flush=True)
         return
 
-    replace_covers(product_id, [hero] + previews)
-    gumroad(["products", "thumbnail", "set", product_id, "--image", tile])
-    print("thumbnail set", flush=True)
+    if args.only in ("both", "covers"):
+        replace_covers(product_id, [hero] + previews)
+    if args.only in ("both", "thumbnail"):
+        gumroad(["products", "thumbnail", "set", product_id, "--image", tile])
+        print("thumbnail set", flush=True)
 
     # ⭐ Read it back. A write returning success is not proof the storefront changed, and
     # "refreshed!" over an unchanged placeholder is worse than an error.
