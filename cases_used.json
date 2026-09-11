@@ -657,12 +657,12 @@
       "publishedAt": "2026-08-23"
     },
     {
-      "videoId": null,
+      "videoId": "zyy_2QPm_dg",
       "case": "Disappearance of Frederick Valentich (Bass Strait, Australia, Oct 21 1978)",
       "publishedAt": "2026-08-24"
     },
     {
-      "videoId": null,
+      "videoId": "pPvctbpFUnI",
       "case": "The Alcatraz Escape (Frank Morris & the Anglin Brothers, June 11 1962)",
       "publishedAt": "2026-08-25"
     },
@@ -1020,6 +1020,11 @@
       "videoId": null,
       "case": "The Chevaline Shootings / al-Hilli family murders (2012, Annecy, France)",
       "publishedAt": null
+    },
+    {
+      "videoId": null,
+      "case": "MS Estonia Sinking (Baltic Sea, September 28, 1994)",
+      "publishedAt": "2026-09-10"
     }
   ]
 }
