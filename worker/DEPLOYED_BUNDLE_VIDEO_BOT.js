@@ -1275,9 +1275,9 @@ async function autoFunnelForCase(env, caseName, videoId, chatId) {
 __name(autoFunnelForCase, "autoFunnelForCase");
 __name2(autoFunnelForCase, "autoFunnelForCase");
 __name22(autoFunnelForCase, "autoFunnelForCase");
-var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending"];
+var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending", "/fbpost"];
 var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel"];
-var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen", "fbsch", "igsch"];
+var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen", "fbsch", "igsch", "fbpick"];
 var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry"];
 function commandSurface(text) {
   const cmd = text.split(/[\s@]/)[0].toLowerCase();
@@ -2018,6 +2018,7 @@ var COMMAND_LIST = [
   "",
   "⏰ SCHEDULED POSTS",
   "/scheduled  — FB/IG posts waiting for their time, each with a Cancel button",
+  "/fbpost  — old videos not yet on FB/IG (/fbpost 45 = day 45, /fbpost dancing = title search): Approve / Reject / Schedule",
   "(send any photo, with a caption)  — Post / Reject / Schedule it to Facebook or Instagram",
   "",
   "\u{1F4CA} REPORTS (nothing is built)",
@@ -2669,7 +2670,7 @@ __name222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 var SCHED_SLOTS = [["h1", "+1 hour"], ["h3", "+3 hours"], ["t19", "Today 7 PM"], ["n9", "Tomorrow 9 AM"], ["n19", "Tomorrow 7 PM"]];
 // Video bot only (user, 2026-09-12): the comics bot does not get scheduling, so there is no
 // comic-promo schedule here.
-var SCHED_ACTIONS = ["fbsch", "igsch", "pqs", "pqc", "pqx", "ipg", "ipn", "ips"];
+var SCHED_ACTIONS = ["fbsch", "igsch", "pqs", "pqc", "pqx", "ipg", "ipn", "ips", "fbpick"];
 var SCHED_MAX_PER_TICK = 2;
 var IST_OFFSET_MS = 330 * 60 * 1e3;
 var POST_TTL = 30 * 86400;
@@ -2924,6 +2925,8 @@ async function schedHandleCallback(env, cq, action, token, extra) {
   try {
     if (action === "fbsch" || action === "igsch") {
       await schedOfferSlots(env, chatId, { kind: "video", day: String(token), platform: action === "fbsch" ? "fb" : "ig" });
+    } else if (action === "fbpick") {
+      await fbpostPick(env, chatId, token);
     } else if (action === "pqs") {
       const raw = await env.PENDING.get(`schtgt:${token}`);
       if (!raw) throw new Error("that time picker has expired — tap ⏰ Schedule again");
@@ -2986,6 +2989,15 @@ async function schedHandleMessage(env, msg, text) {
     await schedListMessage(env, chatId);
     return true;
   }
+  const fbpostCmd = /^\/fbpost(?:@\S+)?(?:\s+([\s\S]*))?$/i.exec(text);
+  if (fbpostCmd) {
+    try {
+      await fbpostCommand(env, chatId, (fbpostCmd[1] || "").trim());
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ /fbpost failed: ${e.message}` });
+    }
+    return true;
+  }
   if (text && !text.startsWith("/")) {
     const tok = await env.PENDING.get(`awaiting_sched_custom:${chatId}`);
     if (!tok) return false;
@@ -3046,6 +3058,96 @@ ${b.run_url}` : ""}`;
     return new Response("ok", { status: 200 });
   }
   return null;
+}
+
+// ---------------------------------------------------------------- /fbpost (added 2026-09-12)
+//
+// Old videos not yet on Facebook / Instagram. A day is postable when it has CLOUDINARY_LINK.txt and
+// youtube.json -- exactly what crosspost_decision.yml needs -- and its FB/IG state comes from the
+// FB_POSTED / FB_REJECTED / IG_POSTED / IG_REJECTED markers that workflow commits. Picking a day
+// sends the SAME fbIgDecisionKeyboard as the "Day N is LIVE" message (Approve / Reject / Schedule),
+// so nothing new posts anything: it only finds the day.
+var FBPOST_MAX_BUTTONS = 40;
+function fbpostState(s) {
+  return s === "posted" ? "✅ posted" : s === "rejected" ? "🚫 rejected" : "— not posted";
+}
+async function fbpostDays(env) {
+  // One call for the whole repo tree (not one per day): stays far inside the Worker's subrequest cap.
+  const r = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/git/trees/main?recursive=1`, {
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" }
+  });
+  if (!r.ok) throw new Error(`couldn't read the repo (${r.status})`);
+  const days = {};
+  for (const e of (await r.json()).tree || []) {
+    const m = /^_pipeline\/batch\/day(\d+)\/(CLOUDINARY_LINK\.txt|youtube\.json|FB_POSTED|IG_POSTED|FB_REJECTED|IG_REJECTED)$/.exec(e.path);
+    if (!m) continue;
+    (days[+m[1]] = days[+m[1]] || {})[m[2]] = true;
+  }
+  const list = Object.entries(days).filter(([, d]) => d["CLOUDINARY_LINK.txt"] && d["youtube.json"]).map(([n, d]) => ({
+    day: +n,
+    fb: d.FB_POSTED ? "posted" : d.FB_REJECTED ? "rejected" : "",
+    ig: d.IG_POSTED ? "posted" : d.IG_REJECTED ? "rejected" : ""
+  })).sort((a, b) => a.day - b.day);
+  const titles = await Promise.all(list.map((x) => fbpostTitle(env, x.day)));
+  list.forEach((x, i) => { x.title = titles[i]; });
+  return list;
+}
+async function fbpostTitle(env, day) {
+  const key = `fbpost_title:${day}`;
+  const cached = await env.PENDING.get(key);
+  if (cached) return cached;
+  try {
+    const y = await (await ghRaw(env, `_pipeline/batch/day${String(day).padStart(2, "0")}/youtube.json`)).json();
+    const t = String(y.title || "").slice(0, 120);
+    if (t) await env.PENDING.put(key, t);   // a published video's title doesn't change
+    return t;
+  } catch {
+    return "";
+  }
+}
+async function fbpostSendDay(env, chatId, x) {
+  const both = x.fb === "posted" && x.ig === "posted";
+  await tg(env, "sendMessage", {
+    chat_id: chatId,
+    text: `\u{1F4FC} Day ${x.day}${x.title ? `: "${x.title}"` : ""}
+Facebook: ${fbpostState(x.fb)}
+Instagram: ${fbpostState(x.ig)}` + (both ? "\n\nAlready on both — nothing to post." : "\n\nApprove posts it now · ⏰ Schedule picks a time."),
+    ...both ? {} : { reply_markup: fbIgDecisionKeyboard(x.day) }
+  });
+}
+async function fbpostPick(env, chatId, day) {
+  const x = (await fbpostDays(env)).find((d) => d.day === parseInt(day, 10));
+  if (!x) throw new Error(`day ${day} has no Cloudinary video + caption recorded, so it can't be posted from here`);
+  await fbpostSendDay(env, chatId, x);
+}
+async function fbpostCommand(env, chatId, arg) {
+  const all = await fbpostDays(env);
+  if (/^\d+$/.test(arg)) return fbpostPick(env, chatId, arg);
+  let hits, heading;
+  if (arg) {
+    const words = arg.toLowerCase().split(/\s+/).filter(Boolean);
+    hits = all.filter((x) => words.every((w) => x.title.toLowerCase().includes(w)));
+    heading = `\u{1F50E} "${arg}" — ${hits.length} match(es)`;
+    if (hits.length === 1) return fbpostSendDay(env, chatId, hits[0]);
+  } else {
+    hits = all.filter((x) => !x.fb || !x.ig);
+    heading = `\u{1F4FC} ${hits.length} video(s) not yet on Facebook and/or Instagram`;
+  }
+  if (!hits.length) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: arg ? `No video title matches "${arg}". Try fewer words, or /fbpost to see them all.` : "✅ Every video with a Cloudinary link is already on (or rejected for) Facebook and Instagram." });
+    return;
+  }
+  const icon = (s) => s === "posted" ? "✅" : s === "rejected" ? "🚫" : "—";
+  const lines = hits.map((x) => `Day ${x.day}  FB ${icon(x.fb)} IG ${icon(x.ig)}  ${x.title.slice(0, 70)}`);
+  let text = heading + "\n\n";
+  for (const l of lines) {
+    if (text.length + l.length > 3600) { text += "…more — narrow it with /fbpost <words>"; break; }
+    text += l + "\n";
+  }
+  const b = hits.slice(0, FBPOST_MAX_BUTTONS).map((x) => ({ text: `Day ${x.day}`, callback_data: `fbpick:${x.day}` }));
+  const rows = [];
+  for (let i = 0; i < b.length; i += 5) rows.push(b.slice(i, i + 5));
+  await tg(env, "sendMessage", { chat_id: chatId, text: text + "\nTap a day to Approve / Reject / Schedule it.", reply_markup: { inline_keyboard: rows } });
 }
 var worker_default = {
   async fetch(request, env, ctx) {
