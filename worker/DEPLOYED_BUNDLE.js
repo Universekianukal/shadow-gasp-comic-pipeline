@@ -548,10 +548,6 @@ function fbIgDecisionKeyboard(day) {
       [
         { text: "\u{1F4F7} IG: Approve", callback_data: `igdec:${day}:approve` },
         { text: "\u274C IG: Reject", callback_data: `igdec:${day}:reject` }
-      ],
-      [
-        { text: "⏰ FB: Schedule", callback_data: `fbsch:${day}` },
-        { text: "⏰ IG: Schedule", callback_data: `igsch:${day}` }
       ]
     ]
   };
@@ -1277,8 +1273,8 @@ __name2(autoFunnelForCase, "autoFunnelForCase");
 __name22(autoFunnelForCase, "autoFunnelForCase");
 var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending"];
 var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel"];
-var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen", "fbsch", "igsch"];
-var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry", "promosch"];
+var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen"];
+var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry"];
 function commandSurface(text) {
   const cmd = text.split(/[\s@]/)[0].toLowerCase();
   if (VIDEO_COMMANDS.includes(cmd)) return "video";
@@ -1313,7 +1309,6 @@ async function handleCallback(env, cq) {
     await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
     return;
   }
-  if (await schedHandleCallback(env, cq, action, token, extra)) return;
   if (action === "kag") {
     const day = token;
     const slot = extra;
@@ -2016,10 +2011,6 @@ var COMMAND_LIST = [
   "/cancel <N>  \u2014 cancel an in-progress render/publish for day N",
   "/title <N>  \u2014 draft an alt title (Shock/Curiosity/Open-loop/Direct), tap Apply to use it",
   "",
-  "⏰ SCHEDULED POSTS",
-  "/scheduled  — FB/IG posts waiting for their time, each with a Cancel button",
-  "(send any photo, with a caption)  — Post / Reject / Schedule it to Facebook or Instagram",
-  "",
   "\u{1F4CA} REPORTS (nothing is built)",
   "/quota  \u2014 remaining weekly Kaggle GPU on all three accounts, before you spend any of it",
   "/trending  \u2014 trending true-crime stories not yet covered",
@@ -2072,7 +2063,6 @@ Tip: replying directly to a day's hook-request message skips this question.`,
     await acceptHookClip(env, chatId, dayNum, videoObj.file_id);
     return;
   }
-  if (await schedHandleMessage(env, msg, text)) return;
   if (text.startsWith("/freeclaims")) {
     const slug = text.slice("/freeclaims".length).trim();
     if (!slug) {
@@ -2652,396 +2642,9 @@ __name222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name22222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
-// ---------------------------------------------------------------- SCHEDULED + PHOTO POSTS
-//
-// Added 2026-09-12. ADDITIVE ONLY: the existing fbdec/igdec/promogo/promono buttons keep their
-// exact callback_data and handlers, and every existing workflow is dispatched unchanged.
-//
-// * "Schedule" parks a job in KV (`sched:jobs:<BOT_MODE>`, one list per bot so the two bots
-//   sharing this KV namespace never race on the same key). /sched/tick fires the due ones by
-//   dispatching the SAME workflow the Post/Approve button would have. This Cloudflare account is
-//   at its cron cap, so the tick comes from mindunlocked-bot's existing */10 cron through a
-//   service binding -- scheduled posts go out within ~10 min of the chosen time.
-// * Photo posts (a day's thumbnail still, or any photo sent to the bot) go through the new
-//   post_image.yml in the video repo. The photo bytes stay in KV and the workflow fetches them
-//   back from /photo/get, so the bot token never leaves the Worker.
-// * Every new button is refused outside TELEGRAM_CHAT_ID -- they post to public pages.
-var SCHED_SLOTS = [["h1", "+1 hour"], ["h3", "+3 hours"], ["t19", "Today 7 PM"], ["n9", "Tomorrow 9 AM"], ["n19", "Tomorrow 7 PM"]];
-var SCHED_ACTIONS = ["fbsch", "igsch", "promosch", "pqs", "pqc", "pqx", "ipg", "ipn", "ips"];
-var IST_OFFSET_MS = 330 * 60 * 1e3;
-var POST_TTL = 30 * 86400;
-function istParts(ms) {
-  const d = new Date(ms + IST_OFFSET_MS);
-  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), H: d.getUTCHours(), M: d.getUTCMinutes() };
-}
-function istToMs(y, m, d, H, M) {
-  return Date.UTC(y, m - 1, d, H, M) - IST_OFFSET_MS;
-}
-function fmtIstMs(ms) {
-  const p = istParts(ms), z = (n) => String(n).padStart(2, "0");
-  return `${p.y}-${z(p.m)}-${z(p.d)} ${z(p.H)}:${z(p.M)} IST`;
-}
-function schedSlotMs(slot, now = Date.now()) {
-  const t = istParts(now);
-  const at = (addDays, H) => istToMs(t.y, t.m, t.d + addDays, H, 0);
-  switch (slot) {
-    case "h1": return now + 3600e3;
-    case "h3": return now + 3 * 3600e3;
-    case "t19": { const x = at(0, 19); return x > now + 60e3 ? x : at(1, 19); }
-    case "n9": return at(1, 9);
-    case "n19": return at(1, 19);
-    default: return null;
-  }
-}
-// "YYYY-MM-DD HH:MM" or just "HH:MM" (next occurrence), Indian time. null = not a time at all;
-// NaN = looks like a time but is invalid, so the caller can say so instead of ignoring it.
-function parseIstInput(text, now = Date.now()) {
-  const s = String(text || "").trim();
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2})[:.](\d{2})$/);
-  if (m) {
-    const [y, mo, d, H, M] = m.slice(1).map(Number);
-    if (mo < 1 || mo > 12 || d < 1 || d > 31 || H > 23 || M > 59) return NaN;
-    return istToMs(y, mo, d, H, M);
-  }
-  m = s.match(/^(\d{1,2})[:.](\d{2})$/);
-  if (m) {
-    const H = +m[1], M = +m[2];
-    if (H > 23 || M > 59) return NaN;
-    const t = istParts(now);
-    let x = istToMs(t.y, t.m, t.d, H, M);
-    if (x <= now) x += 86400e3;
-    return x;
-  }
-  return null;
-}
-function schedMode(env) {
-  return (env.BOT_MODE || "all").toLowerCase();
-}
-function schedKey(env) {
-  return `sched:jobs:${schedMode(env)}`;
-}
-async function schedLoad(env) {
-  try {
-    return JSON.parse(await env.PENDING.get(schedKey(env)) || "[]");
-  } catch {
-    return [];
-  }
-}
-async function schedSave(env, jobs) {
-  await env.PENDING.put(schedKey(env), JSON.stringify(jobs));
-}
-function schedIsOwner(env, chatId) {
-  return !!env.TELEGRAM_CHAT_ID && String(chatId) === String(env.TELEGRAM_CHAT_ID);
-}
-function schedId() {
-  return Math.random().toString(36).slice(2, 10);
-}
-function platName(p) {
-  return p === "ig" ? "Instagram" : "Facebook";
-}
-function schedLabel(t) {
-  if (t.kind === "video") return `Day ${t.day} video → ${platName(t.platform)}`;
-  if (t.kind === "promo") return `Comic promo "${t.name || t.case}" → ${platName(t.platform)}`;
-  return `${t.what || "Photo"} → ${platName(t.platform)}`;
-}
-async function schedOfferSlots(env, chatId, target) {
-  const tok = schedId();
-  await env.PENDING.put(`schtgt:${tok}`, JSON.stringify(target), { expirationTtl: 7 * 86400 });
-  const b = SCHED_SLOTS.map(([code, label]) => ({ text: label, callback_data: `pqs:${tok}:${code}` }));
-  await tg(env, "sendMessage", {
-    chat_id: chatId,
-    text: `⏰ When should this go out?
-${schedLabel(target)}
-
-Times are Indian time (IST). It posts within ~10 min of the chosen time.`,
-    reply_markup: { inline_keyboard: [b.slice(0, 2), b.slice(2, 3), b.slice(3, 5), [{ text: "✏️ Custom time…", callback_data: `pqc:${tok}` }]] }
-  });
-}
-async function schedAdd(env, chatId, target, runAt) {
-  const jobs = await schedLoad(env);
-  const job = { id: schedId(), run_at: runAt, chat_id: String(chatId), target };
-  jobs.push(job);
-  await schedSave(env, jobs);
-  await tg(env, "sendMessage", {
-    chat_id: chatId,
-    text: `✅ Scheduled: ${schedLabel(target)}
-\u{1F552} ${fmtIstMs(runAt)}
-
-Nothing is posted until then. /scheduled lists everything waiting.`,
-    reply_markup: { inline_keyboard: [[{ text: "✖ Cancel this schedule", callback_data: `pqx:${job.id}` }]] }
-  });
-}
-function imgKeyboard(tok) {
-  return { inline_keyboard: [
-    [
-      { text: "\u{1F4D8} FB: ✅ Post", callback_data: `ipg:${tok}:fb` },
-      { text: "❌ Reject", callback_data: `ipn:${tok}:fb` },
-      { text: "⏰ Schedule", callback_data: `ips:${tok}:fb` }
-    ],
-    [
-      { text: "\u{1F4F7} IG: ✅ Post", callback_data: `ipg:${tok}:ig` },
-      { text: "❌ Reject", callback_data: `ipn:${tok}:ig` },
-      { text: "⏰ Schedule", callback_data: `ips:${tok}:ig` }
-    ]
-  ] };
-}
-async function imgDispatch(env, tok, platform, chatId) {
-  const raw = await env.PENDING.get(`imgp:${tok}`);
-  if (!raw) throw new Error("that post has expired (kept 30 days) — send the photo again");
-  const item = JSON.parse(raw);
-  if (item[platform] === "sent") throw new Error(`already sent to ${platName(platform)} — not posting a duplicate`);
-  await dispatchWorkflowVerified(env, "post_image.yml", {
-    platform,
-    source: item.src,
-    day: String(item.day || ""),
-    photo_token: item.src === "photo" ? tok : "",
-    caption: item.caption || "",
-    bot: schedMode(env) === "comics" ? "comics" : "video",
-    notify_chat_id: String(chatId),
-    label: item.what || "Photo post"
-  });
-  item[platform] = "sent";
-  await env.PENDING.put(`imgp:${tok}`, JSON.stringify(item), { expirationTtl: POST_TTL });
-}
-async function sendPhotoWithButtons(env, chatId, bytes, caption, replyMarkup) {
-  const form = new FormData();
-  form.append("chat_id", String(chatId));
-  form.append("caption", caption.length > 1024 ? caption.slice(0, 1021) + "..." : caption);
-  form.append("reply_markup", JSON.stringify(replyMarkup));
-  form.append("photo", new Blob([bytes], { type: "image/jpeg" }), "photo.jpeg");
-  const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
-  const body = await resp.json();
-  if (!body.ok) throw new Error(`sendPhoto: ${body.description || body.error_code}`);
-}
-// The extra "post the thumbnail as a photo" offer under a freshly LIVE day. Sent as its own
-// message AFTER the existing LIVE message, and the caller wraps it in try/catch, so nothing about
-// the existing message or its Approve/Reject buttons can be affected by a failure here.
-async function imgOfferDay(env, day, chatId, title) {
-  const tok = schedId();
-  const item = { src: "day", day: String(day), caption: "", what: `Day ${day} thumbnail photo` };
-  await env.PENDING.put(`imgp:${tok}`, JSON.stringify(item), { expirationTtl: POST_TTL });
-  const cap = `\u{1F5BC} Also post day ${day}'s thumbnail as a PHOTO post?${title ? `
-"${title}"` : ""}
-
-Caption = the video's own title, description and hashtags. Nothing is posted until you tap.`;
-  try {
-    const url = await hookStillUrl(env, String(day).padStart(2, "0"));
-    const r = await fetch(url, { headers: { "User-Agent": "shadow-gasp-bot" } });
-    if (!r.ok) throw new Error(`still ${r.status}`);
-    await sendPhotoWithButtons(env, chatId, await r.arrayBuffer(), cap, imgKeyboard(tok));
-  } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: cap, reply_markup: imgKeyboard(tok) });
-  }
-}
-async function imgIntakePhoto(env, msg, fileObj) {
-  const chatId = msg.chat.id;
-  const info = await tg(env, "getFile", { file_id: fileObj.file_id });
-  if (!info.ok) throw new Error(`Telegram wouldn't hand over the file: ${info.description || info.error_code}`);
-  const f = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${info.result.file_path}`);
-  if (!f.ok) throw new Error(`photo download failed: ${f.status}`);
-  const tok = schedId();
-  await env.PENDING.put(`photo:${tok}`, await f.arrayBuffer(), { expirationTtl: POST_TTL });
-  const caption = (msg.caption || "").trim();
-  await env.PENDING.put(`imgp:${tok}`, JSON.stringify({ src: "photo", caption, what: "Your photo" }), { expirationTtl: POST_TTL });
-  await tg(env, "sendMessage", {
-    chat_id: chatId,
-    reply_to_message_id: msg.message_id,
-    text: `\u{1F5BC} Post this photo to the Shadow Gasp page?
-
-Caption: ${caption ? caption.slice(0, 600) : "(none — send the photo WITH a caption to add one)"}
-
-Nothing is posted until you tap.`,
-    reply_markup: imgKeyboard(tok)
-  });
-}
-async function schedFire(env, job) {
-  const t = job.target;
-  if (t.kind === "video") {
-    await dispatchCrosspostDecision(env, { day: String(t.day), platform: t.platform, decision: "approve", notify_chat_id: job.chat_id });
-  } else if (t.kind === "promo") {
-    await dispatchPostPromo(env, { case: t.case, platform: t.platform, mode: "post", force: "false" });
-  } else if (t.kind === "image") {
-    await imgDispatch(env, t.item, t.platform, job.chat_id);
-  } else {
-    throw new Error(`unknown job kind ${t.kind}`);
-  }
-}
-async function schedRunDue(env) {
-  const jobs = await schedLoad(env);
-  const now = Date.now();
-  const due = jobs.filter((j) => j.run_at <= now);
-  if (!due.length) return { fired: 0, waiting: jobs.length };
-  // Remove BEFORE dispatching: if the Worker dies mid-dispatch, the next tick must not post twice.
-  await schedSave(env, jobs.filter((j) => j.run_at > now));
-  for (const j of due) {
-    const lateMin = Math.round((now - j.run_at) / 6e4);
-    try {
-      await schedFire(env, j);
-      await tg(env, "sendMessage", {
-        chat_id: j.chat_id,
-        text: `⏰ Scheduled post going out now: ${schedLabel(j.target)}${lateMin > 20 ? ` (${lateMin} min late)` : ""}
-I'll confirm here when it lands.`
-      });
-    } catch (e) {
-      await tg(env, "sendMessage", { chat_id: j.chat_id, text: `❌ Scheduled post could NOT start: ${schedLabel(j.target)}
-${e.message}` });
-    }
-  }
-  return { fired: due.length, waiting: jobs.length - due.length };
-}
-async function schedListMessage(env, chatId) {
-  const jobs = (await schedLoad(env)).sort((a, b) => a.run_at - b.run_at);
-  if (!jobs.length) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "⏰ Nothing scheduled. Tap ⏰ Schedule on any post to add one." });
-    return;
-  }
-  const shown = jobs.slice(0, 30);
-  await tg(env, "sendMessage", {
-    chat_id: chatId,
-    text: "⏰ SCHEDULED POSTS\n\n" + shown.map((j, i) => `${i + 1}. ${fmtIstMs(j.run_at)}\n   ${schedLabel(j.target)}`).join("\n") + (jobs.length > shown.length ? `\n…and ${jobs.length - shown.length} more` : "") + "\n\nTap a number to cancel that one.",
-    reply_markup: { inline_keyboard: shown.map((j, i) => [{ text: `✖ Cancel ${i + 1}`, callback_data: `pqx:${j.id}` }]) }
-  });
-}
-// Returns true when the button was one of the new ones (and has been handled).
-async function schedHandleCallback(env, cq, action, token, extra) {
-  if (!SCHED_ACTIONS.includes(action)) return false;
-  const chatId = cq.message.chat.id;
-  const messageId = cq.message.message_id;
-  if (!schedIsOwner(env, chatId)) {
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Not allowed." });
-    return true;
-  }
-  await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
-  try {
-    if (action === "fbsch" || action === "igsch") {
-      await schedOfferSlots(env, chatId, { kind: "video", day: String(token), platform: action === "fbsch" ? "fb" : "ig" });
-    } else if (action === "promosch") {
-      const [idx, plat] = String(extra).split("|");
-      const raw = await env.PENDING.get(`promo:${token}`);
-      const item = raw && JSON.parse(raw)[parseInt(idx, 10)];
-      if (!item) throw new Error("that promo draft has expired — run /promo again");
-      await schedOfferSlots(env, chatId, { kind: "promo", case: item.c || item.n, name: item.n, platform: plat === "ig" ? "ig" : "fb" });
-    } else if (action === "pqs") {
-      const raw = await env.PENDING.get(`schtgt:${token}`);
-      if (!raw) throw new Error("that time picker has expired — tap ⏰ Schedule again");
-      const runAt = schedSlotMs(extra);
-      if (!runAt) throw new Error("unknown time slot");
-      await env.PENDING.delete(`schtgt:${token}`);
-      await tg(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } });
-      await schedAdd(env, chatId, JSON.parse(raw), runAt);
-    } else if (action === "pqc") {
-      if (!await env.PENDING.get(`schtgt:${token}`)) throw new Error("that time picker has expired — tap ⏰ Schedule again");
-      await env.PENDING.put(`awaiting_sched_custom:${chatId}`, String(token), { expirationTtl: 3600 });
-      await tg(env, "sendMessage", { chat_id: chatId, text: "✏️ Reply with the time in Indian time (IST):\n• 2026-09-20 18:30  (date + time)\n• 18:30  (next time it's 18:30)" });
-    } else if (action === "pqx") {
-      const jobs = await schedLoad(env);
-      const job = jobs.find((j) => j.id === token);
-      if (!job) {
-        await tg(env, "sendMessage", { chat_id: chatId, text: "That one is no longer waiting — it was already sent or cancelled." });
-      } else {
-        await schedSave(env, jobs.filter((j) => j.id !== token));
-        await tg(env, "sendMessage", { chat_id: chatId, text: `✖ Cancelled: ${schedLabel(job.target)} (${fmtIstMs(job.run_at)}). Nothing will be posted.` });
-      }
-    } else if (action === "ipg") {
-      await imgDispatch(env, token, extra, chatId);
-      await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E4} Posting to ${platName(extra)} now… I'll confirm here when it lands.` });
-    } else if (action === "ipn") {
-      const raw = await env.PENDING.get(`imgp:${token}`);
-      if (raw) {
-        const item = JSON.parse(raw);
-        if (item[extra] !== "sent") item[extra] = "rejected";
-        await env.PENDING.put(`imgp:${token}`, JSON.stringify(item), { expirationTtl: POST_TTL });
-      }
-      await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F6AB} ${platName(extra)}: rejected, not posted.` });
-    } else if (action === "ips") {
-      const raw = await env.PENDING.get(`imgp:${token}`);
-      if (!raw) throw new Error("that post has expired (kept 30 days) — send the photo again");
-      const item = JSON.parse(raw);
-      await schedOfferSlots(env, chatId, { kind: "image", item: token, platform: extra === "ig" ? "ig" : "fb", what: item.what });
-    }
-  } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ ${e.message}` });
-  }
-  return true;
-}
-// Returns true when the message was one of the new kinds (and has been handled). Photos used to be
-// ignored entirely by this bot, and plain non-command text too, so neither path had a behaviour
-// to preserve; a custom-time reply is only consumed when a Custom picker is actually waiting.
-async function schedHandleMessage(env, msg, text) {
-  const chatId = msg.chat.id;
-  if (!schedIsOwner(env, chatId)) return false;
-  const photo = msg.photo && msg.photo.length ? msg.photo[msg.photo.length - 1] : msg.document && (msg.document.mime_type || "").startsWith("image/") ? msg.document : null;
-  if (photo) {
-    try {
-      await imgIntakePhoto(env, msg, photo);
-    } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't take that photo: ${e.message}` });
-    }
-    return true;
-  }
-  if (/^\/scheduled(@\S+)?$/i.test(text)) {
-    await schedListMessage(env, chatId);
-    return true;
-  }
-  if (text && !text.startsWith("/")) {
-    const tok = await env.PENDING.get(`awaiting_sched_custom:${chatId}`);
-    if (!tok) return false;
-    const runAt = parseIstInput(text);
-    if (runAt === null) return false;
-    if (Number.isNaN(runAt) || runAt <= Date.now()) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: Number.isNaN(runAt) ? "❌ That isn't a valid time. Try e.g. 2026-09-20 18:30 or 18:30." : "❌ That time has already passed. Send a future time." });
-      return true;
-    }
-    const raw = await env.PENDING.get(`schtgt:${tok}`);
-    await env.PENDING.delete(`awaiting_sched_custom:${chatId}`);
-    if (!raw) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That time picker has expired — tap ⏰ Schedule again." });
-      return true;
-    }
-    await env.PENDING.delete(`schtgt:${tok}`);
-    await schedAdd(env, chatId, JSON.parse(raw), runAt);
-    return true;
-  }
-  return false;
-}
-function schedAuthOk(request, env) {
-  const a = request.headers.get("X-Batch-Notify-Secret");
-  const b = request.headers.get("X-Shared-Secret");
-  return !!env.BATCH_NOTIFY_SECRET && a === env.BATCH_NOTIFY_SECRET || !!env.WORKER_SHARED_SECRET && b === env.WORKER_SHARED_SECRET;
-}
-// New routes only; returns null for every path it doesn't own so the existing router runs as before.
-async function schedRoutes(request, env, url) {
-  if (request.method !== "POST") return null;
-  if (url.pathname === "/sched/tick") {
-    if (!env.SCHED_TICK_SECRET || request.headers.get("X-Sched-Secret") !== env.SCHED_TICK_SECRET) {
-      return new Response("forbidden", { status: 403 });
-    }
-    const r = await schedRunDue(env);
-    return new Response(JSON.stringify(r), { status: 200, headers: { "Content-Type": "application/json" } });
-  }
-  if (url.pathname === "/photo/get") {
-    if (!schedAuthOk(request, env)) return new Response("forbidden", { status: 403 });
-    const { token } = await request.json();
-    const bytes = token && await env.PENDING.get(`photo:${token}`, "arrayBuffer");
-    if (!bytes) return new Response("not found", { status: 404 });
-    return new Response(bytes, { status: 200, headers: { "Content-Type": "image/jpeg" } });
-  }
-  if (url.pathname === "/post/decided") {
-    if (!schedAuthOk(request, env)) return new Response("forbidden", { status: 403 });
-    const b = await request.json();
-    const where = platName(b.platform);
-    const text = b.ok ? `✅ ${b.label || "Photo post"} is LIVE on ${where}${b.ref_id ? (b.platform === "fb" ? `: https://facebook.com/${b.ref_id}` : ` (media_id ${b.ref_id})`) : ""}` : `❌ ${b.label || "Photo post"} → ${where} FAILED: ${b.error || "unknown error"}${b.run_url ? `
-${b.run_url}` : ""}`;
-    await tg(env, "sendMessage", { chat_id: b.chat_id || env.TELEGRAM_CHAT_ID, text });
-    return new Response("ok", { status: 200 });
-  }
-  return null;
-}
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const schedResp = await schedRoutes(request, env, url);
-    if (schedResp) return schedResp;
     if (request.method === "POST" && url.pathname === "/free-offer/set") {
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) {
@@ -3221,13 +2824,6 @@ var worker_default = {
         text: lines.join("\n"),
         ...needsCrosspostDecision ? { reply_markup: fbIgDecisionKeyboard(day) } : {}
       });
-      if (needsCrosspostDecision) {
-        try {
-          await imgOfferDay(env, day, chat_id || env.TELEGRAM_CHAT_ID, title);
-        } catch (e) {
-          console.log(`thumbnail photo offer failed: ${e.message}`);
-        }
-      }
       return new Response("ok", { status: 200 });
     }
     if (request.method === "POST" && url.pathname === "/batch/crosspost-decided") {
@@ -3482,8 +3078,6 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
         reply_markup: { inline_keyboard: [[
           { text: `\u2705 Post to ${plat}`, callback_data: `promogo:${token}:0|${p.platform === "ig" ? "ig" : "fb"}` },
           { text: "\u2716 Reject", callback_data: `promono:${token}:0` }
-        ], [
-          { text: "⏰ Schedule", callback_data: `promosch:${token}:0|${p.platform === "ig" ? "ig" : "fb"}` }
         ]] }
       });
       return new Response("ok");
