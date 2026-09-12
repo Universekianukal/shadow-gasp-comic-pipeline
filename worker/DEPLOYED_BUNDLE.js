@@ -1391,7 +1391,7 @@ Post where?`,
       });
       return;
     }
-    const [idxG, platG] = String(extra).split("|");
+    const [idxG, platG, forceG] = String(extra).split("|");
     const itemG = JSON.parse(rawP)[parseInt(idxG, 10)];
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Publishing..." });
     try {
@@ -1399,7 +1399,7 @@ Post where?`,
         case: itemG && (itemG.c || itemG.n) || item.c || item.n,
         platform: platG === "ig" ? "ig" : "fb",
         mode: "post",
-        force: "false"
+        force: forceG === "f" ? "true" : "false"
       });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the post: ${e.message}` });
@@ -2334,28 +2334,71 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       await tg(env, "sendMessage", { chat_id: chatId, text: "No PUBLISHED comics to promote. Drafts are skipped \u2014 a link to a draft is a 404." });
       return;
     }
-    products.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    // 2026-09-13 (user): list EVERY published comic by ISSUE number, each tappable -- including ones
+    // already posted (marked ✅; their draft warns, and its Post button then re-posts on purpose with
+    // force). `/promo 12` jumps straight to issue #12. The KV list keeps the same {n,u,c,pr} items,
+    // so the promo -> promopv -> promogo buttons below work unchanged.
+    let promoRecs = [];
+    try {
+      const ks = await env.PENDING.list({ prefix: "comic:" });
+      promoRecs = (await Promise.all(ks.keys.map((k) => env.PENDING.get(k.name)))).map((r) => {
+        try {
+          return JSON.parse(r);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+    } catch (e) {
+    }
+    const promoIssueOf = (p) => {
+      const perma = (p.custom_permalink || "").toLowerCase();
+      const rec = perma && promoRecs.find((r) => (r.product_url || "").toLowerCase().replace(/\/+$/, "").endsWith("/" + perma));
+      const n = rec && parseInt(rec.issue, 10) || parseInt(((p.name || "").match(/#\s*0*(\d+)/) || [])[1], 10);
+      return Number.isFinite(n) ? n : null;
+    };
+    const promoItems = products.map((p) => ({ p, issue: promoIssueOf(p), done: posted.has(p.custom_permalink || "") })).sort((x, y) => (x.issue ?? 1e9) - (y.issue ?? 1e9) || (x.p.name || "").localeCompare(y.p.name || ""));
     const token = Math.random().toString(36).slice(2, 10);
     await env.PENDING.put(
       `promo:${token}`,
-      JSON.stringify(products.map((p) => ({ n: p.name, u: p.short_url, c: p.custom_permalink, pr: p.price }))),
+      JSON.stringify(promoItems.map(({ p }) => ({ n: p.name, u: p.short_url, c: p.custom_permalink, pr: p.price }))),
       { expirationTtl: 86400 }
     );
-    const lines = [];
-    const buttons = [];
-    products.forEach((p, i) => {
-      const done = posted.has(p.custom_permalink || "");
-      lines.push(`${i + 1}. ${p.name}  \u2014 $${Math.round((p.price || 0) / 100)}${done ? "  \u2705 posted" : ""}`);
-      if (!done) buttons.push({ text: String(i + 1), callback_data: `promo:${token}:${i}` });
-    });
+    const promoWant = text.slice("/promo".length).trim().replace(/^#/, "");
+    if (promoWant) {
+      const i = /^\d+$/.test(promoWant) ? promoItems.findIndex((x) => x.issue === parseInt(promoWant, 10)) : -1;
+      if (i < 0) {
+        await tg(env, "sendMessage", { chat_id: chatId, text: `❌ No published comic is issue #${promoWant}. Send /promo to see them all.` });
+        return;
+      }
+      const x = promoItems[i];
+      await tg(env, "sendMessage", {
+        chat_id: chatId,
+        text: `\u{1F4E2} #${x.issue} ${x.p.name}
+$${Math.round((x.p.price || 0) / 100)}
+${x.p.short_url}` + (x.done ? "\n\n✅ Already promoted before — the draft will warn you before anything goes out." : "") + "\n\nPost where?",
+        reply_markup: { inline_keyboard: [[
+          { text: "\u{1F4D8} Facebook", callback_data: `promopv:${token}:${i}|fb` },
+          { text: "\u{1F4F8} Instagram", callback_data: `promopv:${token}:${i}|ig` }
+        ]] }
+      });
+      return;
+    }
+    let promoBody = "";
+    for (const x of promoItems) {
+      const line = `${x.issue ? "#" + String(x.issue).padStart(2, "0") : "#?"}  ${x.p.name}  — $${Math.round((x.p.price || 0) / 100)}${x.done ? "  ✅ posted" : ""}`;
+      if (promoBody.length + line.length > 3300) {
+        promoBody += "…more — use /promo <issue number>\n";
+        break;
+      }
+      promoBody += line + "\n";
+    }
+    const promoButtons = promoItems.slice(0, 100).map((x, i) => ({ text: `${x.issue ? "#" + x.issue : "?"}${x.done ? " ✅" : ""}`, callback_data: `promo:${token}:${i}` }));
     const rows = [];
-    for (let i = 0; i < buttons.length; i += 4) rows.push(buttons.slice(i, i + 4));
+    for (let i = 0; i < promoButtons.length; i += 5) rows.push(promoButtons.slice(i, i + 5));
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: "\u{1F4E2} PROMOTE A COMIC ON FACEBOOK\n\n" + lines.join("\n") + `
-
-Tap a number to see the exact post before anything goes out. The page has ~1,336 followers and the link goes IN the post.` + (rows.length ? "" : "\n\n\u2705 Every published comic has already been posted."),
-      reply_markup: rows.length ? { inline_keyboard: rows } : void 0
+      text: "\u{1F4E2} PROMOTE A COMIC — pick any issue\n\n" + promoBody + "\nTap an issue to see the exact post before anything goes out. ✅ = promoted before; you can post it again (the draft warns first).\nTip: /promo 12 jumps straight to issue #12.",
+      reply_markup: { inline_keyboard: rows }
     });
     return;
   }
@@ -3076,7 +3119,7 @@ ${p.run_url || ""}`
 
 ${(p.caption || "").slice(0, 800)}${warn}`,
         reply_markup: { inline_keyboard: [[
-          { text: `\u2705 Post to ${plat}`, callback_data: `promogo:${token}:0|${p.platform === "ig" ? "ig" : "fb"}` },
+          { text: `\u2705 Post to ${plat}`, callback_data: `promogo:${token}:0|${p.platform === "ig" ? "ig" : "fb"}${p.already ? "|f" : ""}` },
           { text: "\u2716 Reject", callback_data: `promono:${token}:0` }
         ]] }
       });
