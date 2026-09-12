@@ -184,8 +184,9 @@ def build_caption(product, hook=None, platform="fb"):
 
     ⭐ INSTAGRAM CAPTIONS HAVE NO CLICKABLE LINKS. A URL in an IG caption is inert text -- a
     reader has to memorise or retype it, which nobody does. Printing "👉 https://..." there
-    would look like a funnel while carrying almost no one through. So the IG variant points at
-    the bio instead, which is the only tappable link an IG feed post has.
+    would look like a funnel while carrying almost no one through. So the IG variant asks the
+    reader to COMMENT, and the link is sent to them by DM (user, 2026-09-13: the account is
+    small, a DM link is tappable, and every comment also lifts the post's reach).
     """
     name = product.get("name", "SHADOW GASP")
     price = product.get("price", 0) / 100
@@ -209,7 +210,7 @@ def build_caption(product, hook=None, platform="fb"):
                                      f"${price:.0f}" if price else "") if x])
     bits += [detail, ""]
     if platform == "ig":
-        bits += ["🔗 Link in bio — the full issue is on Gumroad.", "",
+        bits += ["💬 Want the full comic? Comment COMIC below and I'll DM you the link.", "",
                  "#truecrime #unsolved #coldcase #documentarycomic #shadowgasp"]
     else:
         bits += [f"👉 {url}"]
@@ -301,6 +302,12 @@ def main():
     slug = slugify(product.get("custom_permalink") or product.get("name"))
     marker = os.path.join(MARKER_DIR, f"{slug}.json")
     caption = build_caption(product, a.hook, a.platform)
+    # A caption rewritten in Telegram (the Instagram draft's "Edit caption" button) arrives
+    # through post_promo.yml's `caption` input as PROMO_CAPTION, and is posted exactly as written.
+    custom = os.environ.get("PROMO_CAPTION", "").strip()
+    if custom:
+        caption = custom[:2200]
+        print("caption : custom (edited in Telegram)")
     # The purpose-built poster wins when the build produced one; the Gumroad cover is the
     # fallback for books built before posters existed.
     img = poster_url(product.get("custom_permalink"))

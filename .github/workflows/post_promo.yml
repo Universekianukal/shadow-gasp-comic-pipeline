@@ -37,6 +37,10 @@ on:
         description: "Publish again even though this comic already went out on this platform"
         required: false
         default: "false"
+      caption:
+        description: "Custom caption, posted exactly as written (set by the Telegram draft's Edit caption button)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -82,6 +86,7 @@ jobs:
         id: run
         env:
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          PROMO_CAPTION: ${{ github.event.inputs.caption }}
         run: |
           export PATH="$PATH:/home/runner/.local/bin"
           python pipeline_lib/post_fb_promo.py \
