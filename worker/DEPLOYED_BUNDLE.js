@@ -1274,7 +1274,7 @@ __name22(autoFunnelForCase, "autoFunnelForCase");
 var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending"];
 var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel"];
 var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen"];
-var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry"];
+var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry", "promoed"];
 function commandSurface(text) {
   const cmd = text.split(/[\s@]/)[0].toLowerCase();
   if (VIDEO_COMMANDS.includes(cmd)) return "video";
@@ -1393,13 +1393,19 @@ Post where?`,
     }
     const [idxG, platG, forceG] = String(extra).split("|");
     const itemG = JSON.parse(rawP)[parseInt(idxG, 10)];
+    let capG = null;
+    try {
+      capG = JSON.parse(await env.PENDING.get(`promocap:${token}`) || "null");
+    } catch (e) {
+    }
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Publishing..." });
     try {
       await dispatchPostPromo(env, {
         case: itemG && (itemG.c || itemG.n) || item.c || item.n,
         platform: platG === "ig" ? "ig" : "fb",
         mode: "post",
-        force: forceG === "f" ? "true" : "false"
+        force: forceG === "f" ? "true" : "false",
+        ...capG && capG.edited ? { caption: capG.caption } : {}
       });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the post: ${e.message}` });
@@ -1443,6 +1449,10 @@ I'll confirm here when it lands.`
       message_id: messageId,
       text: `\u{1F5BC} Building the ${platV === "ig" ? "Instagram" : "Facebook"} draft for "${itemV.n}" \u2014 the image and caption land here in about a minute.`
     });
+    return;
+  }
+  if (action === "promoed") {
+    await promoEditStart(env, cq, chatId, token);
     return;
   }
   if (action === "promono") {
@@ -2025,6 +2035,7 @@ async function handleMessage(env, msg) {
     await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
     return;
   }
+  if (await promoCaptionReply(env, msg, text)) return;
   const videoObj = msg.video || (msg.document && msg.document.mime_type?.startsWith("video/") ? msg.document : null);
   if (videoObj && !botModeAllows(env, "video")) {
     await tg(env, "sendMessage", { chat_id: chatId, text: otherBotHint(env) });
@@ -2685,6 +2696,72 @@ __name222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name22222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
+// ---------------------------------------------------------------- promo: edit the Instagram caption
+//
+// Added 2026-09-13 (user). Instagram captions have no clickable links and the account is small, so
+// the IG caption asks readers to COMMENT for the link (sent by DM), and the user can rewrite the
+// caption before posting. The draft remembers its image + caption (promocap:<token>); "Edit caption"
+// waits for the owner's next plain message, re-sends the draft with it, and Post passes it to
+// post_promo.yml as the `caption` input (posted verbatim). With no edit, Post dispatches exactly the
+// inputs it always did.
+function promoDraftKeyboard(token, platform, already) {
+  const plat = platform === "ig" ? "Instagram" : "Facebook";
+  const rows = [[
+    { text: `✅ Post to ${plat}`, callback_data: `promogo:${token}:0|${platform}${already ? "|f" : ""}` },
+    { text: "✖ Reject", callback_data: `promono:${token}:0` }
+  ]];
+  if (platform === "ig") rows.push([{ text: "✏️ Edit caption", callback_data: `promoed:${token}:0` }]);
+  return { inline_keyboard: rows };
+}
+async function promoEditStart(env, cq, chatId, token) {
+  if (String(chatId) !== String(env.TELEGRAM_CHAT_ID)) {
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Not allowed." });
+    return;
+  }
+  const raw = await env.PENDING.get(`promocap:${token}`);
+  await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
+  if (!raw) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That draft has expired — run /promo again." });
+    return;
+  }
+  await env.PENDING.put(`awaiting_promo_caption:${chatId}`, String(token), { expirationTtl: 3600 });
+  const cur = JSON.parse(raw).caption || "";
+  await tg(env, "sendMessage", {
+    chat_id: chatId,
+    text: "✏️ Send the new Instagram caption as ONE message (up to 2,200 characters).\nTip: end with a reason to comment, e.g. “Comment COMIC and I'll DM you the link.”\n\nCurrent caption:\n\n" + cur.slice(0, 3400)
+  });
+}
+async function promoCaptionReply(env, msg, text) {
+  if (!text || text.startsWith("/")) return false;
+  const chatId = msg.chat.id;
+  if (String(chatId) !== String(env.TELEGRAM_CHAT_ID)) return false;
+  const token = await env.PENDING.get(`awaiting_promo_caption:${chatId}`);
+  if (!token) return false;
+  await env.PENDING.delete(`awaiting_promo_caption:${chatId}`);
+  const raw = await env.PENDING.get(`promocap:${token}`);
+  if (!raw) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That draft has expired — run /promo again." });
+    return true;
+  }
+  if (text.length > 2200) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ That caption is ${text.length} characters — Instagram allows 2,200. Tap ✏️ Edit caption again and send a shorter one.` });
+    return true;
+  }
+  const d = JSON.parse(raw);
+  d.caption = text;
+  d.edited = true;
+  await env.PENDING.put(`promocap:${token}`, JSON.stringify(d), { expirationTtl: 86400 });
+  await tg(env, "sendPhoto", {
+    chat_id: chatId,
+    photo: d.image,
+    // Telegram photo captions stop at 1,024 characters; the whole caption is what gets posted.
+    caption: `\u{1F5BC} Instagram DRAFT (edited caption) — nothing is published yet
+
+${text.slice(0, 800)}${text.length > 800 ? "… (preview trimmed — the full caption will be posted)" : ""}`,
+    reply_markup: promoDraftKeyboard(String(token), d.platform, d.already)
+  });
+  return true;
+}
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -3111,6 +3188,8 @@ ${p.run_url || ""}`
         JSON.stringify([{ n: p.case, u: p.url, c: p.permalink, pr: (p.price || 0) * 100 }]),
         { expirationTtl: 86400 }
       );
+      // Remember the draft so "Edit caption" can re-send it and Post can use an edited caption.
+      await env.PENDING.put(`promocap:${token}`, JSON.stringify({ image: p.image, caption: p.caption || "", platform: p.platform === "ig" ? "ig" : "fb", already: !!p.already }), { expirationTtl: 86400 });
       const warn = p.already ? "\n\n\u26A0\uFE0F This comic has ALREADY been posted here. Accepting will publish a SECOND copy \u2014 a duplicate is what cost this page its reach in August." : "";
       await tg(env, "sendPhoto", {
         chat_id: env.TELEGRAM_CHAT_ID,
@@ -3118,10 +3197,7 @@ ${p.run_url || ""}`
         caption: `\u{1F5BC} ${plat} DRAFT \u2014 nothing is published yet
 
 ${(p.caption || "").slice(0, 800)}${warn}`,
-        reply_markup: { inline_keyboard: [[
-          { text: `\u2705 Post to ${plat}`, callback_data: `promogo:${token}:0|${p.platform === "ig" ? "ig" : "fb"}${p.already ? "|f" : ""}` },
-          { text: "\u2716 Reject", callback_data: `promono:${token}:0` }
-        ]] }
+        reply_markup: promoDraftKeyboard(token, p.platform === "ig" ? "ig" : "fb", !!p.already)
       });
       return new Response("ok");
     }
