@@ -2762,9 +2762,166 @@ ${text.slice(0, 800)}${text.length > 800 ? "… (preview trimmed — the full ca
   });
   return true;
 }
+// ---------------------------------------------------------------- Instagram comment -> free issue #1
+//
+// Added 2026-09-13 (user). Someone comments "COMIC" on an Instagram post -> a private-reply DM offers
+// issue #1 free for an honest review -> when they reply, Yes / No buttons -> Yes gets a one-time 100%-off
+// Gumroad code (the SAME free-offer + 50-cap as /gencode), No gets a warm "come back" message; both carry
+// the Gumroad subscribe link (email list). Meta rules: the first DM after a comment is text-only and one
+// per comment; buttons only after the person replies (24 h window).
+//
+// Privacy: the comic repo is PUBLIC and workflow_dispatch inputs are visible there, so the workflow only
+// ever gets an opaque job token and fetches the details from /meta/job (shared secret).
+// Security: every POST is checked against Meta's X-Hub-Signature-256 with META_APP_SECRET; with no secret
+// set, everything is refused. Ordinary DMs are never auto-answered -- only replies from people we asked.
+var META_IG_USER_ID = "17841425663819735";
+var META_FREE_SLUG = "norjak";
+var META_FREE_CAP = 50;
+var META_KEYWORD = /\bcomics?\b/i;
+async function metaSigOk(env, raw, header) {
+  if (!env.META_APP_SECRET || !header || !header.startsWith("sha256=")) return false;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.META_APP_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, raw));
+  const want = [...mac].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const got = header.slice(7).toLowerCase();
+  if (got.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
+  return diff === 0;
+}
+async function metaQueue(env, job) {
+  const tok = crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+  await env.PENDING.put(`metajob:${tok}`, JSON.stringify(job), { expirationTtl: 86400 });
+  const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/meta_dm.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" },
+    body: JSON.stringify({ ref: "main", inputs: { job: tok } })
+  });
+  if (!r.ok) throw new Error(`meta_dm dispatch failed: ${r.status} ${await r.text()}`);
+  return tok;
+}
+async function metaStage(env, sid) {
+  try {
+    return JSON.parse(await env.PENDING.get(`igu:${sid}`) || "null");
+  } catch {
+    return null;
+  }
+}
+async function metaSetStage(env, sid, stage, username) {
+  await env.PENDING.put(`igu:${sid}`, JSON.stringify({ stage, username: username || "", at: Date.now() }), { expirationTtl: 30 * 86400 });
+}
+async function metaOnComment(env, v) {
+  if (!v || !v.id || !META_KEYWORD.test(v.text || "")) return "skip";
+  const from = v.from || {};
+  if (from.id === META_IG_USER_ID || from.self_ig_scoped_id === META_IG_USER_ID) return "own";
+  if (await env.PENDING.get(`igc:${v.id}`)) return "dup";
+  await env.PENDING.put(`igc:${v.id}`, "1", { expirationTtl: 8 * 86400 });
+  const sid = from.self_ig_scoped_id || "";
+  if (sid) {
+    if (await env.PENDING.get(`igfree:${sid}`)) return "already-claimed";
+    const st = await metaStage(env, sid);
+    // Asked/offered in the last week: don't send the same offer again. A "no" may be asked again.
+    if (st && (st.stage === "asked" || st.stage === "offered") && Date.now() - st.at < 7 * 86400e3) return "recently-asked";
+    await metaSetStage(env, sid, "asked", from.username);
+  }
+  await metaQueue(env, { action: "ask", comment_id: v.id, username: from.username || "" });
+  return "asked";
+}
+async function metaOnMessage(env, m) {
+  if (!m || !m.message || m.message.is_echo) return "skip";
+  const sid = m.sender && m.sender.id;
+  if (!sid || sid === META_IG_USER_ID) return "skip";
+  const payload = m.message.quick_reply && m.message.quick_reply.payload;
+  const st = await metaStage(env, sid);
+  if (payload === "FREE_YES") {
+    if (await env.PENDING.get(`igfree:${sid}`)) {
+      await metaQueue(env, { action: "already", recipient: sid, username: st && st.username || "" });
+      return "already";
+    }
+    const offer = JSON.parse(await env.PENDING.get(`free_offer:${META_FREE_SLUG}`) || "null");
+    if (!offer || !offer.product_id) {
+      await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `❌ Instagram: someone tapped Yes for a free #1, but no free offer is registered for "${META_FREE_SLUG}".` });
+      return "no-offer";
+    }
+    // Lock BEFORE dispatch: a double tap must never mint two codes.
+    await env.PENDING.put(`igfree:${sid}`, "pending", { expirationTtl: 365 * 86400 });
+    await metaSetStage(env, sid, "claimed", st && st.username);
+    await metaQueue(env, { action: "yes", recipient: sid, username: st && st.username || "", slug: META_FREE_SLUG, product_id: offer.product_id, cap: META_FREE_CAP });
+    return "yes";
+  }
+  if (payload === "FREE_NO") {
+    await metaSetStage(env, sid, "declined", st && st.username);
+    await metaQueue(env, { action: "no", recipient: sid, username: st && st.username || "" });
+    return "no";
+  }
+  if (st && st.stage === "asked") {
+    await metaSetStage(env, sid, "offered", st.username);
+    await metaQueue(env, { action: "offer", recipient: sid, username: st.username || "" });
+    return "offer";
+  }
+  return "ignored";
+}
+async function metaProcess(env, body) {
+  if (!body || body.object !== "instagram") return [];
+  const out = [];
+  for (const entry of body.entry || []) {
+    for (const ch of entry.changes || []) if (ch.field === "comments") out.push(await metaOnComment(env, ch.value));
+    for (const m of entry.messaging || []) out.push(await metaOnMessage(env, m));
+  }
+  return out;
+}
+async function metaRoutes(request, env, url, ctx) {
+  const p = url.pathname;
+  if (p !== "/meta/webhook" && p !== "/meta/job" && p !== "/meta/done") return null;
+  if (p === "/meta/webhook") {
+    if (request.method === "GET") {
+      const q = url.searchParams;
+      if (q.get("hub.mode") === "subscribe" && env.META_VERIFY_TOKEN && q.get("hub.verify_token") === env.META_VERIFY_TOKEN) {
+        return new Response(q.get("hub.challenge") || "", { status: 200 });
+      }
+      return new Response("forbidden", { status: 403 });
+    }
+    if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
+    const raw = await request.arrayBuffer();
+    if (!await metaSigOk(env, raw, request.headers.get("X-Hub-Signature-256"))) return new Response("bad signature", { status: 403 });
+    let body;
+    try {
+      body = JSON.parse(new TextDecoder().decode(raw));
+    } catch {
+      return new Response("bad json", { status: 400 });
+    }
+    // Answer Meta at once; do the work (KV + a GitHub dispatch) in the background.
+    const work = metaProcess(env, body).catch((e) => console.log(`meta webhook: ${e.message}`));
+    if (ctx && ctx.waitUntil) ctx.waitUntil(work);
+    else await work;
+    return new Response("EVENT_RECEIVED", { status: 200 });
+  }
+  if (request.method !== "POST" || !env.WORKER_SHARED_SECRET || request.headers.get("X-Shared-Secret") !== env.WORKER_SHARED_SECRET) {
+    return new Response("forbidden", { status: 403 });
+  }
+  const b = await request.json();
+  if (p === "/meta/job") {
+    const raw = b.job && await env.PENDING.get(`metajob:${b.job}`);
+    if (!raw) return new Response("not found", { status: 404 });
+    return new Response(raw, { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+  // /meta/done -- the workflow reports each step; the owner hears about claims and failures.
+  const job = JSON.parse(b.job && await env.PENDING.get(`metajob:${b.job}`) || "{}");
+  const who = job.username ? `@${job.username}` : "someone";
+  let text = null;
+  if (job.action === "yes" && b.ok && !b.sold_out) text = `\u{1F381} ${who} claimed a free #1 NORJAK on Instagram (${b.count}/${b.cap}).`;
+  else if (job.action === "yes" && b.sold_out) text = `\u{1F614} ${who} tapped Yes, but all ${b.cap} free copies of #1 are claimed — they were told politely.`;
+  else if (job.action === "no" && b.ok) text = `\u{1F645} ${who} said "not right now" to the free #1.`;
+  else if (!b.ok) text = `❌ Instagram DM (${job.action || "?"}) failed for ${who}: ${b.error || "unknown error"}`;
+  if (job.action === "yes" && (!b.ok || b.sold_out) && job.recipient) await env.PENDING.delete(`igfree:${job.recipient}`);
+  if (text) await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
+  return new Response("ok", { status: 200 });
+}
 var worker_default = {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const metaResp = await metaRoutes(request, env, url, ctx);
+    if (metaResp) return metaResp;
     if (request.method === "POST" && url.pathname === "/free-offer/set") {
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) {
