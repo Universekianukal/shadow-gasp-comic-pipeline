@@ -1,0 +1,58 @@
+name: Instagram DM (comment -> free issue #1)
+
+# Dispatched by the comics bot's /meta/webhook for each step of the funnel: someone comments COMIC ->
+# a private reply offers issue #1 free for an honest review -> Yes / No buttons -> a one-time free code
+# (the same free offer + cap as gen_code.yml) or a warm "come back" message.
+#
+# ⚠️ This repo is PUBLIC and workflow inputs are visible to anyone, so the only input is an opaque job
+# token. The commenter's details are fetched from the Worker inside the script and never printed, and
+# the free code / link is never logged either.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Opaque job token issued by the comics bot"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  dm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WORKER_URL: ${{ secrets.WORKER_URL }}
+      WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install --quiet requests
+
+      - name: Which step is this?
+        id: job
+        run: python pipeline_lib/meta_dm.py --job "${{ inputs.job }}" --action-only >> "$GITHUB_OUTPUT"
+
+      - name: Install Gumroad CLI (only a "yes" mints a code)
+        if: steps.job.outputs.action == 'yes'
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            echo "install attempt $attempt failed, retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || { echo "::error::Gumroad CLI did not install"; exit 1; }
+          echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive > /dev/null
+
+      - name: Send the DM
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: "1164008466785123"
+        run: python pipeline_lib/meta_dm.py --job "${{ inputs.job }}"
