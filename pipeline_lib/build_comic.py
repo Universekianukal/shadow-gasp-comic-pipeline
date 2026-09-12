@@ -76,6 +76,58 @@ ASPECT = {
     "SPLASH": 9 / 16,
 }
 
+
+# ⚠️ Every layout path indexes ASPECT[panel["shape"]], and the schema only ASKS the model for a
+# shape -- nothing enforced it. The Collyer Brothers (issue 34, run 34622639641) came back with
+# one panel whose key and value had fused into a single garbage key:
+#     {"file": "p26_4.jpg", "LANDSCAPE\", \"caption": "Clothing, some of it decades old..."}
+# so the panel had no "shape" and its caption sat under that key. The build died with
+# KeyError: 'shape' after the art was generated and paid for, inside a script that is CACHED,
+# so every retry died on the same panel -- the same trap as the bare-string dialogue fix in
+# render_panel (SS Ourang Medan, issue 25).
+#
+# Repair once, right after loading, and say so in the log:
+#   1. a fused key that starts with a real shape -> that shape, and its value goes back under
+#      the field name that follows it (unless that field is already present);
+#   2. a shape in the wrong case or with spaces -> the canonical name;
+#   3. anything else -> SPLASH on a splash page, LANDSCAPE in a grid (the commonest shape).
+# A wrong shape only changes one panel's proportions; a missing one loses the whole book.
+def normalise_panel_shapes(doc):
+    fixed = 0
+    for page in doc.get("pages", []):
+        if not isinstance(page, dict):
+            continue
+        if isinstance(page.get("panel"), dict):
+            panels, default = [page["panel"]], "SPLASH"
+        else:
+            panels = [p for row in page.get("rows", []) if isinstance(row, list)
+                      for p in row if isinstance(p, dict)]
+            default = "LANDSCAPE"
+        for p in panels:
+            shape = p.get("shape")
+            if shape in ASPECT:
+                continue
+            how = None
+            if isinstance(shape, str) and shape.strip().upper() in ASPECT:
+                p["shape"], how = shape.strip().upper(), "normalised %r" % shape
+            else:
+                for key in list(p):
+                    head, sep, tail = key.partition('"')
+                    if head.strip().upper() in ASPECT and sep:
+                        field = tail.strip().strip('",: ')
+                        value = p.pop(key)
+                        p["shape"] = head.strip().upper()
+                        if field and field not in p:
+                            p[field] = value
+                        how = "recovered from fused key %r" % key
+                        break
+            if how is None:
+                p["shape"], how = default, "missing (%r) -> default" % (shape,)
+            fixed += 1
+            print("WARNING: page %s panel %s: shape %s -> %s"
+                  % (page.get("page"), p.get("file"), how, p["shape"]))
+    return fixed
+
 FONT_BODY = "Montserrat-Bold"
 FONT_HEAVY = "Montserrat-ExtraBold"
 FONT_SFX = "ImpactSFX"
@@ -1244,6 +1296,7 @@ def main():
 
     with open(args.script, encoding="utf-8") as fh:
         doc = json.load(fh)
+    normalise_panel_shapes(doc)
 
     # Resolve against the SCRIPT, not this module.
     #
