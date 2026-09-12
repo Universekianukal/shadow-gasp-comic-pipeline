@@ -667,7 +667,7 @@
       "publishedAt": "2026-08-25"
     },
     {
-      "videoId": null,
+      "videoId": "zpHIUul90pc",
       "case": "Hatton Garden Safe Deposit Burglary (April 2015, London)",
       "publishedAt": "2026-08-26"
     },
@@ -1025,6 +1025,11 @@
       "videoId": null,
       "case": "MS Estonia Sinking (Baltic Sea, September 28, 1994)",
       "publishedAt": "2026-09-10"
+    },
+    {
+      "videoId": null,
+      "case": "Saddam Hussein's $920 Million Central Bank Heist (Baghdad, March 18, 2003)",
+      "publishedAt": "2026-09-12"
     }
   ]
 }
