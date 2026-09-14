@@ -120,9 +120,12 @@ def slide_cta(cover, title, issue, pages, free):
         d.text(((W - tw) / 2, yy), text, font=fnt, fill=fill)
     center("WANT THE FULL STORY?", font(40, "Bold"), CREAM, y); y += 70
     center("Comment COMIC", font(84), (255, 255, 255), y); y += 112
-    sub = "and we'll DM it to you — FREE." if free else "and we'll DM you the link."
+    # Only the free issue says "free", and it names the issue: "FREE" alone read as if every comic
+    # were free (user, 2026-09-15).
+    sub = f"Issue #{issue} is free. We'll DM it to you." if free else "and we'll DM you the link."
     center(sub, font(36, "Bold"), RED if free else CREAM, y); y += 70
-    meta = " · ".join(x for x in (f"Issue #{issue}", title, f"{pages} pages" if pages else "") if x)
+    meta = " · ".join(x for x in (("Your first comic is on us" if free else f"Issue #{issue}"), ("" if free else title),
+                                   f"{pages} pages" if pages else "") if x)
     center(meta, font(28, "Bold"), (150, 150, 150), y)
     return s
 
