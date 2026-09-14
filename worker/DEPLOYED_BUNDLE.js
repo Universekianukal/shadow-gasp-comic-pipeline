@@ -2965,9 +2965,17 @@ async function metaRoutes(request, env, url, ctx) {
   const who = job.username ? `@${job.username}` : job.name || "someone";
   const where = job.platform === "fb" ? "Facebook" : "Instagram";
   let text = null;
+  // A real Instagram comment event (2026-09-15) did NOT carry from.self_ig_scoped_id, so the "asked"
+  // stage could not be recorded when the comment arrived -- and the person's reply was then ignored.
+  // The private-reply response DOES return the commenter's Instagram-scoped ID (recipient_id), the
+  // same id their reply arrives with as sender.id, so record the stage here instead.
+  if (job.action === "ask" && b.ok && b.recipient_id && job.platform !== "fb" && !await env.PENDING.get(`igfree:${b.recipient_id}`)) {
+    await metaSetStage(env, String(b.recipient_id), "asked", job.username);
+  }
   if (job.action === "yes" && b.ok && !b.sold_out) text = `\u{1F381} ${who} claimed a free #1 NORJAK on ${where} (${b.count}/${b.cap}).`;
   else if (job.action === "yes" && b.sold_out) text = `\u{1F614} ${who} tapped Yes, but all ${b.cap} free copies of #1 are claimed — they were told politely.`;
   else if (job.action === "no" && b.ok) text = `\u{1F645} ${who} said "not right now" to the free #1.`;
+  else if (!b.ok && Number(b.err_code) === 10903) text = `ℹ️ ${where}: couldn't DM ${who} — Meta doesn't allow private replies to a Page, or to someone whose settings block them. Nothing to fix; test from a personal profile.`;
   else if (!b.ok) text = `❌ ${where} DM (${job.action || "?"}) failed for ${who}: ${b.error || "unknown error"}`;
   if (job.action === "yes" && (!b.ok || b.sold_out) && job.recipient) await env.PENDING.delete(`${job.platform === "fb" ? "fbfree" : "igfree"}:${job.recipient}`);
   if (text) await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
