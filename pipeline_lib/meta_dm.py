@@ -15,6 +15,7 @@ The outcome always goes back to the Worker's /meta/done, which tells the owner i
 import argparse
 import json
 import os
+import random
 import secrets
 import subprocess
 import sys
@@ -36,6 +37,14 @@ def ask_text(username):
 
 
 OFFER_TEXT = "Great! Tap below to get your copy 👇"
+# Public reply under the comment (user, 2026-09-15). Rotated so it never reads as one comment spammed;
+# none contains the keyword, so the bot can never trigger itself.
+PUBLIC_REPLIES = [
+    "Sent you a DM 📩",
+    "Check your DMs, it's on its way 🖤",
+    "Just messaged you! 🎁",
+    "Your copy is waiting in your inbox 🕯️",
+]
 QUICK = [
     {"content_type": "text", "title": "📖 Yes, send it", "payload": YES_PAYLOAD},
     {"content_type": "text", "title": "Not right now", "payload": NO_PAYLOAD},
@@ -114,6 +123,31 @@ def to_user(sid, text, quick=None):
     return {"recipient": {"id": sid}, "messaging_type": "RESPONSE", "message": msg}
 
 
+def reply_publicly(platform, comment_id, username):
+    """Best-effort public reply under the comment, sent only AFTER the private DM went out, so nobody is
+    told "sent you a DM" when it failed. Tags the person on Instagram. Never fails the step -- the DM
+    already reached them -- and never prints the text or the name (public repo)."""
+    text = random.choice(PUBLIC_REPLIES)
+    if platform != "fb" and username:
+        text = f"@{username} {text}"
+    edge = "comments" if platform == "fb" else "replies"
+    try:
+        r = requests.post(f"{GRAPH}/{comment_id}/{edge}", params={"access_token": env("FB_PAGE_ACCESS_TOKEN")},
+                          data={"message": text}, timeout=30)
+    except requests.RequestException as e:
+        print(f"public reply: failed ({type(e).__name__})")
+        return "failed (network)"
+    if r.ok:
+        print("public reply: ok")
+        return "ok"
+    try:
+        code = r.json().get("error", {}).get("code")
+    except ValueError:
+        code = r.status_code
+    print(f"public reply: failed (code {code})")
+    return f"failed ({code})"
+
+
 def gumroad(*args):
     r = subprocess.run([os.path.expanduser("~/.local/bin/gumroad"), *args, "--json"], capture_output=True, text=True, timeout=120)
     try:
@@ -143,11 +177,13 @@ def run(job):
         resp = send({"recipient": {"comment_id": job["comment_id"]},
                      "message": {"text": fb_ask_text(job.get("name", "")), "quick_replies": QUICK}})
         result["recipient_id"] = str(resp.get("recipient_id", ""))
+        result["public_reply"] = reply_publicly("fb", job["comment_id"], "")
     elif a == "ask":
         resp = send({"recipient": {"comment_id": job["comment_id"]}, "message": {"text": ask_text(job.get("username", ""))}})
         # The commenter's scoped id -- the id their reply will arrive with. Reported to the bot (never
         # printed), which records "asked" under it so the reply gets the Yes / No buttons.
         result["recipient_id"] = str(resp.get("recipient_id", ""))
+        result["public_reply"] = reply_publicly("ig", job["comment_id"], job.get("username", ""))
     elif a == "offer":
         send(to_user(job["recipient"], OFFER_TEXT, QUICK))
     elif a == "yes":
