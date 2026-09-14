@@ -52,9 +52,8 @@ def fb_ask_text(name):
 
 
 def yes_text(link):
-    return (f"Here you go! 🎁\n{link}\n\n"
-            "It's a one-time link just for you. Enjoy the story, and if you have a minute afterwards, "
-            "an honest review would mean a lot 🖤\n\n"
+    return (f"Here you go! 🎁\n{link}\n"
+            "This link is just for you. Enjoy the story 🖤\n"
             f"Want to hear about new issues? → {SUBSCRIBE}")
 
 
