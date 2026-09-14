@@ -32,11 +32,10 @@ YES_PAYLOAD, NO_PAYLOAD = "FREE_YES", "FREE_NO"
 def ask_text(username):
     hi = f"Hey @{username}!" if username else "Hey!"
     return (f"{hi} 🎁 We'd love to gift you Issue #1: NORJAK, the D.B. Cooper mystery in comic form. "
-            "It's our way of saying hello, a free copy of our very first comic. "
-            "If you enjoy it, an honest review would mean a lot, but there's no pressure. Reply YES 👇")
+            "It's our way of saying hello, a free copy of our very first comic. Reply YES 👇")
 
 
-OFFER_TEXT = "Would you like to read Issue #1 free and share your honest review? 👇"
+OFFER_TEXT = "Great! Tap below to get your copy 👇"
 QUICK = [
     {"content_type": "text", "title": "📖 Yes, send it", "payload": YES_PAYLOAD},
     {"content_type": "text", "title": "Not right now", "payload": NO_PAYLOAD},
@@ -47,13 +46,13 @@ def fb_ask_text(name):
     """Facebook's private reply may carry the buttons, so it asks the question directly."""
     hi = f"Hey {name}!" if name else "Hey!"
     return (f"{hi} 🎁 We'd love to gift you Issue #1: NORJAK, the D.B. Cooper mystery in comic form. "
-            "It's our way of saying hello, a free copy of our very first comic. "
-            "If you enjoy it, an honest review would mean a lot, but there's no pressure. Want it?")
+            "It's our way of saying hello, a free copy of our very first comic. Want it?")
 
 
 def yes_text(link):
     return (f"Here you go! 🎁\n{link}\n"
             "This link is just for you. Enjoy the story 🖤\n"
+            "If you like it, we'd be grateful for an honest review, only if you feel like it.\n"
             f"Want to hear about new issues? → {SUBSCRIBE}")
 
 
