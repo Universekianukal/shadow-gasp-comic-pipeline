@@ -94,23 +94,37 @@ jobs:
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # ⭐⭐ Everything below MUST come in through env:, never interpolated straight into
+          # this run: script -- GitHub Actions substitutes ${{ }} into the YAML-generated bash
+          # text BEFORE bash runs it, so a case name containing "$9" (e.g. "$920 Million") is
+          # read by bash as positional parameter 9 (empty) + "20", silently collapsing "$920"
+          # to "20". Same bug, same fix, as pipeline.yml's "Set case variable" step.
+          CASE: ${{ github.event.inputs.case }}
+          PRODUCT_ID: ${{ github.event.inputs.product_id }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+          MESSAGE_ID: ${{ github.event.inputs.message_id }}
         run: |
-          ~/.local/bin/gumroad products publish "${{ github.event.inputs.product_id }}" --yes
-          URL=$(~/.local/bin/gumroad products url "${{ github.event.inputs.product_id }}")
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/editMessageText" \
-            -d chat_id="${{ github.event.inputs.chat_id }}" \
-            -d message_id="${{ github.event.inputs.message_id }}" \
+          ~/.local/bin/gumroad products publish "$PRODUCT_ID" --yes
+          URL=$(~/.local/bin/gumroad products url "$PRODUCT_ID")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText" \
+            -d chat_id="$CHAT_ID" \
+            -d message_id="$MESSAGE_ID" \
             -d text="✅ LIVE on Gumroad: $URL"
-          python pipeline_lib/gen_promo.py --case "${{ github.event.inputs.case }}" --url "$URL" --product-id "${{ github.event.inputs.product_id }}"
+          python pipeline_lib/gen_promo.py --case "$CASE" --url "$URL" --product-id "$PRODUCT_ID"
 
       - name: Reject
         id: reject
         if: github.event.inputs.action == 'reject'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          PRODUCT_ID: ${{ github.event.inputs.product_id }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+          MESSAGE_ID: ${{ github.event.inputs.message_id }}
         run: |
-          ~/.local/bin/gumroad products delete "${{ github.event.inputs.product_id }}" --yes
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/editMessageText" \
-            -d chat_id="${{ github.event.inputs.chat_id }}" \
-            -d message_id="${{ github.event.inputs.message_id }}" \
+          ~/.local/bin/gumroad products delete "$PRODUCT_ID" --yes
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText" \
+            -d chat_id="$CHAT_ID" \
+            -d message_id="$MESSAGE_ID" \
             -d text="❌ Rejected and deleted from Gumroad."
 
       - name: Regenerate with more pages (dispatches the full pipeline again)
@@ -118,14 +132,19 @@ jobs:
         if: github.event.inputs.action == 'regenerate'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CASE: ${{ github.event.inputs.case }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+          MESSAGE_ID: ${{ github.event.inputs.message_id }}
+          TARGET_PAGES: ${{ github.event.inputs.target_pages }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/editMessageText" \
-            -d chat_id="${{ github.event.inputs.chat_id }}" \
-            -d message_id="${{ github.event.inputs.message_id }}" \
-            -d text="\U0001F504 Regenerating \"${{ github.event.inputs.case }}\" at ${{ github.event.inputs.target_pages }} pages... this takes a while (script + art + build)."
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText" \
+            -d chat_id="$CHAT_ID" \
+            -d message_id="$MESSAGE_ID" \
+            -d text="$(printf '\xf0\x9f\x94\x84 Regenerating "%s" at %s pages... this takes a while (script + art + build).' "$CASE" "$TARGET_PAGES")"
           gh workflow run pipeline.yml \
-            -f "case=${{ github.event.inputs.case }}" \
-            -f "target_pages=${{ github.event.inputs.target_pages }}"
+            -f "case=$CASE" \
+            -f "target_pages=$TARGET_PAGES"
 
       # ⛔ THIS WORKFLOW HAD NO FAILURE PATH AT ALL until 2026-09-05.
       #

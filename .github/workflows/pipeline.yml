@@ -232,11 +232,20 @@ jobs:
 
       - name: Set case variable
         id: case
+        # ⭐⭐ Never interpolate ${{ inputs.case }} straight into a run: script -- GitHub
+        # Actions substitutes it into the YAML-generated bash text BEFORE bash runs it, so a
+        # case name containing "$9" (e.g. "$920 Million") gets read by bash as positional
+        # parameter 9 (empty here) followed by "20", collapsing "$920" to "20" and silently
+        # corrupting the title. Routing both inputs through env: instead means bash sees them
+        # only as already-substituted variable VALUES, which it does not re-expand.
+        env:
+          INPUT_CASE: ${{ github.event.inputs.case }}
+          PICKED_CASE: ${{ steps.pick.outputs.case }}
         run: |
-          if [ -n "${{ github.event.inputs.case }}" ]; then
-            echo "case=${{ github.event.inputs.case }}" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_CASE" ]; then
+            printf 'case=%s\n' "$INPUT_CASE" >> "$GITHUB_OUTPUT"
           else
-            echo "case=${{ steps.pick.outputs.case }}" >> "$GITHUB_OUTPUT"
+            printf 'case=%s\n' "$PICKED_CASE" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Stop here if dry run
