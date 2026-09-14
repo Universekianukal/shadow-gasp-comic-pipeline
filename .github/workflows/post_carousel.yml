@@ -1,0 +1,76 @@
+name: Post Comic Carousel (Instagram)
+
+# Dispatched by the comics bot's /carousel draft "Post" button -- never automatic. The slides and
+# caption are already committed (carousel/index.json); this only publishes them, writes the
+# posted marker (stops an accidental second copy), and reports back so a COMIC comment on the new
+# post gets routed by the DM funnel.
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "carousel slug from carousel/index.json (e.g. norjak)"
+        required: true
+      force:
+        description: "post again even though this carousel already went out"
+        required: false
+        default: "false"
+      dry_run:
+        description: "check slides + token only, post nothing"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: post-carousel-${{ github.event.inputs.slug }}
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Publish the carousel
+        id: run
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: |
+          python pipeline_lib/post_ig_carousel.py --slug "${{ github.event.inputs.slug }}" \
+            ${{ github.event.inputs.force == 'true' && '--force' || '' }} \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      - name: Commit the posted marker
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name "shadow-gasp-bot"
+          git config user.email "bot@shadowgasp.example"
+          git add carousel/*.posted.json 2>/dev/null || true
+          git commit -m "carousel: ig <- ${{ github.event.inputs.slug }}" || { echo "nothing to commit"; exit 0; }
+          git pull --rebase --autostash origin main || true
+          git push
+
+      - name: Report the result
+        if: always()
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          SLUG: ${{ github.event.inputs.slug }}
+          RESULT: ${{ steps.run.outcome }}
+          DRY: ${{ github.event.inputs.dry_run }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -c 'import json,os;p="/tmp/car_posted.json";d=json.load(open(p)) if os.path.exists(p) else {};d.update(slug=os.environ["SLUG"],outcome=os.environ["RESULT"],dry_run=os.environ["DRY"],run_url=os.environ["RUN_URL"]);print(json.dumps(d))' > /tmp/done.json
+          curl -sS -X POST "${WORKER_URL%/}/carousel/posted" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/done.json \
+            || echo "WARNING: could not report the result"
