@@ -1465,26 +1465,40 @@ I'll confirm here when it lands.`
     return;
   }
   if (action === "carpost") {
-    // A double tap must not publish two copies: lock until post_carousel.yml reports back (or 15 min).
-    if (await env.PENDING.get(`carlock:${token}`)) {
-      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Already publishing this one." });
+    // extra = "<ig|fb>[|f]". Drafts sent before Facebook existed carry "" or "f" -> Instagram.
+    const [platC, forceC] = String(extra || "").split("|");
+    const plat = platC === "fb" ? "fb" : "ig";
+    const force = forceC === "f" || platC === "f";
+    // A double tap must not publish two copies: lock per platform until post_carousel.yml reports back (or 15 min).
+    const lock = `carlock:${token}:${plat}`;
+    if (await env.PENDING.get(lock)) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Already publishing to ${CAROUSEL_NAMES[plat]}.` });
       return;
     }
-    await env.PENDING.put(`carlock:${token}`, "1", { expirationTtl: 900 });
+    await env.PENDING.put(lock, "1", { expirationTtl: 900 });
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Publishing..." });
     try {
-      await dispatchCarousel(env, { slug: token, force: extra === "f" ? "true" : "false" });
+      await dispatchCarousel(env, { slug: token, platform: plat, force: force ? "true" : "false" });
     } catch (e) {
-      await env.PENDING.delete(`carlock:${token}`);
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the post: ${e.message}` });
+      await env.PENDING.delete(lock);
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the ${CAROUSEL_NAMES[plat]} post: ${e.message}` });
       return;
     }
-    await tg(env, "editMessageText", { chat_id: chatId, message_id: messageId, text: "📢 Publishing the carousel to Instagram… I'll confirm here when it lands." });
+    // Keep the OTHER platform's button on the draft, so both can be posted from one draft.
+    const other = plat === "ig" ? "fb" : "ig";
+    const doneC = await carouselPosted(token);
+    await tg(env, "editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [[carouselButton(token, other, doneC)], [{ text: "✖ Close", callback_data: `carno:${token}:` }]] }
+    });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `📢 Publishing the carousel to ${CAROUSEL_NAMES[plat]}… I'll confirm here when it lands.` });
     return;
   }
   if (action === "carno") {
-    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Cancelled" });
-    await tg(env, "editMessageText", { chat_id: chatId, message_id: messageId, text: "✖ Cancelled — nothing was posted." });
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Closed" });
+    await tg(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "✖ Draft closed — nothing more will be posted from it." });
     return;
   }
   if (action === "promoed") {
@@ -2747,14 +2761,20 @@ async function carouselIndex() {
   return await r.json();
 }
 async function carouselPosted(slug) {
+  // {ig, fb}: the per-platform posted markers (carousel/<slug>.posted.json), {} when never posted.
   try {
     const r = await fetch(`${RAW_COMIC}/carousel/${slug}.posted.json?t=${Date.now()}`, { headers: { "User-Agent": "shadow-gasp-bot" } });
-    if (!r.ok) return null;
+    if (!r.ok) return {};
     const d = await r.json();
-    return d && d.ig ? d.ig : null;
+    return { ig: d && d.ig || null, fb: d && d.fb || null };
   } catch (e) {
-    return null;
+    return {};
   }
+}
+var CAROUSEL_NAMES = { ig: "Instagram", fb: "Facebook" };
+function carouselButton(slug, plat, done) {
+  const posted = !!(done && done[plat]);
+  return { text: posted ? `⚠️ ${CAROUSEL_NAMES[plat]} again` : `✅ Post to ${CAROUSEL_NAMES[plat]}`, callback_data: `carpost:${slug}:${plat}${posted ? "|f" : ""}` };
 }
 async function dispatchCarousel(env, inputs) {
   const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_carousel.yml/dispatches`, {
@@ -2789,15 +2809,15 @@ async function carouselCommand(env, chatId, want) {
     chat_id: chatId,
     media: Array.from({ length: n }, (_, i) => ({ type: "photo", media: `${RAW_COMIC}/carousel/${e.dir}/${i + 1}.jpg` }))
   });
-  const already = await carouselPosted(e.slug);
-  const warn = already ? `\n\n⚠️ Already posted on Instagram (${String(already.posted_at || "").slice(0, 10)}). Posting again makes a DUPLICATE.` : "";
+  const done = await carouselPosted(e.slug);
+  const warn = ["ig", "fb"].filter((p) => done[p]).map((p) => `\n\n⚠️ Already posted on ${CAROUSEL_NAMES[p]} (${String(done[p].posted_at || "").slice(0, 10)}). Posting there again makes a DUPLICATE.`).join("");
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: `🎠 INSTAGRAM CAROUSEL DRAFT — #${e.issue} ${e.title} — nothing is published yet\n\n${(e.caption || "").slice(0, 3000)}${warn}`,
-    reply_markup: { inline_keyboard: [[
-      { text: already ? "⚠️ Post again" : "✅ Post to Instagram", callback_data: `carpost:${e.slug}:${already ? "f" : ""}` },
-      { text: "✖ Reject", callback_data: `carno:${e.slug}:` }
-    ]] }
+    text: `🎠 CAROUSEL DRAFT — #${e.issue} ${e.title} — nothing is published yet\nInstagram: swipe carousel · Facebook: one multi-photo post\n\n${(e.caption || "").slice(0, 3000)}${warn}`,
+    reply_markup: { inline_keyboard: [
+      [carouselButton(e.slug, "ig", done), carouselButton(e.slug, "fb", done)],
+      [{ text: "✖ Reject", callback_data: `carno:${e.slug}:` }]
+    ] }
   });
 }
 // ---------------------------------------------------------------- promo: edit the Instagram caption
@@ -3619,24 +3639,27 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
     if (request.method === "POST" && url.pathname === "/carousel/posted") {
       if (request.headers.get("X-Shared-Secret") !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
       const b = await request.json();
+      const plat = b.platform === "fb" ? "fb" : "ig";
+      const where = plat === "fb" ? "Facebook (multi-photo post)" : "Instagram";
       const posted = b.outcome === "success" && b.result === "posted" && !!b.post_id;
-      // post -> issue routing: a COMIC comment on this carousel is routed like one on a promo post.
+      // post -> issue routing: a COMIC comment on this post is routed like one on a promo post.
       if (posted && b.permalink) {
         try {
-          await postmapRecord(env, "ig", b.post_id, { kind: "promo", permalink: b.permalink, case: `carousel:${b.slug || ""}` });
+          await postmapRecord(env, plat, b.post_id, { kind: "promo", permalink: b.permalink, case: `carousel:${b.slug || ""}` });
         } catch (e) {
           console.log(`postmap record: ${e.message}`);
         }
       }
       try {
+        await env.PENDING.delete(`carlock:${b.slug}:${plat}`);
         await env.PENDING.delete(`carlock:${b.slug}`);
       } catch (e) {
       }
       const dry = String(b.dry_run) === "true";
-      const text = dry ? `🧪 Carousel DRY RUN for "${b.slug}" — ${b.outcome === "success" ? "slides reachable and token valid; nothing posted." : "failed."}\n${b.run_url || ""}`
-        : posted ? `✅ Carousel "${b.slug}" is live on Instagram. COMIC comments on it go to the DM funnel.`
-        : b.result === "already" ? `ℹ️ Carousel "${b.slug}" was already posted — nothing new went out.\n${b.run_url || ""}`
-        : `❌ Carousel "${b.slug}" FAILED to post.\n${b.run_url || ""}`;
+      const text = dry ? `🧪 Carousel DRY RUN for "${b.slug}" on ${CAROUSEL_NAMES[plat]} — ${b.outcome === "success" ? "slides reachable and token valid; nothing posted." : "failed."}\n${b.run_url || ""}`
+        : posted ? `✅ Carousel "${b.slug}" is live on ${where}. COMIC comments on it go to the DM funnel.`
+        : b.result === "already" ? `ℹ️ Carousel "${b.slug}" was already posted on ${CAROUSEL_NAMES[plat]} — nothing new went out.\n${b.run_url || ""}`
+        : `❌ Carousel "${b.slug}" FAILED to post on ${CAROUSEL_NAMES[plat]}.\n${b.run_url || ""}`;
       await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
       return new Response("ok");
     }
