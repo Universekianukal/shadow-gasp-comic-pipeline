@@ -80,15 +80,30 @@ def fetch_job(token):
     return r.json()
 
 
+class MetaError(RuntimeError):
+    """A refusal from Meta, carrying its error code (e.g. 10903 = can't private-reply to this person)."""
+
+    def __init__(self, text, code=None):
+        super().__init__(text)
+        self.code = code
+
+
 def send(payload):
+    """Send one message; returns Meta's JSON reply (a private reply returns the recipient's scoped id)."""
     r = requests.post(f"{GRAPH}/{env('FB_PAGE_ID')}/messages", params={"access_token": env("FB_PAGE_ACCESS_TOKEN")},
                       json=payload, timeout=30)
     if not r.ok:
+        code = None
         try:
-            msg = r.json().get("error", {}).get("message", "")
+            err = r.json().get("error", {})
+            msg, code = err.get("message", ""), err.get("code")
         except ValueError:
             msg = r.text[:200]
-        raise RuntimeError(f"Meta refused the message ({r.status_code}): {msg}")
+        raise MetaError(f"Meta refused the message ({r.status_code}): {msg}", code)
+    try:
+        return r.json()
+    except ValueError:
+        return {}
 
 
 def to_user(sid, text, quick=None):
@@ -124,10 +139,14 @@ def run(job):
     result = {"ok": True}
     if a == "ask" and job.get("platform") == "fb":
         # Facebook: the one private reply already carries Yes / No (Instagram's may not).
-        send({"recipient": {"comment_id": job["comment_id"]},
-              "message": {"text": fb_ask_text(job.get("name", "")), "quick_replies": QUICK}})
+        resp = send({"recipient": {"comment_id": job["comment_id"]},
+                     "message": {"text": fb_ask_text(job.get("name", "")), "quick_replies": QUICK}})
+        result["recipient_id"] = str(resp.get("recipient_id", ""))
     elif a == "ask":
-        send({"recipient": {"comment_id": job["comment_id"]}, "message": {"text": ask_text(job.get("username", ""))}})
+        resp = send({"recipient": {"comment_id": job["comment_id"]}, "message": {"text": ask_text(job.get("username", ""))}})
+        # The commenter's scoped id -- the id their reply will arrive with. Reported to the bot (never
+        # printed), which records "asked" under it so the reply gets the Yes / No buttons.
+        result["recipient_id"] = str(resp.get("recipient_id", ""))
     elif a == "offer":
         send(to_user(job["recipient"], OFFER_TEXT, QUICK))
     elif a == "yes":
@@ -168,6 +187,8 @@ def main():
         print(f"step '{job.get('action')}' sent")
     except Exception as e:
         result = {"ok": False, "error": str(e)[:300]}
+        if isinstance(e, MetaError) and e.code is not None:
+            result["err_code"] = e.code
         print(f"FAILED step '{job.get('action')}': {e}", file=sys.stderr)
     try:
         worker("/meta/done", {"job": a.job, **result})
