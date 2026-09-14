@@ -1285,9 +1285,9 @@ __name(autoFunnelForCase, "autoFunnelForCase");
 __name2(autoFunnelForCase, "autoFunnelForCase");
 __name22(autoFunnelForCase, "autoFunnelForCase");
 var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending"];
-var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel"];
+var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel", "/carousel"];
 var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen"];
-var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry", "promoed"];
+var COMIC_ACTIONS = ["approve", "reject", "confirm_publish", "cancel_publish", "pages_menu", "set_pages", "make_pages", "make_style", "topic", "topicgo", "topicpg", "tpag", "promo", "promogo", "promono", "promopv", "funnel", "funnelc", "retry", "promoed", "carpost", "carno"];
 function commandSurface(text) {
   const cmd = text.split(/[\s@]/)[0].toLowerCase();
   if (VIDEO_COMMANDS.includes(cmd)) return "video";
@@ -1462,6 +1462,29 @@ I'll confirm here when it lands.`
       message_id: messageId,
       text: `\u{1F5BC} Building the ${platV === "ig" ? "Instagram" : "Facebook"} draft for "${itemV.n}" \u2014 the image and caption land here in about a minute.`
     });
+    return;
+  }
+  if (action === "carpost") {
+    // A double tap must not publish two copies: lock until post_carousel.yml reports back (or 15 min).
+    if (await env.PENDING.get(`carlock:${token}`)) {
+      await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Already publishing this one." });
+      return;
+    }
+    await env.PENDING.put(`carlock:${token}`, "1", { expirationTtl: 900 });
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Publishing..." });
+    try {
+      await dispatchCarousel(env, { slug: token, force: extra === "f" ? "true" : "false" });
+    } catch (e) {
+      await env.PENDING.delete(`carlock:${token}`);
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the post: ${e.message}` });
+      return;
+    }
+    await tg(env, "editMessageText", { chat_id: chatId, message_id: messageId, text: "📢 Publishing the carousel to Instagram… I'll confirm here when it lands." });
+    return;
+  }
+  if (action === "carno") {
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Cancelled" });
+    await tg(env, "editMessageText", { chat_id: chatId, message_id: messageId, text: "✖ Cancelled — nothing was posted." });
     return;
   }
   if (action === "promoed") {
@@ -2017,6 +2040,7 @@ var COMMAND_LIST = [
   "/regen <token> p05_3  \u2014 same, but for an older book (the token is in that book's sheet captions)",
   "/topics  - browse buildable cases: upcoming shorts first, then the published backlog. Full case names are listed under the buttons; tap one, pick the Kaggle account, the page count and the layout style.",
   "/promo  - promote a PUBLISHED comic on Facebook: cover + opening lines + the Gumroad link, in the post rather than the comments. Shows the post for confirmation first, and refuses a comic that has already gone out.",
+  "/carousel  - Instagram carousel drafts (slides + caption) for comics that have one; /carousel 1 shows issue #1's with Post / Reject",
   "/topics backlog  - jump straight to the published-but-no-comic list",
   "/links  - every comic with its Gumroad URL, the short it came from, and the command to link them",
   "/funnel  - put the most recent comic's link into the description of the short it was made from (published products only)",
@@ -2344,6 +2368,10 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     const rest2 = text.slice("/topics".length).trim().toLowerCase();
     const kind = rest2.startsWith("back") ? "bk" : rest2.startsWith("done") || rest2.startsWith("comp") || rest2.startsWith("link") ? "dn" : "up";
     await sendTopicsPage(env, chatId, kind, 0, null);
+    return;
+  }
+  if (text.startsWith("/carousel")) {
+    await carouselCommand(env, chatId, text.slice("/carousel".length).trim().replace(/^#/, ""));
     return;
   }
   if (text.startsWith("/promo")) {
@@ -2709,6 +2737,69 @@ __name222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name22222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
+// ---------------------------------------------------------------- /carousel: Instagram carousel drafts
+// (2026-09-15) Slides + caption are built ahead of time and committed to the comic repo
+// (carousel/index.json, carousel/<dir>/1..5.jpg). "/carousel 1" shows them here as an album with
+// Post / Reject; Post dispatches post_carousel.yml. Additive -- /promo is untouched.
+async function carouselIndex() {
+  const r = await fetch(`${RAW_COMIC}/carousel/index.json?t=${Date.now()}`, { headers: { "User-Agent": "shadow-gasp-bot" } });
+  if (!r.ok) throw new Error(`carousel list: HTTP ${r.status}`);
+  return await r.json();
+}
+async function carouselPosted(slug) {
+  try {
+    const r = await fetch(`${RAW_COMIC}/carousel/${slug}.posted.json?t=${Date.now()}`, { headers: { "User-Agent": "shadow-gasp-bot" } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d && d.ig ? d.ig : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function dispatchCarousel(env, inputs) {
+  const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_carousel.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" },
+    body: JSON.stringify({ ref: "main", inputs })
+  });
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
+async function carouselCommand(env, chatId, want) {
+  let idx;
+  try {
+    idx = await carouselIndex();
+  } catch (e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't read the carousel list: ${e.message}` });
+    return;
+  }
+  if (!want) {
+    await tg(env, "sendMessage", {
+      chat_id: chatId,
+      text: idx.length ? "🎠 CAROUSELS READY\n\n" + idx.map((e) => `#${e.issue}  ${e.title}  → /carousel ${e.issue}`).join("\n") : "No carousels built yet."
+    });
+    return;
+  }
+  const e = idx.find((x) => String(x.issue) === want || x.slug === want.toLowerCase());
+  if (!e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ No carousel for #${want} yet. Built so far: ${idx.map((x) => "#" + x.issue).join(", ") || "none"}.` });
+    return;
+  }
+  const n = parseInt(e.slides || 5, 10);
+  await tg(env, "sendMediaGroup", {
+    chat_id: chatId,
+    media: Array.from({ length: n }, (_, i) => ({ type: "photo", media: `${RAW_COMIC}/carousel/${e.dir}/${i + 1}.jpg` }))
+  });
+  const already = await carouselPosted(e.slug);
+  const warn = already ? `\n\n⚠️ Already posted on Instagram (${String(already.posted_at || "").slice(0, 10)}). Posting again makes a DUPLICATE.` : "";
+  await tg(env, "sendMessage", {
+    chat_id: chatId,
+    text: `🎠 INSTAGRAM CAROUSEL DRAFT — #${e.issue} ${e.title} — nothing is published yet\n\n${(e.caption || "").slice(0, 3000)}${warn}`,
+    reply_markup: { inline_keyboard: [[
+      { text: already ? "⚠️ Post again" : "✅ Post to Instagram", callback_data: `carpost:${e.slug}:${already ? "f" : ""}` },
+      { text: "✖ Reject", callback_data: `carno:${e.slug}:` }
+    ]] }
+  });
+}
 // ---------------------------------------------------------------- promo: edit the Instagram caption
 //
 // Added 2026-09-13 (user). Instagram captions have no clickable links and the account is small, so
@@ -3523,6 +3614,30 @@ ${p.run_url || ""}`
 ${(p.caption || "").slice(0, 800)}${warn}`,
         reply_markup: promoDraftKeyboard(token, p.platform === "ig" ? "ig" : "fb", !!p.already)
       });
+      return new Response("ok");
+    }
+    if (request.method === "POST" && url.pathname === "/carousel/posted") {
+      if (request.headers.get("X-Shared-Secret") !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
+      const b = await request.json();
+      const posted = b.outcome === "success" && b.result === "posted" && !!b.post_id;
+      // post -> issue routing: a COMIC comment on this carousel is routed like one on a promo post.
+      if (posted && b.permalink) {
+        try {
+          await postmapRecord(env, "ig", b.post_id, { kind: "promo", permalink: b.permalink, case: `carousel:${b.slug || ""}` });
+        } catch (e) {
+          console.log(`postmap record: ${e.message}`);
+        }
+      }
+      try {
+        await env.PENDING.delete(`carlock:${b.slug}`);
+      } catch (e) {
+      }
+      const dry = String(b.dry_run) === "true";
+      const text = dry ? `🧪 Carousel DRY RUN for "${b.slug}" — ${b.outcome === "success" ? "slides reachable and token valid; nothing posted." : "failed."}\n${b.run_url || ""}`
+        : posted ? `✅ Carousel "${b.slug}" is live on Instagram. COMIC comments on it go to the DM funnel.`
+        : b.result === "already" ? `ℹ️ Carousel "${b.slug}" was already posted — nothing new went out.\n${b.run_url || ""}`
+        : `❌ Carousel "${b.slug}" FAILED to post.\n${b.run_url || ""}`;
+      await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
       return new Response("ok");
     }
     if (request.method === "POST" && url.pathname === "/promo/posted") {
