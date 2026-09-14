@@ -30,9 +30,9 @@ YES_PAYLOAD, NO_PAYLOAD = "FREE_YES", "FREE_NO"
 
 
 def ask_text(username):
-    hi = f"Hey @{username}! 🖤" if username else "Hey! 🖤"
-    return (f"{hi} Thanks for the comment. We'd love to gift you our very first comic, Issue #1: NORJAK "
-            "(the D.B. Cooper skyjacking), free, in exchange for an honest review. Interested? Just reply here 👇")
+    hi = f"Hey @{username}!" if username else "Hey!"
+    return (f"{hi} Free gift for you 🎁 Issue #1: NORJAK, the D.B. Cooper mystery in comic form. "
+            "Read it free, tell us honestly what you think. Reply YES 👇")
 
 
 OFFER_TEXT = "Would you like to read Issue #1 free and share your honest review? 👇"
@@ -44,20 +44,21 @@ QUICK = [
 
 def fb_ask_text(name):
     """Facebook's private reply may carry the buttons, so it asks the question directly."""
-    hi = f"Hey {name}! 🖤" if name else "Hey! 🖤"
-    return (f"{hi} Thanks for the comment. We'd love to gift you our very first comic, Issue #1: NORJAK "
-            "(the D.B. Cooper skyjacking), free, in exchange for an honest review. Would you like to read it? 👇")
+    hi = f"Hey {name}!" if name else "Hey!"
+    return (f"{hi} Free gift for you 🎁 Issue #1: NORJAK, the D.B. Cooper mystery in comic form. "
+            "Read it free, tell us honestly what you think. Want it?")
 
 
 def yes_text(link):
-    return (f"Here's your free copy 🎁\n{link}\n\n"
-            "This link is just for you and works once. After reading, a short honest review would mean a lot to us 🖤\n\n"
-            f"📬 Want to know when new cases drop? Follow us here → {SUBSCRIBE}")
+    return (f"Here you go! 🎁\n{link}\n\n"
+            "It's a one-time link just for you. Enjoy the story, and if you have a minute afterwards, "
+            "an honest review would mean a lot 🖤\n\n"
+            f"Want to hear about new issues? → {SUBSCRIBE}")
 
 
-NO_TEXT = ("No worries at all, thanks for stopping by! 🖤\n"
-           f"New cases drop every week. Get them first → {SUBSCRIBE}\n"
-           "And whenever a story grabs you, just comment COMIC and your free issue will be waiting.")
+NO_TEXT = ("No problem 🕯️ The file stays open.\n"
+           f"New cases drop every week → {SUBSCRIBE}\n"
+           "Comment COMIC any time and it's yours.")
 ALREADY_TEXT = ("You've already got your free copy of Issue #1 🖤 Enjoy! If you liked it, an honest review means the world.\n"
                 f"New cases → {SUBSCRIBE}")
 SOLD_OUT_TEXT = ("Ah, all our free copies of Issue #1 have been claimed 😔 Thank you so much for the interest!\n"
