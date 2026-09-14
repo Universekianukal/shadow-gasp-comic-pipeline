@@ -31,8 +31,9 @@ YES_PAYLOAD, NO_PAYLOAD = "FREE_YES", "FREE_NO"
 
 def ask_text(username):
     hi = f"Hey @{username}!" if username else "Hey!"
-    return (f"{hi} Free gift for you 🎁 Issue #1: NORJAK, the D.B. Cooper mystery in comic form. "
-            "Read it free, tell us honestly what you think. Reply YES 👇")
+    return (f"{hi} Free gift for you 🎁 Get Issue #1: NORJAK (the D.B. Cooper mystery in comic form) free, "
+            "one time only. This offer is valid for our first comic only. "
+            "Read it and tell us honestly what you think. Reply YES 👇")
 
 
 OFFER_TEXT = "Would you like to read Issue #1 free and share your honest review? 👇"
@@ -45,8 +46,9 @@ QUICK = [
 def fb_ask_text(name):
     """Facebook's private reply may carry the buttons, so it asks the question directly."""
     hi = f"Hey {name}!" if name else "Hey!"
-    return (f"{hi} Free gift for you 🎁 Issue #1: NORJAK, the D.B. Cooper mystery in comic form. "
-            "Read it free, tell us honestly what you think. Want it?")
+    return (f"{hi} Free gift for you 🎁 Get Issue #1: NORJAK (the D.B. Cooper mystery in comic form) free, "
+            "one time only. This offer is valid for our first comic only. "
+            "Read it and tell us honestly what you think. Want it?")
 
 
 def yes_text(link):
