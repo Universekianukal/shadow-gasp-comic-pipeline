@@ -1,0 +1,52 @@
+name: Meta - list Page + Instagram posts (one-off, manual, read-only)
+
+# Read-only. Lists every Facebook Page post/video and every Instagram post: id, time, caption.
+# Used once to teach the comics bot which old post is about which day (post -> issue routing).
+# Captions are already public; the list is uploaded as a short-lived artifact, not printed.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: List posts
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          PAGE, IG = "1164008466785123", "17841425663819735"
+          GRAPH = "https://graph.facebook.com/v19.0"
+          tok = os.environ["FB_PAGE_ACCESS_TOKEN"]
+          def pages(path, params):
+              url = f"{GRAPH}/{path}?" + urllib.parse.urlencode({**params, "access_token": tok, "limit": 100})
+              out, n = [], 0
+              while url and n < 30:
+                  n += 1
+                  try:
+                      with urllib.request.urlopen(url, timeout=60) as r:
+                          d = json.loads(r.read().decode())
+                  except urllib.error.HTTPError as e:
+                      print(f"{path}: HTTP {e.code} {e.read().decode()[:200]}"); break
+                  out += d.get("data", [])
+                  url = (d.get("paging") or {}).get("next")
+              print(f"{path}: {len(out)}")
+              return out
+          res = {
+              "ig": pages(f"{IG}/media", {"fields": "id,caption,timestamp,media_type,permalink"}),
+              "fb_posts": pages(f"{PAGE}/posts", {"fields": "id,message,created_time,permalink_url"}),
+              "fb_videos": pages(f"{PAGE}/videos", {"fields": "id,title,description,created_time,permalink_url,post_id"}),
+          }
+          json.dump(res, open("posts.json", "w", encoding="utf-8"), ensure_ascii=False)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: posts
+          path: posts.json
+          retention-days: 1
