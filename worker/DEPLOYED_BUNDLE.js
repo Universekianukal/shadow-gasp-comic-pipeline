@@ -2863,7 +2863,60 @@ async function metaOnMessage(env, m) {
   }
   return "ignored";
 }
+// ---- Facebook side of the same funnel (added 2026-09-14). Instagram code above is unchanged.
+// Differences from Instagram: a Facebook private reply MAY carry quick replies, so the very first
+// Messenger message already has the Yes / No buttons; and the tap arrives with the person's PSID, so
+// no comment->PSID mapping is needed. Keys are separate (fbc:/fbasked:/fbfree:) from Instagram's.
+var META_FB_PAGE_ID = "1164008466785123";
+async function metaOnFbComment(env, v) {
+  if (!v || v.item !== "comment" || v.verb !== "add" || !v.comment_id || !META_KEYWORD.test(v.message || "")) return "skip";
+  const from = v.from || {};
+  if (from.id === META_FB_PAGE_ID) return "own";
+  if (await env.PENDING.get(`fbc:${v.comment_id}`)) return "dup";
+  await env.PENDING.put(`fbc:${v.comment_id}`, "1", { expirationTtl: 8 * 86400 });
+  if (from.id) {
+    if (await env.PENDING.get(`fbasked:${from.id}`)) return "recently-asked";
+    await env.PENDING.put(`fbasked:${from.id}`, "1", { expirationTtl: 7 * 86400 });
+  }
+  await metaQueue(env, { action: "ask", platform: "fb", comment_id: v.comment_id, name: String(from.name || "").trim().split(/\s+/)[0] || "" });
+  return "asked";
+}
+async function metaOnFbMessage(env, m) {
+  if (!m || !m.message || m.message.is_echo) return "skip";
+  const sid = m.sender && m.sender.id;
+  if (!sid || sid === META_FB_PAGE_ID) return "skip";
+  const payload = m.message.quick_reply && m.message.quick_reply.payload;
+  if (payload === "FREE_YES") {
+    if (await env.PENDING.get(`fbfree:${sid}`)) {
+      await metaQueue(env, { action: "already", platform: "fb", recipient: sid });
+      return "already";
+    }
+    const offer = JSON.parse(await env.PENDING.get(`free_offer:${META_FREE_SLUG}`) || "null");
+    if (!offer || !offer.product_id) {
+      await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `❌ Facebook: someone tapped Yes for a free #1, but no free offer is registered for "${META_FREE_SLUG}".` });
+      return "no-offer";
+    }
+    // Lock BEFORE dispatch: a double tap must never mint two codes.
+    await env.PENDING.put(`fbfree:${sid}`, "pending", { expirationTtl: 365 * 86400 });
+    await metaQueue(env, { action: "yes", platform: "fb", recipient: sid, slug: META_FREE_SLUG, product_id: offer.product_id, cap: META_FREE_CAP });
+    return "yes";
+  }
+  if (payload === "FREE_NO") {
+    await metaQueue(env, { action: "no", platform: "fb", recipient: sid });
+    return "no";
+  }
+  return "ignored";
+}
+async function metaProcessFb(env, body) {
+  const out = [];
+  for (const entry of body.entry || []) {
+    for (const ch of entry.changes || []) if (ch.field === "feed") out.push(await metaOnFbComment(env, ch.value));
+    for (const m of entry.messaging || []) out.push(await metaOnFbMessage(env, m));
+  }
+  return out;
+}
 async function metaProcess(env, body) {
+  if (body && body.object === "page") return metaProcessFb(env, body);
   if (!body || body.object !== "instagram") return [];
   const out = [];
   for (const entry of body.entry || []) {
@@ -2909,13 +2962,14 @@ async function metaRoutes(request, env, url, ctx) {
   }
   // /meta/done -- the workflow reports each step; the owner hears about claims and failures.
   const job = JSON.parse(b.job && await env.PENDING.get(`metajob:${b.job}`) || "{}");
-  const who = job.username ? `@${job.username}` : "someone";
+  const who = job.username ? `@${job.username}` : job.name || "someone";
+  const where = job.platform === "fb" ? "Facebook" : "Instagram";
   let text = null;
-  if (job.action === "yes" && b.ok && !b.sold_out) text = `\u{1F381} ${who} claimed a free #1 NORJAK on Instagram (${b.count}/${b.cap}).`;
+  if (job.action === "yes" && b.ok && !b.sold_out) text = `\u{1F381} ${who} claimed a free #1 NORJAK on ${where} (${b.count}/${b.cap}).`;
   else if (job.action === "yes" && b.sold_out) text = `\u{1F614} ${who} tapped Yes, but all ${b.cap} free copies of #1 are claimed — they were told politely.`;
   else if (job.action === "no" && b.ok) text = `\u{1F645} ${who} said "not right now" to the free #1.`;
-  else if (!b.ok) text = `❌ Instagram DM (${job.action || "?"}) failed for ${who}: ${b.error || "unknown error"}`;
-  if (job.action === "yes" && (!b.ok || b.sold_out) && job.recipient) await env.PENDING.delete(`igfree:${job.recipient}`);
+  else if (!b.ok) text = `❌ ${where} DM (${job.action || "?"}) failed for ${who}: ${b.error || "unknown error"}`;
+  if (job.action === "yes" && (!b.ok || b.sold_out) && job.recipient) await env.PENDING.delete(`${job.platform === "fb" ? "fbfree" : "igfree"}:${job.recipient}`);
   if (text) await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
   return new Response("ok", { status: 200 });
 }
