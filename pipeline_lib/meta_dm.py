@@ -1,10 +1,11 @@
-"""Send ONE step of the Instagram comment -> free issue #1 funnel.
+"""Send ONE step of the comment -> free issue #1 funnel, on Instagram or (job["platform"] == "fb") Facebook.
 
 Dispatched by the comics bot (meta_dm.yml) with an opaque job token only -- this repo is public and
 workflow inputs are visible, so the commenter's details are fetched from the Worker's /meta/job and
 NEVER printed. Steps (job["action"]):
-  ask      private reply to the comment (text only -- Meta allows nothing else there, once per comment)
-  offer    after they reply: Yes / No quick-reply buttons
+  ask      private reply to the comment, once per comment. Instagram: text only (Meta allows nothing
+           else there). Facebook: carries the Yes / No buttons straight away.
+  offer    Instagram only -- after they reply: Yes / No quick-reply buttons
   yes      reserve a slot under the shared free-code cap, mint a single-use 100%-off Gumroad code
            (the same method as gen_code.yml) and DM the link + the subscribe page
   no       a warm "come back any time" message + the subscribe page
@@ -35,6 +36,17 @@ def ask_text(username):
 
 
 OFFER_TEXT = "Would you like to read Issue #1 free and share your honest review? 👇"
+QUICK = [
+    {"content_type": "text", "title": "📖 Yes, send it", "payload": YES_PAYLOAD},
+    {"content_type": "text", "title": "Not right now", "payload": NO_PAYLOAD},
+]
+
+
+def fb_ask_text(name):
+    """Facebook's private reply may carry the buttons, so it asks the question directly."""
+    hi = f"Hey {name}! 🖤" if name else "Hey! 🖤"
+    return (f"{hi} Thanks for the comment. We'd love to gift you our very first comic, Issue #1: NORJAK "
+            "(the D.B. Cooper skyjacking), free, in exchange for an honest review. Would you like to read it? 👇")
 
 
 def yes_text(link):
@@ -76,7 +88,7 @@ def send(payload):
             msg = r.json().get("error", {}).get("message", "")
         except ValueError:
             msg = r.text[:200]
-        raise RuntimeError(f"Instagram refused the message ({r.status_code}): {msg}")
+        raise RuntimeError(f"Meta refused the message ({r.status_code}): {msg}")
 
 
 def to_user(sid, text, quick=None):
@@ -110,13 +122,14 @@ def mint_link(product_id):
 def run(job):
     a = job.get("action")
     result = {"ok": True}
-    if a == "ask":
+    if a == "ask" and job.get("platform") == "fb":
+        # Facebook: the one private reply already carries Yes / No (Instagram's may not).
+        send({"recipient": {"comment_id": job["comment_id"]},
+              "message": {"text": fb_ask_text(job.get("name", "")), "quick_replies": QUICK}})
+    elif a == "ask":
         send({"recipient": {"comment_id": job["comment_id"]}, "message": {"text": ask_text(job.get("username", ""))}})
     elif a == "offer":
-        send(to_user(job["recipient"], OFFER_TEXT, [
-            {"content_type": "text", "title": "📖 Yes, send it", "payload": YES_PAYLOAD},
-            {"content_type": "text", "title": "Not right now", "payload": NO_PAYLOAD},
-        ]))
+        send(to_user(job["recipient"], OFFER_TEXT, QUICK))
     elif a == "yes":
         r = worker("/free-codes/reserve", {"slug": job["slug"], "cap": int(job["cap"])})
         if r.status_code == 409:
