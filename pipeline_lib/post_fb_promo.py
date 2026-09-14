@@ -386,6 +386,13 @@ def main():
     prev.setdefault("permalink", product.get("custom_permalink"))
     json.dump(prev, open(marker, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
     print(f"marker written: promo/{slug}.json")
+    # post -> issue routing: post_promo.yml's report step sends this to the comics bot, which remembers the
+    # post so a COMIC comment on it gets THIS issue. Best effort -- the post itself already happened.
+    try:
+        json.dump({"platform": a.platform, "post_id": post_id, "permalink": product.get("custom_permalink")},
+                  open("/tmp/promo_posted.json", "w", encoding="utf-8"))
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

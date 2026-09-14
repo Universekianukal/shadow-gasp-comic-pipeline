@@ -148,7 +148,7 @@ jobs:
           RESULT: ${{ steps.run.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          python3 -c 'import json,os;print(json.dumps({"case":os.environ["CASE"],"platform":os.environ["PLATFORM"],"result":os.environ["RESULT"],"run_url":os.environ["RUN_URL"]}))' > /tmp/done.json
+          python3 -c 'import json,os;d={"case":os.environ["CASE"],"platform":os.environ["PLATFORM"],"result":os.environ["RESULT"],"run_url":os.environ["RUN_URL"]};p="/tmp/promo_posted.json";x=json.load(open(p)) if os.path.exists(p) else {};d.update({k:x[k] for k in ("post_id","permalink") if x.get(k)});print(json.dumps(d))' > /tmp/done.json
           curl -sS -X POST "${WORKER_URL%/}/promo/posted" \
             -H "Content-Type: application/json" \
             -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \

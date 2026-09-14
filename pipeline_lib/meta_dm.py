@@ -58,6 +58,20 @@ def fb_ask_text(name):
             "It's our way of saying hello, a free copy of our very first comic. Want it?")
 
 
+def issue_text(platform, who, job):
+    """The post is about a case that already has a PUBLISHED comic: offer THAT issue, price shown plainly,
+    and the free Issue #1 as a bonus. No review request here (it lives only in the last message)."""
+    title = job.get("title") or f"Issue #{job.get('issue')}"
+    price = f" (${job['price']})" if job.get("price") else ""
+    if platform == "fb":
+        hi = f"Hey {who}!" if who else "Hey!"
+        tail = "New here? Your first comic (Issue #1) is on us. Want it?"
+    else:
+        hi = f"Hey @{who}!" if who else "Hey!"
+        tail = "New here? Your first comic (Issue #1) is on us. Reply YES and it's yours 👇"
+    return f"{hi} 🖤 This story is also a full comic: {title}{price} → {job['url']}\n{tail}"
+
+
 def yes_text(link):
     return (f"Here you go! 🎁\n{link}\n"
             "This link is just for you. Enjoy the story 🖤\n"
@@ -184,6 +198,15 @@ def run(job):
         # printed), which records "asked" under it so the reply gets the Yes / No buttons.
         result["recipient_id"] = str(resp.get("recipient_id", ""))
         result["public_reply"] = reply_publicly("ig", job["comment_id"], job.get("username", ""))
+    elif a == "ask_issue":
+        plat = "fb" if job.get("platform") == "fb" else "ig"
+        who = job.get("name", "") if plat == "fb" else job.get("username", "")
+        msg = {"text": issue_text(plat, who, job)}
+        if plat == "fb":
+            msg["quick_replies"] = QUICK   # Yes / Not right now -> the free #1 flow
+        resp = send({"recipient": {"comment_id": job["comment_id"]}, "message": msg})
+        result["recipient_id"] = str(resp.get("recipient_id", ""))
+        result["public_reply"] = reply_publicly(plat, job["comment_id"], job.get("username", "") if plat == "ig" else "")
     elif a == "offer":
         send(to_user(job["recipient"], OFFER_TEXT, QUICK))
     elif a == "yes":
