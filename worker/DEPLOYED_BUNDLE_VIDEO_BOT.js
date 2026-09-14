@@ -1077,12 +1077,14 @@ async function loadTopics(env) {
   if (stR.ok) {
     const days = (await stR.json()).days || {};
     const nums = Object.keys(days).map(Number).sort((a, b) => a - b);
-    let frontier = 0;
-    for (const n of nums) if (published.has(normCase(days[String(n)].case))) frontier = n;
+    // No frontier cutoff (2026-09-14, from session hyperframe-ab): /fbpost lets any pregenerated
+    // day be scheduled out of order, so "highest published day" is not a stand-in for "everything
+    // below is stalled" -- it hid unpublished earlier days (day 51 vanished once day 91 was
+    // scheduled). A day is upcoming iff it is done and not yet published or drawn.
     for (const n of nums) {
       const d = days[String(n)];
       const k = normCase(d.case);
-      if (!d.done || published.has(k) || drawn.has(k) || n <= frontier) continue;
+      if (!d.done || published.has(k) || drawn.has(k)) continue;
       upcoming.push({ label: `day ${n}`, case: d.case });
     }
   }
