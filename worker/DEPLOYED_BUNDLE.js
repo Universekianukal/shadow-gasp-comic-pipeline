@@ -2837,6 +2837,11 @@ async function metaOnComment(env, v) {
     if (st && (st.stage === "asked" || st.stage === "offered") && Date.now() - st.at < 7 * 86400e3) return "recently-asked";
     await metaSetStage(env, sid, "asked", from.username);
   }
+  const routedIg = await postmapRoute(env, "ig", v.media && v.media.id);
+  if (routedIg) {
+    await metaQueue(env, { action: "ask_issue", comment_id: v.id, username: from.username || "", ...routedIg });
+    return "asked-issue";
+  }
   await metaQueue(env, { action: "ask", comment_id: v.id, username: from.username || "" });
   return "asked";
 }
@@ -2888,6 +2893,12 @@ async function metaOnFbComment(env, v) {
   if (from.id) {
     if (await env.PENDING.get(`fbasked:${from.id}`)) return "recently-asked";
     await env.PENDING.put(`fbasked:${from.id}`, "1", { expirationTtl: 7 * 86400 });
+  }
+  const fbFirst = String(from.name || "").trim().split(/\s+/)[0] || "";
+  const routedFb = await postmapRoute(env, "fb", v.post_id);
+  if (routedFb) {
+    await metaQueue(env, { action: "ask_issue", platform: "fb", comment_id: v.comment_id, name: fbFirst, ...routedFb });
+    return "asked-issue";
   }
   await metaQueue(env, { action: "ask", platform: "fb", comment_id: v.comment_id, name: String(from.name || "").trim().split(/\s+/)[0] || "" });
   return "asked";
@@ -2980,7 +2991,7 @@ async function metaRoutes(request, env, url, ctx) {
   // stage could not be recorded when the comment arrived -- and the person's reply was then ignored.
   // The private-reply response DOES return the commenter's Instagram-scoped ID (recipient_id), the
   // same id their reply arrives with as sender.id, so record the stage here instead.
-  if (job.action === "ask" && b.ok && b.recipient_id && job.platform !== "fb" && !await env.PENDING.get(`igfree:${b.recipient_id}`)) {
+  if ((job.action === "ask" || job.action === "ask_issue") && b.ok && b.recipient_id && job.platform !== "fb" && !await env.PENDING.get(`igfree:${b.recipient_id}`)) {
     await metaSetStage(env, String(b.recipient_id), "asked", job.username);
   }
   if (job.action === "yes" && b.ok && !b.sold_out) text = `\u{1F381} ${who} claimed a free #1 NORJAK on ${where} (${b.count}/${b.cap}).`;
@@ -2989,8 +3000,89 @@ async function metaRoutes(request, env, url, ctx) {
   else if (!b.ok && Number(b.err_code) === 10903) text = `ℹ️ ${where}: couldn't DM ${who} — Meta doesn't allow private replies to a Page, or to someone whose settings block them. Nothing to fix; test from a personal profile.`;
   else if (!b.ok) text = `❌ ${where} DM (${job.action || "?"}) failed for ${who}: ${b.error || "unknown error"}`;
   if (job.action === "yes" && (!b.ok || b.sold_out) && job.recipient) await env.PENDING.delete(`${job.platform === "fb" ? "fbfree" : "igfree"}:${job.recipient}`);
+  if (!text && job.action === "ask_issue" && b.ok) text = `\u{1F517} ${who} commented COMIC on the #${job.issue} post (${where}) \u2014 sent them the Issue #${job.issue} link.`;
   if (text) await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
   return new Response("ok", { status: 200 });
+}
+// ---------------------------------------------------------------- post -> issue routing (2026-09-15)
+//
+// When someone comments COMIC, the bot looks up WHICH POST it was: `postmap:<fb|ig>:<id>` (KV shared
+// with the video bot). Promo posts are recorded here via /promo/posted; video posts by the video bot on
+// /batch/crosspost-decided. The comic is resolved at COMMENT time, not post time -- so a video posted
+// before its comic existed starts offering that comic the moment it is published. Anything unmapped,
+// unpublished, or #1 itself falls back to the free-#1 offer, exactly as before.
+function postmapKey(platform, id) {
+  const s = String(id || "");
+  return `postmap:${platform}:${platform === "fb" && s.includes("_") ? s.split("_").pop() : s}`;
+}
+async function postmapRecord(env, platform, id, entry) {
+  if (!platform || !id) return;
+  await env.PENDING.put(postmapKey(platform, id), JSON.stringify({ ...entry, at: Date.now() }));
+}
+async function postmapLookup(env, platform, id) {
+  if (!id) return null;
+  const keys = [`postmap:${platform}:${id}`, postmapKey(platform, id)];
+  for (const k of keys) {
+    const raw = await env.PENDING.get(k);
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+      }
+    }
+  }
+  return null;
+}
+async function postmapResolveIssue(env, entry) {
+  if (!entry) return null;
+  let permalink = entry.permalink || "";
+  if (!permalink && entry.kind === "day" && entry.day) {
+    let caseName = "";
+    try {
+      const st = await (await fetch(`${RAW_VIDEO}/_pipeline/batch/state.json`, { headers: { "User-Agent": "shadow-gasp-bot" } })).json();
+      caseName = ((st.days || {})[String(entry.day)] || {}).case || "";
+    } catch {
+      return null;
+    }
+    if (!caseName) return null;
+    const want = normCase(caseName);
+    const recs = await env.PENDING.list({ prefix: "comic:" });
+    for (const k of recs.keys) {
+      const raw = await env.PENDING.get(k.name);
+      if (!raw) continue;
+      let r;
+      try {
+        r = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (r.case && normCase(r.case) === want && r.product_url) {
+        permalink = r.product_url.replace(/\/+$/, "").split("/").pop();
+        break;
+      }
+    }
+  }
+  if (!permalink) return null;
+  let products;
+  try {
+    products = await gumroadProducts(env);
+  } catch {
+    return null;
+  }
+  const p = products.find((x) => (x.custom_permalink || "").toLowerCase() === permalink.toLowerCase());
+  if (!p) return null;
+  const m = (p.name || "").match(/#\s*0*(\d+)/);
+  const issue = m ? parseInt(m[1], 10) : null;
+  if (issue === 1) return null;
+  return { issue, title: p.name || "", url: p.short_url || `https://shadowgasp.gumroad.com/l/${permalink}`, price: Math.round((p.price || 0) / 100) };
+}
+async function postmapRoute(env, platform, id) {
+  try {
+    return await postmapResolveIssue(env, await postmapLookup(env, platform, id));
+  } catch (e) {
+    console.log(`postmap route: ${e.message}`);
+    return null;
+  }
 }
 var worker_default = {
   async fetch(request, env, ctx) {
@@ -3440,6 +3532,14 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
       }
       const b = await request.json();
       const ok = b.result === "success";
+      // post -> issue routing: remember this promo post so a COMIC comment on it gets THIS issue.
+      if (ok && b.post_id && b.permalink && (b.platform === "fb" || b.platform === "ig")) {
+        try {
+          await postmapRecord(env, b.platform, b.post_id, { kind: "promo", permalink: b.permalink, case: b.case || "" });
+        } catch (e) {
+          console.log(`postmap record: ${e.message}`);
+        }
+      }
       const dry = String(b.dry_run) === "true";
       await tg(env, "sendMessage", {
         chat_id: env.TELEGRAM_CHAT_ID,

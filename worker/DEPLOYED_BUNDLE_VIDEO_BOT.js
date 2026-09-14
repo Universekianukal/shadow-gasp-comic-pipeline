@@ -3354,6 +3354,16 @@ var worker_default = {
       if (!day || !platform || !decision) {
         return new Response("missing fields", { status: 400 });
       }
+      // post -> issue routing (2026-09-15): remember which day this FB/IG post is about. The comics bot
+      // looks this up when someone comments COMIC and, once the case's comic is published, sends that
+      // issue instead of the free #1. FB video ids have no "_"; photo/post ids do -- key on the last part.
+      if (decision === "approve" && ref_id && (platform === "fb" || platform === "ig")) {
+        try {
+          await env.PENDING.put(`postmap:${platform}:${String(ref_id).split("_").pop()}`, JSON.stringify({ kind: "day", day: String(day), at: Date.now() }));
+        } catch (e) {
+          console.log(`postmap record: ${e.message}`);
+        }
+      }
       const label = platform === "fb" ? "Facebook" : "Instagram";
       let text;
       if (decision === "approve") {
