@@ -1,0 +1,42 @@
+name: Meta - subscribe the Page to the app (one-off, manual)
+
+# Links the Shadow Gasp Facebook Page (and through it the Instagram account) to the Meta app
+# "Shadow gasp", so Meta actually delivers the comment / message webhooks the comics bot's
+# /meta/webhook listens for. App-level webhook fields are set in the Meta dashboard; this is the
+# Page-level half, which only a Page token can do. Safe to re-run: it just re-states the fields.
+# Prints Meta's JSON replies only -- never the token.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  subscribe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Subscribe the Page (feed + messages + messaging_postbacks)
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          PAGE = "1164008466785123"
+          GRAPH = "https://graph.facebook.com/v19.0"
+          tok = os.environ["FB_PAGE_ACCESS_TOKEN"]
+          def call(method, path, params):
+              data = urllib.parse.urlencode({**params, "access_token": tok}).encode()
+              url = f"{GRAPH}/{path}"
+              req = urllib.request.Request(url if method == "POST" else f"{url}?{data.decode()}",
+                                           data=data if method == "POST" else None, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      return json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  return json.loads(e.read().decode() or "{}")
+          print("subscribe:", json.dumps(call("POST", f"{PAGE}/subscribed_apps",
+                {"subscribed_fields": "feed,messages,messaging_postbacks"})))
+          print("now subscribed:", json.dumps(call("GET", f"{PAGE}/subscribed_apps", {})))
+          PY
