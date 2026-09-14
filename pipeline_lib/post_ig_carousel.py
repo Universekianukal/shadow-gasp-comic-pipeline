@@ -1,13 +1,18 @@
-"""Publish one comic carousel to Instagram (the Telegram /carousel draft's "Post" button).
+"""Publish one comic carousel to Instagram or Facebook (the Telegram /carousel draft's Post buttons).
 
 The slides are built ahead of time (gen_carousel.py) and committed under carousel/<dir>/1..5.jpg;
-carousel/index.json lists them with the caption. Instagram fetches each slide by its raw GitHub
-URL. The folder name carries a content hash: IG binds a fetch refusal (9004/2207052) to a URL for
+carousel/index.json lists them with the caption. Meta fetches each slide by its raw GitHub URL.
+The folder name carries a content hash: IG binds a fetch refusal (9004/2207052) to a URL for
 good, so regenerated slides must live at a new path.
 
-Posting is refused a second time (marker carousel/<slug>.posted.json) unless --force -- the same
-guard as post_fb_promo.py, for the same reason: a duplicate post is what took the page's reach
-to 1 in August.
+  Instagram: children (is_carousel_item) -> CAROUSEL container -> publish (a swipeable carousel).
+  Facebook:  Pages have no swipe carousel for photos, so the same slides go up as ONE multi-photo
+             post: each slide is uploaded unpublished (/photos published=false), then a single /feed
+             post attaches them all with the caption.
+
+Posting is refused a second time PER PLATFORM (marker carousel/<slug>.posted.json {"ig": .., "fb": ..})
+unless --force -- the same guard as post_fb_promo.py, for the same reason: a duplicate post is what
+took the page's reach to 1 in August.
 """
 import argparse
 import datetime
@@ -20,6 +25,7 @@ import urllib.parse
 import urllib.request
 
 IG_USER_ID = "17841425663819735"
+FB_PAGE_ID = "1164008466785123"
 GRAPH = "https://graph.facebook.com/v19.0"
 RAW = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-comic-pipeline/main"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +33,7 @@ CAR_DIR = os.path.join(os.path.dirname(HERE), "carousel")
 UA = {"User-Agent": "shadow-gasp-comic-pipeline"}
 # Where the workflow's report step reads the outcome from (overridable so tests can run off-runner).
 RESULT = os.environ.get("CAR_RESULT_PATH", "/tmp/car_posted.json")
+NAMES = {"ig": "Instagram", "fb": "Facebook"}
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -56,9 +63,9 @@ def _post(path, params, token):
     except urllib.error.HTTPError as ex:
         body = ex.read().decode()[:500]
         if "9004" in body or "2207052" in body:
-            raise SystemExit("Instagram refused to fetch a slide (9004/2207052). That refusal sticks to the "
+            raise SystemExit("Meta refused to fetch a slide (9004/2207052). That refusal sticks to the "
                              "URL: rebuild the slides so they get a new folder, then post again.\n" + body)
-        raise SystemExit(f"Instagram {path} failed: {ex.code} {body}")
+        raise SystemExit(f"Meta {path} failed: {ex.code} {body}")
 
 
 def _wait(cid, token, what):
@@ -75,7 +82,7 @@ def _wait(cid, token, what):
     raise SystemExit(f"Instagram {what} never finished processing")
 
 
-def post_carousel(urls, caption, token):
+def post_instagram(urls, caption, token):
     """Children (is_carousel_item) -> parent CAROUSEL container -> publish."""
     kids = []
     for i, u in enumerate(urls, 1):
@@ -86,12 +93,25 @@ def post_carousel(urls, caption, token):
     parent = _post(f"{IG_USER_ID}/media", {"media_type": "CAROUSEL", "children": ",".join(kids),
                                             "caption": caption}, token)
     _wait(parent["id"], token, "the carousel")
-    return _post(f"{IG_USER_ID}/media_publish", {"creation_id": parent["id"]}, token)
+    return _post(f"{IG_USER_ID}/media_publish", {"creation_id": parent["id"]}, token).get("id")
+
+
+def post_facebook(urls, caption, token):
+    """Each slide uploaded unpublished, then ONE feed post carrying all of them, in order."""
+    ids = []
+    for i, u in enumerate(urls, 1):
+        ids.append(_post(f"{FB_PAGE_ID}/photos", {"url": u, "published": "false"}, token)["id"])
+        print(f"slide {i}/{len(urls)} uploaded")
+    params = {"message": caption}
+    for i, pid in enumerate(ids):
+        params[f"attached_media[{i}]"] = json.dumps({"media_fbid": pid})
+    return _post(f"{FB_PAGE_ID}/feed", params, token).get("id")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--slug", required=True)
+    ap.add_argument("--platform", default="ig", choices=["ig", "fb"])
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="check every slide URL + the token; post nothing")
     a = ap.parse_args()
@@ -100,35 +120,37 @@ def main():
     caption = (os.environ.get("CAROUSEL_CAPTION", "").strip() or e.get("caption", ""))[:2200]
     marker = os.path.join(CAR_DIR, f"{a.slug}.posted.json")
     prev = json.load(open(marker, encoding="utf-8")) if os.path.exists(marker) else {}
-    print(f"carousel: #{e.get('issue')} {e.get('title')}  ({len(urls)} slides, folder {e['dir']})")
+    name = NAMES[a.platform]
+    print(f"carousel: #{e.get('issue')} {e.get('title')}  ({len(urls)} slides, folder {e['dir']}) -> {name}")
 
-    for u in urls:  # every slide must be publicly fetchable before Instagram is asked to fetch it
+    for u in urls:  # every slide must be publicly fetchable before Meta is asked to fetch it
         with urllib.request.urlopen(urllib.request.Request(u, headers=UA, method="HEAD"), timeout=60) as r:
             if r.status != 200:
                 raise SystemExit(f"slide not reachable ({r.status}): {u}")
     print("all slides reachable")
 
-    if prev.get("ig") and not a.force:
-        print(f"ALREADY POSTED to Instagram on {prev['ig'].get('posted_at')} as {prev['ig'].get('id')} -- "
+    if prev.get(a.platform) and not a.force:
+        print(f"ALREADY POSTED to {name} on {prev[a.platform].get('posted_at')} as {prev[a.platform].get('id')} -- "
               "skipping. Use force to post again.")
-        json.dump({"result": "already"}, open(RESULT, "w"))
+        json.dump({"result": "already", "platform": a.platform}, open(RESULT, "w"))
         return
     token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
     if not token:
         raise SystemExit("FB_PAGE_ACCESS_TOKEN is not set")
     if a.dry_run:
-        q = urllib.parse.urlencode({"fields": "username", "access_token": token})
-        with urllib.request.urlopen(urllib.request.Request(f"{GRAPH}/{IG_USER_ID}?{q}", headers=UA), timeout=60) as r:
-            print(f"DRY RUN -- token valid for {json.loads(r.read().decode()).get('username')}. Nothing posted.")
+        target = f"{IG_USER_ID}?fields=username" if a.platform == "ig" else f"{FB_PAGE_ID}?fields=name"
+        q = urllib.parse.urlencode({"access_token": token})
+        with urllib.request.urlopen(urllib.request.Request(f"{GRAPH}/{target}&{q}", headers=UA), timeout=60) as r:
+            who = json.loads(r.read().decode())
+        print(f"DRY RUN -- token valid for {who.get('username') or who.get('name')} ({name}). Nothing posted.")
         return
 
-    res = post_carousel(urls, caption, token)
-    post_id = res.get("id")
-    print(f"posted carousel: {post_id}")
-    prev["ig"] = {"id": post_id, "posted_at": datetime.datetime.utcnow().isoformat() + "Z", "dir": e["dir"]}
+    post_id = post_instagram(urls, caption, token) if a.platform == "ig" else post_facebook(urls, caption, token)
+    print(f"posted carousel to {name}: {post_id}")
+    prev[a.platform] = {"id": post_id, "posted_at": datetime.datetime.utcnow().isoformat() + "Z", "dir": e["dir"]}
     json.dump(prev, open(marker, "w", encoding="utf-8"), indent=2)
-    json.dump({"result": "posted", "post_id": post_id, "permalink": e.get("permalink"), "issue": e.get("issue")},
-              open(RESULT, "w"))
+    json.dump({"result": "posted", "platform": a.platform, "post_id": post_id, "permalink": e.get("permalink"),
+               "issue": e.get("issue")}, open(RESULT, "w"))
 
 
 if __name__ == "__main__":

@@ -1,9 +1,11 @@
-name: Post Comic Carousel (Instagram)
+name: Post Comic Carousel (Instagram / Facebook)
 
-# Dispatched by the comics bot's /carousel draft "Post" button -- never automatic. The slides and
+# Dispatched by the comics bot's /carousel draft "Post" buttons -- never automatic. The slides and
 # caption are already committed (carousel/index.json); this only publishes them, writes the
-# posted marker (stops an accidental second copy), and reports back so a COMIC comment on the new
-# post gets routed by the DM funnel.
+# per-platform posted marker (stops an accidental second copy), and reports back so a COMIC comment
+# on the new post gets routed by the DM funnel.
+#   ig = swipeable Instagram carousel
+#   fb = one Facebook multi-photo post (Pages have no swipe carousel for photos)
 
 on:
   workflow_dispatch:
@@ -11,8 +13,12 @@ on:
       slug:
         description: "carousel slug from carousel/index.json (e.g. norjak)"
         required: true
+      platform:
+        description: "ig (Instagram) or fb (Facebook)"
+        required: false
+        default: "ig"
       force:
-        description: "post again even though this carousel already went out"
+        description: "post again even though this carousel already went out on this platform"
         required: false
         default: "false"
       dry_run:
@@ -44,6 +50,7 @@ jobs:
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
         run: |
           python pipeline_lib/post_ig_carousel.py --slug "${{ github.event.inputs.slug }}" \
+            --platform "${{ github.event.inputs.platform == 'fb' && 'fb' || 'ig' }}" \
             ${{ github.event.inputs.force == 'true' && '--force' || '' }} \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
 
@@ -53,7 +60,7 @@ jobs:
           git config user.name "shadow-gasp-bot"
           git config user.email "bot@shadowgasp.example"
           git add carousel/*.posted.json 2>/dev/null || true
-          git commit -m "carousel: ig <- ${{ github.event.inputs.slug }}" || { echo "nothing to commit"; exit 0; }
+          git commit -m "carousel: ${{ github.event.inputs.platform || 'ig' }} <- ${{ github.event.inputs.slug }}" || { echo "nothing to commit"; exit 0; }
           git pull --rebase --autostash origin main || true
           git push
 
@@ -63,11 +70,12 @@ jobs:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
           SLUG: ${{ github.event.inputs.slug }}
+          PLATFORM: ${{ github.event.inputs.platform == 'fb' && 'fb' || 'ig' }}
           RESULT: ${{ steps.run.outcome }}
           DRY: ${{ github.event.inputs.dry_run }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          python3 -c 'import json,os;p="/tmp/car_posted.json";d=json.load(open(p)) if os.path.exists(p) else {};d.update(slug=os.environ["SLUG"],outcome=os.environ["RESULT"],dry_run=os.environ["DRY"],run_url=os.environ["RUN_URL"]);print(json.dumps(d))' > /tmp/done.json
+          python3 -c 'import json,os;p="/tmp/car_posted.json";d=json.load(open(p)) if os.path.exists(p) else {};d.update(slug=os.environ["SLUG"],platform=os.environ["PLATFORM"],outcome=os.environ["RESULT"],dry_run=os.environ["DRY"],run_url=os.environ["RUN_URL"]);print(json.dumps(d))' > /tmp/done.json
           curl -sS -X POST "${WORKER_URL%/}/carousel/posted" \
             -H "Content-Type: application/json" \
             -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
