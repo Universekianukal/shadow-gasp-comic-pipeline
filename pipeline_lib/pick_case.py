@@ -115,7 +115,7 @@ def sync_from_video_repo(ledger):
         return ledger
 
     have = {norm_case(c.get("case", "")) for c in ledger["cases"]}
-    added = filled = 0
+    added = filled = replaced = 0
     for c in remote.get("cases", []):
         key = norm_case(c.get("case", ""))
         if not key:
@@ -132,11 +132,21 @@ def sync_from_video_repo(ledger):
                 local["videoId"] = c["videoId"]
                 local["publishedAt"] = local.get("publishedAt") or c.get("publishedAt")
                 filled += 1
-    if added or filled:
+            elif local["videoId"] != c["videoId"]:
+                # Re-uploaded: the video repo moved to a new id and the old one is deleted or
+                # private. 2026-09-15 the funnel for #46 (Villisca) failed on the dead
+                # vMwD9-eccyI because this branch never overwrote a local id. videoId is the video
+                # repo's to own; comicAt is still left untouched.
+                print(f"ledger sync: {c['case'][:60]}: {local['videoId']} -> {c['videoId']}",
+                      flush=True)
+                local["videoId"] = c["videoId"]
+                local["publishedAt"] = c.get("publishedAt") or local.get("publishedAt")
+                replaced += 1
+    if added or filled or replaced:
         save_ledger(ledger)
     total = sum(1 for c in ledger["cases"] if c.get("videoId"))
-    print(f"ledger sync: +{added} new case(s), {filled} newly published; "
-          f"{total} videos known", flush=True)
+    print(f"ledger sync: +{added} new case(s), {filled} newly published, "
+          f"{replaced} re-uploaded; {total} videos known", flush=True)
     return ledger
 
 
