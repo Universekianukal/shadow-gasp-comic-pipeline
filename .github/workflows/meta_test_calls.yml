@@ -1,0 +1,74 @@
+name: Meta - permission test calls (one-off, manual)
+
+# Meta only unlocks "Request Advanced Access" for a permission after the app has made a successful API
+# call with it. This makes one real call per messaging/comments permission:
+#   pages_messaging            list Messenger conversations + reply to the newest person who wrote to the Page
+#   instagram_manage_messages  list Instagram conversations + reply to the newest person who DMed the account
+#   instagram_manage_comments  read comments on the account's latest posts
+# Replies only go to someone who messaged us in the last 24 h (Meta's rule) -- in practice the owner's own
+# test message. This repo is PUBLIC: the log shows only success/failure and counts, never names or IDs.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Make one successful call per permission
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          PAGE, IG = "1164008466785123", "17841425663819735"
+          GRAPH = "https://graph.facebook.com/v19.0"
+          tok = os.environ["FB_PAGE_ACCESS_TOKEN"]
+          def call(method, path, params=None, body=None):
+              q = urllib.parse.urlencode({**(params or {}), "access_token": tok})
+              req = urllib.request.Request(f"{GRAPH}/{path}?{q}", method=method,
+                                           data=json.dumps(body).encode() if body else None,
+                                           headers={"Content-Type": "application/json"} if body else {})
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      return True, json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  try:
+                      return False, json.loads(e.read().decode())
+                  except Exception:
+                      return False, {"error": {"message": f"HTTP {e.code}"}}
+          def err(d):
+              e = (d or {}).get("error", {})
+              return f"{e.get('message', '?')} (code {e.get('code', '?')})"
+
+          for platform, perm in (("messenger", "pages_messaging"), ("instagram", "instagram_manage_messages")):
+              ok, d = call("GET", f"{PAGE}/conversations", {"platform": platform, "fields": "participants,updated_time", "limit": 5})
+              if not ok:
+                  print(f"[{perm}] list conversations: FAILED -- {err(d)}"); continue
+              convs = d.get("data", [])
+              print(f"[{perm}] list conversations: OK ({len(convs)} found)")
+              me = {PAGE, IG}
+              target = None
+              for c in convs:
+                  for p in (c.get("participants") or {}).get("data", []):
+                      if p.get("id") not in me:
+                          target = p.get("id"); break
+                  if target: break
+              if not target:
+                  print(f"[{perm}] reply: SKIPPED -- nobody has messaged the {platform} inbox yet"); continue
+              ok, d = call("POST", f"{PAGE}/messages", body={
+                  "recipient": {"id": target}, "messaging_type": "RESPONSE",
+                  "message": {"text": "✅ Shadow Gasp app test message (API test). Thanks!"}})
+              print(f"[{perm}] reply to newest conversation: {'OK' if ok else 'FAILED -- ' + err(d)}")
+
+          ok, d = call("GET", f"{IG}/media", {"fields": "id,comments_count,comments.limit(3){id}", "limit": 3})
+          if ok:
+              n = sum(len((m.get("comments") or {}).get("data", [])) for m in d.get("data", []))
+              print(f"[instagram_manage_comments] read comments on latest posts: OK ({len(d.get('data', []))} posts, {n} comments read)")
+          else:
+              print(f"[instagram_manage_comments] read comments: FAILED -- {err(d)}")
+          PY
