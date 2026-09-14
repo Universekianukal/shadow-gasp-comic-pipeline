@@ -125,13 +125,24 @@ __name(dispatchPostPromo, "dispatchPostPromo");
 __name2(dispatchPostPromo, "dispatchPostPromo");
 __name22(dispatchPostPromo, "dispatchPostPromo");
 async function gumroadProducts(env) {
-  const r = await fetch(
-    `https://api.gumroad.com/v2/products?access_token=${encodeURIComponent(env.GUMROAD_ACCESS_TOKEN || "")}`,
-    { headers: { "User-Agent": "shadow-gasp-bot" } }
-  );
-  if (!r.ok) throw new Error(`Gumroad list failed: ${r.status}`);
-  const j = await r.json();
-  return (j.products || []).filter((p) => p.published);
+  // ⚠️ Gumroad's GET /v2/products returns 10 products per page (RESULTS_PER_PAGE = 10 in its
+  // api/v2/links_controller.rb) and hands over `next_page_key` while more remain. Reading only the
+  // first page made /promo show 10 of 42 comics (2026-09-15). Follow the cursor to the end; the cap
+  // and the repeated-key check mean a misbehaving response can never loop forever.
+  const all = [];
+  const seen = new Set();
+  let pageKey = null;
+  for (let page = 0; page < 30; page++) {
+    const q = `access_token=${encodeURIComponent(env.GUMROAD_ACCESS_TOKEN || "")}` + (pageKey ? `&page_key=${encodeURIComponent(pageKey)}` : "");
+    const r = await fetch(`https://api.gumroad.com/v2/products?${q}`, { headers: { "User-Agent": "shadow-gasp-bot" } });
+    if (!r.ok) throw new Error(`Gumroad list failed: ${r.status}`);
+    const j = await r.json();
+    all.push(...j.products || []);
+    pageKey = j.next_page_key || null;
+    if (!pageKey || seen.has(pageKey)) break;
+    seen.add(pageKey);
+  }
+  return all.filter((p) => p.published);
 }
 __name(gumroadProducts, "gumroadProducts");
 __name2(gumroadProducts, "gumroadProducts");
