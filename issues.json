@@ -2,6 +2,7 @@
   "issues": {
     "bella-in-the-wych-elm-hagley-wood-englan": 30,
     "cerro-gordo-silver-mine-death-1878-calif": 14,
+    "cicada-3301-2012-2014-internet-puzzle-my": 53,
     "disappearance-of-frederick-valentich-bas": 32,
     "disappearance-of-harold-holt-1967-austra": 16,
     "disappearance-of-michael-rockefeller-net": 12,
@@ -56,6 +57,7 @@
   "kaggle": {
     "bella-in-the-wych-elm-hagley-wood-englan": "C",
     "cerro-gordo-silver-mine-death-1878-calif": "C",
+    "cicada-3301-2012-2014-internet-puzzle-my": "B",
     "disappearance-of-frederick-valentich-bas": "C",
     "disappearance-of-harold-holt-1967-austra": "-",
     "disappearance-of-michael-rockefeller-net": "-",
