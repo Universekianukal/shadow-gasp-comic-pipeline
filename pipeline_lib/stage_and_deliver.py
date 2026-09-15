@@ -164,7 +164,7 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
         # the first one left behind and the whole run dies at the last step. Update that draft
         # in place instead: a rebuild is meant to REPLACE the previous attempt, not to fail or
         # to litter the store with poisoned-ground-2.
-        existing = next((p for p in gumroad(["products", "list"]).get("products", [])
+        existing = next((p for p in gumroad(["products", "list", "--all"]).get("products", [])
                          if p.get("custom_permalink") == permalink
                          or (p.get("short_url") or "").rstrip("/").endswith("/" + permalink)), None)
         if not existing:

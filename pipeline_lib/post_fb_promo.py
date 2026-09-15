@@ -73,7 +73,7 @@ def find_product(case_or_permalink):
     product sends every click to a 404, which is worse than not posting."""
     want = slugify(case_or_permalink)
     best = None
-    for p in gumroad(["products", "list"])["products"]:
+    for p in gumroad(["products", "list", "--all"])["products"]:
         if p.get("custom_permalink") == case_or_permalink or p.get("id") == case_or_permalink:
             best = p
             break

@@ -44,7 +44,7 @@ def resolve_product(ref):
 
     Refuses to guess. A wrong id here writes someone else's storefront.
     """
-    products = gumroad(["products", "list"]).get("products", [])
+    products = gumroad(["products", "list", "--all"]).get("products", [])
     for p in products:
         if p.get("id") == ref:
             return p

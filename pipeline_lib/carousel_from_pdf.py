@@ -202,6 +202,13 @@ def headline_and_sub(hook):
 
 def build(pdf_path, issue, title, hook, permalink, repo=g.REPO, picks=None, out_dir=None):
     """Pick pages (or use `picks`), render the carousel, file it under carousel/. Returns the entry."""
+    # Carousel-only hook line for comics whose saved hook gives away the ending (user, 2026-09-15).
+    try:
+        import json as _json
+        ov = _json.load(open(os.path.join(repo, "carousel", "hook_overrides.json"), encoding="utf-8"))
+        hook = ov.get(permalink) or hook
+    except (OSError, ValueError):
+        pass
     doc = _open(pdf_path)
     picks = picks or pick(doc)
     total = 2 + len(picks["story"])
