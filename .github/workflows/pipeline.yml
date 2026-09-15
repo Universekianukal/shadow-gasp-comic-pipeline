@@ -107,6 +107,13 @@ on:
         description: "For store_assets_only: both | covers | thumbnail"
         required: false
         default: "both"
+      # Repair mode, FILE ONLY: with store_assets_only=true, also swap the downloadable PDF on
+      # refresh_product for the rebuilt one (refuses any ART PENDING page). Added 2026-09-15 for
+      # the three books published with placeholder art after Kaggle's 503.
+      replace_file:
+        description: "For store_assets_only: also replace the product's PDF with the rebuilt one (true/false)"
+        required: false
+        default: "false"
 
 jobs:
   build:
@@ -358,6 +365,14 @@ jobs:
             --case-dir cases/${{ env.slug }} \
             --product "${{ github.event.inputs.refresh_product }}" \
             --only "${{ github.event.inputs.refresh_only || 'both' }}"
+
+      - name: Replace the PDF on the published product
+        id: replacefile
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.store_assets_only == 'true' && github.event.inputs.replace_file == 'true'
+        run: |
+          python pipeline_lib/replace_product_file.py \
+            --case-dir cases/${{ env.slug }} \
+            --product "${{ github.event.inputs.refresh_product }}"
 
       - name: Build PDF, stage Gumroad draft, deliver to Telegram
         id: deliver
