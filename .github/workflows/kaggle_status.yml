@@ -1,0 +1,37 @@
+name: Kaggle - art kernel status (one-off, manual, read-only)
+
+# Read-only. Prints `kaggle kernels status` for one comic art kernel on a chosen account slot.
+# Used before re-running a build: recovery SKIPS a kernel that is still RUNNING and then pays to
+# render the whole book again, so a re-run should wait until the kernel says COMPLETE.
+# Resolves the account exactly like pipeline.yml (same secrets, same kaggle==2.2.2 pin).
+
+on:
+  workflow_dispatch:
+    inputs:
+      kaggle_account:
+        description: "Account slot: blank = default pair, or B / C (see KAGGLE_ACCOUNTS)"
+        required: false
+        default: ""
+      kernel:
+        description: "Kernel slug, e.g. the-boston-molasses-flood-january-15-191-flux"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      KAGGLE_USERNAME: ${{ github.event.inputs.kaggle_account != '' && secrets[format('KAGGLE_{0}_USERNAME', github.event.inputs.kaggle_account)] || secrets.KAGGLE_USERNAME }}
+      KAGGLE_API_TOKEN: ${{ github.event.inputs.kaggle_account != '' && secrets[format('KAGGLE_{0}_API_TOKEN', github.event.inputs.kaggle_account)] || secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Kernel status
+        run: |
+          pip install -q "kaggle==2.2.2"
+          if [ -z "$KAGGLE_USERNAME" ]; then echo "::error::slot '${{ github.event.inputs.kaggle_account }}' has no credentials"; exit 1; fi
+          kaggle kernels status "$KAGGLE_USERNAME/${{ github.event.inputs.kernel }}"

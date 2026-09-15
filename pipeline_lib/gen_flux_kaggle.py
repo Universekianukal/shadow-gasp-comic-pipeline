@@ -593,6 +593,7 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
     out_dir = os.path.join(kernel_dir, "out")
     done = False
     denied_streak = 0
+    empty_fetch_noted = False
     for poll in range(max_polls):
         time.sleep(30)
         try:
@@ -622,10 +623,25 @@ def run_batch(kaggle_user, slug, panels, panels_dir, seed_base=3000):
         probe = subprocess.run(["kaggle", "kernels", "output", kernel_id, "-p", out_dir],
                                 capture_output=True, text=True, timeout=180)
         if probe.returncode == 0:
-            print(f"output fetch succeeded on poll {poll + 1} "
-                  f"({(poll + 1) * 30 // 60} min in) -- kernel is done", flush=True)
-            done = True
-            break
+            # ⭐⭐ A SUCCESSFUL FETCH IS NOT PROOF OF COMPLETION.
+            #
+            # `kernels output` also exits 0 while the kernel is still RUNNING -- it just returns
+            # nothing yet. On 2026-09-14 Kaggle's status endpoint answered 503 on three builds at
+            # once; this fallback took the empty fetch as "done" 1-3 minutes in, found 0 of ~180
+            # panels, and the builds shipped three all-placeholder drafts while the kernels went
+            # on to finish the art hours later. Only a fetch that actually brought back this
+            # batch's panels means the kernel has finished.
+            got = sum(1 for p in panels
+                      if os.path.exists(os.path.join(out_dir, p["file"].replace("/", "_"))))
+            if got:
+                print(f"output fetch returned {got}/{len(panels)} panels on poll {poll + 1} "
+                      f"({(poll + 1) * 30 // 60} min in) -- kernel is done", flush=True)
+                done = True
+                break
+            if not empty_fetch_noted:
+                print("output fetch returned no panels yet -- the kernel is still running, "
+                      "keep waiting", flush=True)
+                empty_fetch_noted = True
         if denied_streak in (10, 60, 200):
             print(f"still waiting: {denied_streak} unreadable status replies, "
                   f"last fetch attempt said: {probe.stderr.strip()[:300]}", flush=True)
@@ -888,6 +904,10 @@ def recover_one_kernel(kernel_id, wanted, panels_dir):
     return recovered
 
 
+# Below this share of panels with art, the run stops instead of building a book of placeholders.
+MIN_ART_FRACTION = 0.5
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case-dir", required=True, help="directory containing panel_prompts.json and panels/")
@@ -985,6 +1005,23 @@ def main():
                                 seed_base=seed + n * MAX_PANELS_PER_KERNEL)
         if failed:
             print(f"WARNING: {len(failed)} panels failed to generate: {failed}", file=sys.stderr)
+
+    # ⭐⭐ NEVER HAND A BOOK OF PLACEHOLDERS ON TO THE BUILD.
+    #
+    # build_comic draws a placeholder wherever a panel file is missing and carries on by design,
+    # so a run that got almost no art still produced a PDF, a Gumroad draft and a Telegram
+    # delivery -- three of them on 2026-09-14 (see the fetch check in run_batch). A few failed
+    # panels are normal and get re-rolled with /regen; most of the book missing is not a book.
+    # Stop here: this step fails, the PDF/draft steps are skipped, and "Report failure to
+    # Telegram" says so. The kernels keep their art, so a re-run recovers it without new GPU.
+    have = sum(1 for p in prompts if os.path.exists(os.path.join(panels_dir, p["file"])))
+    if prompts and have < len(prompts) * MIN_ART_FRACTION:
+        raise SystemExit(
+            f"Only {have}/{len(prompts)} panels have art -- refusing to build a comic that is "
+            f"mostly placeholders.\n"
+            f"If Kaggle was having trouble, its kernel(s) may still be running or may already "
+            f"have finished: re-run this build once they are done, and the art is recovered "
+            f"from them without spending GPU again.")
 
     # Measure the finished book and hand the bad panels to the reviewer.
     #
