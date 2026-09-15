@@ -1467,7 +1467,7 @@ I'll confirm here when it lands.`
   if (action === "carpost") {
     // extra = "<ig|fb>[|f]". Drafts sent before Facebook existed carry "" or "f" -> Instagram.
     const [platC, forceC] = String(extra || "").split("|");
-    const plat = platC === "fb" ? "fb" : "ig";
+    const plat = platC === "fb" ? "fb" : platC === "th" ? "th" : "ig";
     const force = forceC === "f" || platC === "f";
     // A double tap must not publish two copies: lock per platform until post_carousel.yml reports back (or 15 min).
     const lock = `carlock:${token}:${plat}`;
@@ -1478,19 +1478,20 @@ I'll confirm here when it lands.`
     await env.PENDING.put(lock, "1", { expirationTtl: 900 });
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Publishing..." });
     try {
-      await dispatchCarousel(env, { slug: token, platform: plat, force: force ? "true" : "false" });
+      if (plat === "th") await dispatchThreadsCarousel(env, { slug: token, force: force ? "true" : "false" });
+      else await dispatchCarousel(env, { slug: token, platform: plat, force: force ? "true" : "false" });
     } catch (e) {
       await env.PENDING.delete(lock);
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the ${CAROUSEL_NAMES[plat]} post: ${e.message}` });
       return;
     }
     // Keep the OTHER platform's button on the draft, so both can be posted from one draft.
-    const other = plat === "ig" ? "fb" : "ig";
+    const others = ["ig", "fb", "th"].filter((p) => p !== plat);
     const doneC = await carouselPosted(token);
     await tg(env, "editMessageReplyMarkup", {
       chat_id: chatId,
       message_id: messageId,
-      reply_markup: { inline_keyboard: [[carouselButton(token, other, doneC)], [{ text: "✖ Close", callback_data: `carno:${token}:` }]] }
+      reply_markup: { inline_keyboard: [others.map((p) => carouselButton(token, p, doneC)), [{ text: "✖ Close", callback_data: `carno:${token}:` }]] }
     });
     await tg(env, "sendMessage", { chat_id: chatId, text: `📢 Publishing the carousel to ${CAROUSEL_NAMES[plat]}… I'll confirm here when it lands.` });
     return;
@@ -2766,15 +2767,24 @@ async function carouselPosted(slug) {
     const r = await fetch(`${RAW_COMIC}/carousel/${slug}.posted.json?t=${Date.now()}`, { headers: { "User-Agent": "shadow-gasp-bot" } });
     if (!r.ok) return {};
     const d = await r.json();
-    return { ig: d && d.ig || null, fb: d && d.fb || null };
+    return { ig: d && d.ig || null, fb: d && d.fb || null, th: d && d.th || null };
   } catch (e) {
     return {};
   }
 }
-var CAROUSEL_NAMES = { ig: "Instagram", fb: "Facebook" };
+var CAROUSEL_NAMES = { ig: "Instagram", fb: "Facebook", th: "Threads" };
 function carouselButton(slug, plat, done) {
   const posted = !!(done && done[plat]);
   return { text: posted ? `⚠️ ${CAROUSEL_NAMES[plat]} again` : `✅ Post to ${CAROUSEL_NAMES[plat]}`, callback_data: `carpost:${slug}:${plat}${posted ? "|f" : ""}` };
+}
+// (2026-09-16) Threads has its own workflow + token, so IG/FB posting (post_carousel.yml) is untouched.
+async function dispatchThreadsCarousel(env, inputs) {
+  const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_threads_carousel.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" },
+    body: JSON.stringify({ ref: "main", inputs })
+  });
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
 async function dispatchCarousel(env, inputs) {
   const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_carousel.yml/dispatches`, {
@@ -2904,7 +2914,7 @@ async function sendCarouselDraft(env, chatId, e) {
     media: Array.from({ length: n }, (_, i) => ({ type: "photo", media: `${RAW_COMIC}/carousel/${e.dir}/${i + 1}.jpg` }))
   });
   const done = await carouselPosted(e.slug);
-  let warn = ["ig", "fb"].filter((p) => done[p]).map((p) => `\n\n⚠️ Already posted on ${CAROUSEL_NAMES[p]} (${String(done[p].posted_at || "").slice(0, 10)}). Posting there again makes a DUPLICATE.`).join("");
+  let warn = ["ig", "fb", "th"].filter((p) => done[p]).map((p) => `\n\n⚠️ Already posted on ${CAROUSEL_NAMES[p]} (${String(done[p].posted_at || "").slice(0, 10)}). Posting there again makes a DUPLICATE.`).join("");
   try {
     const prod = (await gumroadProducts(env)).find((x) => x.custom_permalink === e.permalink);
     if (!prod || !prod.published) warn += "\n\n⚠️ This comic is NOT PUBLISHED on Gumroad yet — publish it first, or everyone who comments gets a dead link.";
@@ -2912,9 +2922,10 @@ async function sendCarouselDraft(env, chatId, e) {
   }
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: `🎠 CAROUSEL DRAFT — #${e.issue} ${e.title} — nothing is published yet\nInstagram: swipe carousel · Facebook: one multi-photo post\n\n${(e.caption || "").slice(0, 3000)}${warn}`,
+    text: `🎠 CAROUSEL DRAFT — #${e.issue} ${e.title} — nothing is published yet\nInstagram: swipe carousel · Facebook: one multi-photo post · Threads: swipe carousel (its own caption: public reply instead of DM, one tag)\n\n${(e.caption || "").slice(0, 3000)}${warn}`,
     reply_markup: { inline_keyboard: [
       [carouselButton(e.slug, "ig", done), carouselButton(e.slug, "fb", done)],
+      [carouselButton(e.slug, "th", done)],
       [{ text: "✖ Reject", callback_data: `carno:${e.slug}:` }]
     ] }
   });
@@ -3294,11 +3305,110 @@ async function postmapRoute(env, platform, id) {
     return null;
   }
 }
+// ---------------------------------------------------------------- Threads comment replies (2026-09-16)
+//
+// Carousels also go to Threads (post_threads_carousel.yml). Threads has NO DMs, so a COMIC comment on a
+// Threads post gets a PUBLIC reply: that post's issue link (routed by `postmap:th:<post id>`, same as
+// IG/FB) plus the free #1 -- #1 NORJAK is $0+ on Gumroad since 2026-09-16, so a public link is fine.
+// Security: POSTs are checked against X-Hub-Signature-256 with THREADS_APP_SECRET (the Threads app's own
+// secret, not META_APP_SECRET); with no secret set, everything is refused.
+var THREADS_USER_ID = "28225004937158580";
+var THREADS_USERNAME = "shadow_gasp";
+var THREADS_FREE_URL = "https://shadowgasp.gumroad.com/l/norjak";
+var THREADS_GRAPH = "https://graph.threads.net/v1.0";
+function threadsReplyEvents(body) {
+  // Tolerant: accept `values` as an object or a list, and entry[].changes[] too.
+  const out = [];
+  const push = (v) => {
+    if (v && v.field === "replies" && v.value) out.push(v.value);
+  };
+  const vals = body && body.values;
+  (Array.isArray(vals) ? vals : vals ? [vals] : []).forEach(push);
+  for (const en of body && body.entry || []) for (const ch of en.changes || []) push(ch);
+  return out;
+}
+function threadsReplyText(route) {
+  if (!route) return `Your first case is on us 🎁 #1 NORJAK 👉 ${THREADS_FREE_URL}`;
+  const title = String(route.title || "").replace(/^.*?#\s*\d+\s*[:\-–—]?\s*/, "") || route.title;
+  return `Here's #${route.issue} ${title} 👉 ${route.url}\nNew here? Your first case is on us: #1 NORJAK 👉 ${THREADS_FREE_URL}`;
+}
+async function threadsApi(env, path, params) {
+  const r = await fetch(`${THREADS_GRAPH}/${path}`, { method: "POST", body: new URLSearchParams({ ...params, access_token: env.THREADS_ACCESS_TOKEN || "" }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(`${path.split("/").pop()}: ${r.status} ${j.error && (j.error.error_user_msg || j.error.message) || ""}`);
+  return j;
+}
+async function threadsPublishReply(env, replyToId, text) {
+  const c = await threadsApi(env, `${THREADS_USER_ID}/threads`, { media_type: "TEXT", text, reply_to_id: replyToId });
+  let last;
+  for (let i = 0; i < 4; i++) {
+    // A text container is usually ready at once; give it a few seconds if not.
+    try {
+      return (await threadsApi(env, `${THREADS_USER_ID}/threads_publish`, { creation_id: c.id })).id;
+    } catch (e) {
+      last = e;
+      await new Promise((res) => setTimeout(res, 3e3));
+    }
+  }
+  throw last;
+}
+async function threadsOnReply(env, v) {
+  const id = String(v.id || "");
+  const who = String(v.username || "");
+  if (!id || !META_KEYWORD.test(v.text || "")) return "skip";
+  if (who.toLowerCase() === THREADS_USERNAME) return "own";
+  if (await env.PENDING.get(`thc:${id}`)) return "dup";
+  await env.PENDING.put(`thc:${id}`, "1", { expirationTtl: 8 * 86400 });
+  const root = String(v.root_post && v.root_post.id || v.replied_to && v.replied_to.id || "");
+  const once = `thu:${root}:${who}`;
+  if (who && await env.PENDING.get(once)) return "again";
+  const route = await postmapRoute(env, "th", root);
+  try {
+    await threadsPublishReply(env, id, threadsReplyText(route));
+    if (who) await env.PENDING.put(once, "1", { expirationTtl: 86400 });
+    await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `🧵 @${who || "someone"} commented COMIC on Threads${route ? ` (#${route.issue} post)` : ""} — replied with ${route ? `the #${route.issue} link + free #1` : "the free #1"}.` });
+    return "replied";
+  } catch (e) {
+    await env.PENDING.delete(`thc:${id}`);
+    await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `❌ Threads: couldn't reply to @${who || "someone"}'s COMIC comment: ${e.message}` });
+    return "failed";
+  }
+}
+async function threadsRoutes(request, env, url, ctx) {
+  if (url.pathname !== "/threads/webhook") return null;
+  if (request.method === "GET") {
+    const q = url.searchParams;
+    if (q.get("hub.mode") === "subscribe" && env.THREADS_VERIFY_TOKEN && q.get("hub.verify_token") === env.THREADS_VERIFY_TOKEN) {
+      return new Response(q.get("hub.challenge") || "", { status: 200 });
+    }
+    return new Response("forbidden", { status: 403 });
+  }
+  if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
+  const raw = await request.arrayBuffer();
+  if (!env.THREADS_APP_SECRET || !await metaSigOk({ META_APP_SECRET: env.THREADS_APP_SECRET }, raw, request.headers.get("X-Hub-Signature-256"))) {
+    return new Response("bad signature", { status: 403 });
+  }
+  let body;
+  try {
+    body = JSON.parse(new TextDecoder().decode(raw));
+  } catch {
+    return new Response("bad json", { status: 400 });
+  }
+  const events = threadsReplyEvents(body);
+  // Keep the last payload we couldn't read, so an unexpected shape can be inspected instead of guessed.
+  if (!events.length) await env.PENDING.put("threads:last_unhandled", new TextDecoder().decode(raw).slice(0, 4e3), { expirationTtl: 7 * 86400 }).catch(() => {});
+  const work = Promise.all(events.map((v) => threadsOnReply(env, v))).catch((e) => console.log(`threads webhook: ${e.message}`));
+  if (ctx && ctx.waitUntil) ctx.waitUntil(work);
+  else await work;
+  return new Response("EVENT_RECEIVED", { status: 200 });
+}
 var worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const metaResp = await metaRoutes(request, env, url, ctx);
     if (metaResp) return metaResp;
+    const threadsResp = await threadsRoutes(request, env, url, ctx);
+    if (threadsResp) return threadsResp;
     if (request.method === "POST" && url.pathname === "/free-offer/set") {
       const auth = request.headers.get("X-Shared-Secret");
       if (auth !== env.WORKER_SHARED_SECRET) {
@@ -3753,8 +3863,8 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
     if (request.method === "POST" && url.pathname === "/carousel/posted") {
       if (request.headers.get("X-Shared-Secret") !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
       const b = await request.json();
-      const plat = b.platform === "fb" ? "fb" : "ig";
-      const where = plat === "fb" ? "Facebook (multi-photo post)" : "Instagram";
+      const plat = b.platform === "fb" ? "fb" : b.platform === "th" ? "th" : "ig";
+      const where = plat === "fb" ? "Facebook (multi-photo post)" : plat === "th" ? "Threads" : "Instagram";
       const posted = b.outcome === "success" && b.result === "posted" && !!b.post_id;
       // post -> issue routing: a COMIC comment on this post is routed like one on a promo post.
       if (posted && b.permalink) {
@@ -3771,7 +3881,7 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
       }
       const dry = String(b.dry_run) === "true";
       const text = dry ? `🧪 Carousel DRY RUN for "${b.slug}" on ${CAROUSEL_NAMES[plat]} — ${b.outcome === "success" ? "slides reachable and token valid; nothing posted." : "failed."}\n${b.run_url || ""}`
-        : posted ? `✅ Carousel "${b.slug}" is live on ${where}. COMIC comments on it go to the DM funnel.`
+        : posted ? `✅ Carousel "${b.slug}" is live on ${where}. ${plat === "th" ? "COMIC comments on it get an automatic public reply with the link." : "COMIC comments on it go to the DM funnel."}`
         : b.result === "already" ? `ℹ️ Carousel "${b.slug}" was already posted on ${CAROUSEL_NAMES[plat]} — nothing new went out.\n${b.run_url || ""}`
         : `❌ Carousel "${b.slug}" FAILED to post on ${CAROUSEL_NAMES[plat]}.\n${b.run_url || ""}`;
       await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
