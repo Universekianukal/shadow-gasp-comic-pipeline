@@ -891,9 +891,18 @@ def render_title_page(c, spec, meta):
     c.setFillColor(ink(0.72, 0.70, 0.66))
     y = PAGE_H - 3.3 * inch
     for line in spec["credits"]:
-        c.setFont(FONT_BODY, 8)
-        c.drawCentredString(PAGE_W / 2, y, line)
-        y -= 13
+        # A long case name ran off BOTH edges of #48 BLACK TIDE's title page (2026-09-15): the
+        # credits were set at a fixed 8pt with nothing measuring them. Shrink to fit, and wrap as
+        # a last resort. A line that already fits is drawn exactly as before (8pt, one line).
+        size, room = 8, PAGE_W - 2 * MARGIN
+        while size > 6 and pdfmetrics.stringWidth(line, FONT_BODY, size) > room:
+            size -= 0.2
+        parts = ([line] if pdfmetrics.stringWidth(line, FONT_BODY, size) <= room
+                 else wrap_to_width(line, FONT_BODY, size, room))
+        for part in parts:
+            c.setFont(FONT_BODY, size)
+            c.drawCentredString(PAGE_W / 2, y, part)
+            y -= 13
 
     y -= 26
     c.setFillColor(ink(0.55, 0.54, 0.52))
