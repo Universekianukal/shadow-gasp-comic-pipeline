@@ -77,7 +77,9 @@ def main():
     ap.add_argument("--repo", default=gen_carousel.REPO)
     a = ap.parse_args()
 
-    products = gumroad(["products", "list"]).get("products", [])
+    # --all: the CLI pages 10 products at a time, and a plain `products list` only ever saw the newest
+    # ten -- #34 was "not found" on the first real run (2026-09-15).
+    products = gumroad(["products", "list", "--all"]).get("products", [])
     p = next((x for x in products if x.get("custom_permalink") == a.permalink), None)
     if not p:
         raise SystemExit(f"no Gumroad product with permalink {a.permalink!r}")
