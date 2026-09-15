@@ -762,6 +762,56 @@ __name2222(commitTitleOverride, "commitTitleOverride");
 __name22222(commitTitleOverride, "commitTitleOverride");
 __name222222(commitTitleOverride, "commitTitleOverride");
 __name2222222(commitTitleOverride, "commitTitleOverride");
+// /silent <N> [off] (user, 2026-09-16): day N's YouTube upload goes out with
+// notifySubscribers=false. A YT_NO_NOTIFY marker in the day dir; _youtube_upload.py reads it
+// (local checkout, else live main). YouTube can't change this after upload, so published
+// days are refused.
+async function ytSilentCommand(env, chatId, rest) {
+  const m = rest.match(/^(\d+)(?:\s+(off))?$/i);
+  if (!m) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: "Usage:\n/silent <N>  — day N uploads to YouTube without notifying subscribers\n/silent <N> off  — undo\n\nSend it BEFORE the day uploads (YouTube can't change it afterwards)." });
+    return;
+  }
+  const dayNum = parseInt(m[1], 10);
+  const off = !!m[2];
+  const dd = String(dayNum).padStart(2, "0");
+  const path = `_pipeline/batch/day${dd}/YT_NO_NOTIFY`;
+  const gh = { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" };
+  const pst = await dayPublishState(env, dayNum);
+  if (pst) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `⚠️ Day ${dayNum} is already on YouTube${pst.videoId ? ` (https://youtu.be/${pst.videoId})` : ""} — its notification setting was fixed at upload and YouTube can't change it now. Nothing changed.` });
+    return;
+  }
+  const existing = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/contents/${path}?ref=main`, { headers: gh });
+  const sha = existing.ok ? (await existing.json()).sha : null;
+  if (off) {
+    if (!sha) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `Day ${dayNum} wasn't set to silent — it will notify subscribers as normal.` });
+      return;
+    }
+    const r2 = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/contents/${path}`, {
+      method: "DELETE",
+      headers: gh,
+      body: JSON.stringify({ message: `batch: day ${dd} YouTube notifies subscribers again (via Telegram /silent off)`, sha, branch: "main" })
+    });
+    if (!r2.ok) throw new Error(`GitHub delete failed: ${r2.status} ${await r2.text()}`);
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F514} Day ${dayNum}: back to normal — subscribers WILL be notified when it uploads.` });
+    return;
+  }
+  if (sha) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F515} Day ${dayNum} is already set to upload silently (no subscriber notification). /silent ${dayNum} off to undo.` });
+    return;
+  }
+  const r = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/contents/${path}`, {
+    method: "PUT",
+    headers: gh,
+    body: JSON.stringify({ message: `batch: day ${dd} YouTube upload without subscriber notification (via Telegram /silent)`, content: btoa("notifySubscribers=false\n"), branch: "main" })
+  });
+  if (!r.ok) throw new Error(`GitHub commit failed: ${r.status} ${await r.text()}`);
+  await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F515} Day ${dayNum} will upload to YouTube WITHOUT notifying subscribers (it still shows in the Shorts feed and on your channel).
+Works for /publish and the automatic 05:15 queue. /silent ${dayNum} off to undo.` });
+}
+__name(ytSilentCommand, "ytSilentCommand");
 async function commitHookVideo(env, dayNum, videoBytes) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/images/seq/01.mp4`;
   let sha;
@@ -2113,6 +2163,8 @@ var COMMAND_LIST = [
   "(reply to that with the Flow video)  \u2014 commits it, renders and uploads automatically",
   "/publish <N>  \u2014 render + upload day N now",
   "/publish <N> at <HH:MM>  \u2014 same, scheduled for that IST time",
+  "/silent <N>  \u2014 day N uploads to YouTube WITHOUT notifying subscribers (send before it uploads)",
+  "/silent <N> off  \u2014 undo that; day N notifies as normal",
   "/cancel <N>  \u2014 cancel an in-progress render/publish for day N",
   "/title <N>  \u2014 draft an alt title (Shock/Curiosity/Open-loop/Direct), tap Apply to use it",
   "",
@@ -2274,6 +2326,14 @@ Reply here with the finished Flow video when ready.`);
       text: `${currentLine}Pick a title style for day ${dayNum} (drafts only -- nothing is applied until you tap Apply). Only takes effect if this day hasn't uploaded to YouTube yet -- the upload token can't edit a live title.`,
       reply_markup: titleStyleKeyboard(dayNum)
     });
+    return;
+  }
+  if (/^\/silent(@\S+)?(\s|$)/i.test(text)) {
+    try {
+      await ytSilentCommand(env, chatId, text.replace(/^\/silent(@\S+)?/i, "").trim());
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ /silent failed: ${e.message}` });
+    }
     return;
   }
   if (text.startsWith("/publish")) {
