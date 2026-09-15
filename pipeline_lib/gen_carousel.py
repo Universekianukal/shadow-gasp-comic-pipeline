@@ -1,27 +1,35 @@
-"""Build a 5-slide Instagram carousel (1080x1350, 4:5) for one comic.
+"""Build an Instagram carousel (1080x1350, 4:5) for one comic, and file it under carousel/.
 
-  1  hook   -- splash art full-bleed, the hook line set large over a dark fade
-  2  art    -- an inside page / art image, whole, on dark
-  3  art    -- a second one
-  4  art    -- a third one
-  5  CTA    -- "Comment COMIC" (the DM funnel sends the link); issue #1 says FREE
+  1       hook   -- art full-bleed, the hook line set large over a dark fade
+  2..n-1  art    -- 1 to 3 inside pages / art images, whole, on dark
+  n       CTA    -- cover + "Comment COMIC" (the DM funnel sends the link); only issue #1 is free
 
-Only preview material: a few pages / the storefront's own preview art, never the story in order.
-Fonts: Montserrat (OFL), the same face the covers use. Never Impact (Monotype licence).
+Only preview material: the storefront's own preview art, or a few pages from the opening third of a
+book -- never the ending. Fonts: Montserrat (OFL), the same face the covers use. Never Impact.
+
+Filing (publish_entry): slides go to carousel/<slug>-<hash8>/1..N.jpg -- a content-hash folder, because
+Instagram binds a fetch refusal to a URL for good -- and the listing to carousel/entries/<iii>-<slug>.json,
+one small file per comic so two builds never edit the same file. carousel/index.json (issue #1) is the
+older single list and is still read.
 """
 import argparse
+import hashlib
+import json
 import os
+import shutil
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H = 1080, 1350
 BG = (13, 13, 13)
 RED = (200, 40, 36)
 CREAM = (240, 232, 214)
-FONTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+HASHTAGS = "#truecrime #unsolved #coldcase #documentarycomic #shadowgasp"
 
 
 def font(size, weight="ExtraBold"):
-    for d in (FONTS, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")):
+    for d in (os.path.join(HERE, "fonts"), os.path.join(REPO, "fonts")):
         p = os.path.join(d, f"Montserrat-{weight}.ttf")
         if os.path.exists(p):
             return ImageFont.truetype(p, size)
@@ -115,14 +123,14 @@ def slide_cta(cover, title, issue, pages, free):
     top = (H - block) // 2
     s.paste(c, ((W - c.width) // 2, top))
     y = top + c.height + 60
+
     def center(text, fnt, fill, yy):
         tw = d.textlength(text, font=fnt)
         d.text(((W - tw) / 2, yy), text, font=fnt, fill=fill)
     center("WANT THE FULL STORY?", font(40, "Bold"), CREAM, y); y += 70
     center("Comment COMIC", font(84), (255, 255, 255), y); y += 112
-    # Only the free issue says "free", and it names the issue: "FREE" alone read as if every comic
-    # were free (user, 2026-09-15).
     # Wording picked by the user (2026-09-15): "Your first case is on us." -- a gift, not a sale.
+    # Only issue #1 is free; every other issue gets the plain line.
     sub = "Your first case is on us." if free else "and we'll DM you the link."
     center(sub, font(36, "Bold"), RED if free else CREAM, y); y += 70
     meta = " · ".join(x for x in (f"Issue #{issue}", title, f"{pages} pages" if pages else "") if x)
@@ -130,10 +138,58 @@ def slide_cta(cover, title, issue, pages, free):
     return s
 
 
+def build(hook_art, art, cover, hook, title, issue, pages, free, out_dir, hook_focus=0.35):
+    """Write 1.jpg..N.jpg into out_dir (N = 2 + len(art), art = 1..3 images). Returns the paths."""
+    art = list(art)[:3]
+    if not art:
+        raise ValueError("a carousel needs at least one art image")
+    os.makedirs(out_dir, exist_ok=True)
+    foot = f"SHADOW GASP #{issue} · {title}"
+    slides = [slide_hook(Image.open(hook_art), hook, f"SHADOW GASP · ISSUE #{issue}", hook_focus)]
+    slides += [slide_page(Image.open(a), foot) for a in art]
+    slides.append(slide_cta(Image.open(cover), title, issue, pages, free))
+    paths = []
+    for i, sl in enumerate(slides, 1):
+        p = os.path.join(out_dir, f"{i}.jpg")
+        sl.save(p, quality=92)
+        paths.append(p)
+    return paths
+
+
+def default_caption(hook, issue, title, pages):
+    """Hook, what it is, the call to action. The CTA is the one the user approved for #1; it must not
+    repeat slide 5's line word for word (user rule)."""
+    what = f"SHADOW GASP #{issue}: {title}, a {pages}-page documentary comic." if pages else \
+        f"SHADOW GASP #{issue}: {title}, a documentary comic."
+    return f"{hook.strip()} 🕯️\n\n{what}\n\nCurious how it ends? Comment COMIC and check your DMs 📩\n\n{HASHTAGS}"
+
+
+def publish_entry(slide_paths, slug, issue, title, permalink, caption, repo=REPO):
+    """Copy the slides to carousel/<slug>-<hash8>/ and write carousel/entries/<iii>-<slug>.json."""
+    h = hashlib.sha256(b"".join(open(p, "rb").read() for p in slide_paths)).hexdigest()[:8]
+    d = f"{slug}-{h}"
+    dest = os.path.join(repo, "carousel", d)
+    os.makedirs(dest, exist_ok=True)
+    for i, p in enumerate(slide_paths, 1):
+        shutil.copyfile(p, os.path.join(dest, f"{i}.jpg"))
+    entry = {"issue": int(issue), "slug": slug, "permalink": permalink, "title": title, "dir": d,
+             "slides": len(slide_paths), "caption": caption}
+    edir = os.path.join(repo, "carousel", "entries")
+    os.makedirs(edir, exist_ok=True)
+    # One listing per comic: a rebuild replaces it (the older slide folder is simply no longer referenced).
+    for old in os.listdir(edir):
+        if old[:1].isdigit() and old.split("-", 1)[-1] == f"{slug}.json":
+            os.remove(os.path.join(edir, old))
+    with open(os.path.join(edir, f"{int(issue):03d}-{slug}.json"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(entry, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    return entry
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hook-art", required=True)
-    ap.add_argument("--art", nargs=3, required=True)
+    ap.add_argument("--art", nargs="+", required=True, help="1 to 3 art images")
     ap.add_argument("--hook-focus", type=float, default=0.35)
     ap.add_argument("--cover", required=True)
     ap.add_argument("--hook", required=True)
@@ -143,18 +199,7 @@ def main():
     ap.add_argument("--free", action="store_true")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    os.makedirs(a.out, exist_ok=True)
-    foot = f"SHADOW GASP #{a.issue} · {a.title}"
-    slides = [
-        slide_hook(Image.open(a.hook_art), a.hook, f"SHADOW GASP · ISSUE #{a.issue}", a.hook_focus),
-        slide_page(Image.open(a.art[0]), foot),
-        slide_page(Image.open(a.art[1]), foot),
-        slide_page(Image.open(a.art[2]), foot),
-        slide_cta(Image.open(a.cover), a.title, a.issue, a.pages, a.free),
-    ]
-    for i, sl in enumerate(slides, 1):
-        p = os.path.join(a.out, f"{i}.jpg")
-        sl.save(p, quality=92)
+    for p in build(a.hook_art, a.art, a.cover, a.hook, a.title, a.issue, a.pages, a.free, a.out, a.hook_focus):
         print("wrote", p)
 
 

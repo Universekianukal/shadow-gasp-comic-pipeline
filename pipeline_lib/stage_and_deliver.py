@@ -672,6 +672,16 @@ def main():
         # Never fatal. A finished, priced, uploaded book must not be lost to a marketing asset.
         print(f"WARNING: social poster build failed ({e}) — continuing without it")
 
+    # ---- Instagram/Facebook carousel, from the real pages (2026-09-15) ----
+    # Same reason as the poster: this is the only moment the pages exist. Filed under carousel/ (committed
+    # with the ledgers) so /carousel <n> in Telegram can show the draft later. Opening third only -- never
+    # the ending. Never fatal.
+    try:
+        import carousel_from_book
+        carousel_from_book.build(comic_dir, script, pdf_path, slugify(script["title"]))
+    except Exception as e:
+        print(f"WARNING: carousel build failed ({e}) — continuing without it")
+
     # Square storefront tile, styled as a comic cover. A shop tile for a comic
     # IS its cover -- series banner, title, issue number. A bare atmospheric
     # image reads as a documentary still rather than something purchasable.

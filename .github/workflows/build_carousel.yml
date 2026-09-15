@@ -1,0 +1,106 @@
+name: Build Comic Carousel (from the storefront)
+
+# Dispatched by the comics bot when /carousel <n> names a published comic that has no carousel yet.
+# Builds the slides from the product's Gumroad preview art + its hook line, commits them under
+# carousel/ (content-hash folder + one entries/<iii>-<slug>.json per comic), then hands the entry
+# back to the bot, which shows the draft with Post / Reject. Nothing is posted here.
+# New comics do not need this: the comic build files their carousel from the real pages.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number"
+        required: true
+      permalink:
+        description: "Gumroad custom permalink of the published product"
+        required: true
+      hook:
+        description: "Hook line for slide 1 (blank = the product description's first sentence)"
+        required: false
+        default: ""
+      chat_id:
+        description: "Telegram chat to send the draft to"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+# One writer at a time: two builds must never race each other's push.
+concurrency:
+  group: carousel-write
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install Pillow PyMuPDF requests
+
+      - name: Install Gumroad CLI
+        # `curl ... | bash` reports success when the download fails -- same guard as the pipeline.
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            echo "install attempt $attempt failed, retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || { echo "::error::Gumroad CLI did not install"; exit 1; }
+
+      - name: Authenticate Gumroad CLI
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Build the slides
+        id: run
+        env:
+          ISSUE: ${{ github.event.inputs.issue }}
+          PERMALINK: ${{ github.event.inputs.permalink }}
+          HOOK: ${{ github.event.inputs.hook }}
+        run: |
+          export PATH="$PATH:$HOME/.local/bin"
+          python pipeline_lib/build_carousel_store.py --issue "$ISSUE" --permalink "$PERMALINK" --hook "$HOOK" --result /tmp/car_built.json
+
+      - name: Commit the carousel
+        id: commit
+        run: |
+          git config user.name "shadow-gasp-bot"
+          git config user.email "bot@shadowgasp.example"
+          git add carousel/
+          git commit -m "carousel: built #${{ github.event.inputs.issue }} (${{ github.event.inputs.permalink }}) from the storefront" || { echo "nothing to commit"; exit 0; }
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push attempt $attempt failed, retrying"
+            sleep $((attempt * 3))
+          done
+          echo "::error::could not push the carousel"
+          exit 1
+
+      - name: Report to the bot
+        if: always()
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          ISSUE: ${{ github.event.inputs.issue }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+          OUTCOME: ${{ steps.run.outcome == 'success' && steps.commit.outcome == 'success' && 'success' || 'failure' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -c 'import json,os;p="/tmp/car_built.json";e=json.load(open(p)) if os.path.exists(p) else None;print(json.dumps({"issue":os.environ["ISSUE"],"chat_id":os.environ["CHAT_ID"],"outcome":os.environ["OUTCOME"],"entry":e,"run_url":os.environ["RUN_URL"]}))' > /tmp/built.json
+          curl -sS -X POST "${WORKER_URL%/}/carousel/built" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/built.json \
+            || echo "WARNING: could not report to the bot"

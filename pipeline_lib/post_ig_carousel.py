@@ -43,6 +43,13 @@ for _s in (sys.stdout, sys.stderr):
 
 
 def entry_for(slug):
+    # Per-comic listings first (carousel/entries/<iii>-<slug>.json, written by gen_carousel.publish_entry),
+    # then the older single list, which holds issue #1.
+    edir = os.path.join(CAR_DIR, "entries")
+    if os.path.isdir(edir):
+        hits = sorted(f for f in os.listdir(edir) if f.split("-", 1)[-1] == f"{slug}.json" and f[:1].isdigit())
+        if hits:
+            return json.load(open(os.path.join(edir, hits[-1]), encoding="utf-8"))
     idx = json.load(open(os.path.join(CAR_DIR, "index.json"), encoding="utf-8"))
     for e in idx:
         if e.get("slug") == slug:
