@@ -581,6 +581,11 @@ function fbIgDecisionKeyboard(day) {
       [
         { text: "\u23F0 FB: Schedule", callback_data: `fbsch:${day}` },
         { text: "\u23F0 IG: Schedule", callback_data: `igsch:${day}` }
+      ],
+      // user, 2026-09-16: per-video choice. "IG: Approve" = Reel + profile grid (unchanged);
+      // this one = Reels tab only (share_to_feed=false).
+      [
+        { text: "\u{1F39E} IG: Reels only (not in grid)", callback_data: `igdec:${day}:reels` }
       ]
     ]
   };
@@ -1911,6 +1916,16 @@ Saved as the pending title (used if this day hasn't uploaded yet). Checking whet
       await dispatchRetitlePublished(env, { day: String(day), new_title: draft.title, notify_chat_id: String(chatId) });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't check/apply the live retitle: ${e.message}` });
+    }
+    return;
+  }
+  if (action === "igdec" && extra === "reels") {
+    const day = token;
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Posting to Instagram as Reels-only now..." });
+    try {
+      await dispatchCrosspostDecision(env, { day: String(day), platform: "ig", decision: "approve", notify_chat_id: String(chatId), ig_reels_only: "true" });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't post Reels-only to Instagram for day ${day}: ${e.message}` });
     }
     return;
   }
