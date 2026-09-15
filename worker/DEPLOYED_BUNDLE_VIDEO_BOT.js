@@ -14,6 +14,8 @@ var __defProp22222 = Object.defineProperty;
 var __name22222 = /* @__PURE__ */ __name2222((target, value) => __defProp22222(target, "name", { value, configurable: true }), "__name");
 var __defProp222222 = Object.defineProperty;
 var __name222222 = /* @__PURE__ */ __name22222((target, value) => __defProp222222(target, "name", { value, configurable: true }), "__name");
+var __defProp2222222 = Object.defineProperty;
+var __name2222222 = /* @__PURE__ */ __name222222((target, value) => __defProp2222222(target, "name", { value, configurable: true }), "__name");
 var GITHUB_REPO = "Universekianukal/shadow-gasp-comic-pipeline";
 var VIDEO_REPO = "Universekianukal/shadow-gasp-pipeline";
 var KAGGLE_SLOTS = [["IMAGE", "anuragmishra108"], ["VIDEO", "kianukal"], ["MAHADEVI", "mahadevi108"]];
@@ -60,6 +62,7 @@ __name222(tg, "tg");
 __name2222(tg, "tg");
 __name22222(tg, "tg");
 __name222222(tg, "tg");
+__name2222222(tg, "tg");
 async function dispatchAction(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/action.yml/dispatches`,
@@ -84,6 +87,7 @@ __name222(dispatchAction, "dispatchAction");
 __name2222(dispatchAction, "dispatchAction");
 __name22222(dispatchAction, "dispatchAction");
 __name222222(dispatchAction, "dispatchAction");
+__name2222222(dispatchAction, "dispatchAction");
 async function dispatchPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -106,6 +110,7 @@ __name222(dispatchPipeline, "dispatchPipeline");
 __name2222(dispatchPipeline, "dispatchPipeline");
 __name22222(dispatchPipeline, "dispatchPipeline");
 __name222222(dispatchPipeline, "dispatchPipeline");
+__name2222222(dispatchPipeline, "dispatchPipeline");
 async function dispatchPostPromo(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_promo.yml/dispatches`,
@@ -124,6 +129,7 @@ async function dispatchPostPromo(env, inputs) {
 __name(dispatchPostPromo, "dispatchPostPromo");
 __name2(dispatchPostPromo, "dispatchPostPromo");
 __name22(dispatchPostPromo, "dispatchPostPromo");
+__name222(dispatchPostPromo, "dispatchPostPromo");
 async function gumroadProducts(env) {
   const r = await fetch(
     `https://api.gumroad.com/v2/products?access_token=${encodeURIComponent(env.GUMROAD_ACCESS_TOKEN || "")}`,
@@ -136,6 +142,7 @@ async function gumroadProducts(env) {
 __name(gumroadProducts, "gumroadProducts");
 __name2(gumroadProducts, "gumroadProducts");
 __name22(gumroadProducts, "gumroadProducts");
+__name222(gumroadProducts, "gumroadProducts");
 async function promoPosted(env) {
   try {
     const r = await fetch(
@@ -152,6 +159,7 @@ async function promoPosted(env) {
 __name(promoPosted, "promoPosted");
 __name2(promoPosted, "promoPosted");
 __name22(promoPosted, "promoPosted");
+__name222(promoPosted, "promoPosted");
 var REGISTRY_PATH = "issues.json";
 var KAGGLE_ACCOUNTS_FALLBACK = "-:anuragmishra108,B:mahadevi108,C:kianukal";
 function caseSlug(name) {
@@ -160,6 +168,7 @@ function caseSlug(name) {
 __name(caseSlug, "caseSlug");
 __name2(caseSlug, "caseSlug");
 __name22(caseSlug, "caseSlug");
+__name222(caseSlug, "caseSlug");
 function b64decode(s) {
   const bin = atob(String(s).replace(/\s/g, ""));
   return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
@@ -167,6 +176,7 @@ function b64decode(s) {
 __name(b64decode, "b64decode");
 __name2(b64decode, "b64decode");
 __name22(b64decode, "b64decode");
+__name222(b64decode, "b64decode");
 function b64encode(text) {
   const bytes = new TextEncoder().encode(text);
   let bin = "";
@@ -176,6 +186,7 @@ function b64encode(text) {
 __name(b64encode, "b64encode");
 __name2(b64encode, "b64encode");
 __name22(b64encode, "b64encode");
+__name222(b64encode, "b64encode");
 function ghHeaders(env) {
   return {
     Authorization: `Bearer ${env.GITHUB_TOKEN}`,
@@ -187,12 +198,14 @@ function ghHeaders(env) {
 __name(ghHeaders, "ghHeaders");
 __name2(ghHeaders, "ghHeaders");
 __name22(ghHeaders, "ghHeaders");
+__name222(ghHeaders, "ghHeaders");
 function parseKaggleAccounts(s) {
   return String(s || "").split(",").map((p) => p.split(":")).filter((p) => p.length === 2 && p[0].trim() && p[1].trim()).map((p) => ({ slot: p[0].trim(), handle: p[1].trim() }));
 }
 __name(parseKaggleAccounts, "parseKaggleAccounts");
 __name2(parseKaggleAccounts, "parseKaggleAccounts");
 __name22(parseKaggleAccounts, "parseKaggleAccounts");
+__name222(parseKaggleAccounts, "parseKaggleAccounts");
 async function kaggleAccounts(env) {
   try {
     const r = await fetch(
@@ -212,6 +225,7 @@ async function kaggleAccounts(env) {
 __name(kaggleAccounts, "kaggleAccounts");
 __name2(kaggleAccounts, "kaggleAccounts");
 __name22(kaggleAccounts, "kaggleAccounts");
+__name222(kaggleAccounts, "kaggleAccounts");
 async function readRegistry(env) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/contents/${REGISTRY_PATH}?ref=main`,
@@ -233,6 +247,7 @@ async function readRegistry(env) {
 __name(readRegistry, "readRegistry");
 __name2(readRegistry, "readRegistry");
 __name22(readRegistry, "readRegistry");
+__name222(readRegistry, "readRegistry");
 async function peekCase(env, caseName) {
   const cur = await readRegistry(env);
   if (!cur) return null;
@@ -246,6 +261,7 @@ async function peekCase(env, caseName) {
 __name(peekCase, "peekCase");
 __name2(peekCase, "peekCase");
 __name22(peekCase, "peekCase");
+__name222(peekCase, "peekCase");
 async function reserveCase(env, caseName, wantSlot) {
   const slug = caseSlug(caseName);
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -292,6 +308,7 @@ async function reserveCase(env, caseName, wantSlot) {
 __name(reserveCase, "reserveCase");
 __name2(reserveCase, "reserveCase");
 __name22(reserveCase, "reserveCase");
+__name222(reserveCase, "reserveCase");
 async function dispatchFunnelComicLink(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/funnel_comic_link.yml/dispatches`,
@@ -312,6 +329,7 @@ __name2(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 __name22(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 __name222(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 __name2222(dispatchFunnelComicLink, "dispatchFunnelComicLink");
+__name22222(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 async function dispatchGenCode(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/gen_code.yml/dispatches`,
@@ -334,6 +352,7 @@ __name222(dispatchGenCode, "dispatchGenCode");
 __name2222(dispatchGenCode, "dispatchGenCode");
 __name22222(dispatchGenCode, "dispatchGenCode");
 __name222222(dispatchGenCode, "dispatchGenCode");
+__name2222222(dispatchGenCode, "dispatchGenCode");
 async function dispatchVideoPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -356,9 +375,10 @@ __name222(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name2222(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name22222(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name222222(dispatchVideoPipeline, "dispatchVideoPipeline");
-var sleep = /* @__PURE__ */ __name222222((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
+__name2222222(dispatchVideoPipeline, "dispatchVideoPipeline");
+var sleep = /* @__PURE__ */ __name2222222((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
 async function dispatchWorkflowVerified(env, workflowFile, inputs) {
-  const dispatchOnce = /* @__PURE__ */ __name222222(async () => {
+  const dispatchOnce = /* @__PURE__ */ __name2222222(async () => {
     const beforeMs2 = Date.now();
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/dispatches`,
@@ -375,7 +395,7 @@ async function dispatchWorkflowVerified(env, workflowFile, inputs) {
     if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
     return beforeMs2;
   }, "dispatchOnce");
-  const runAppeared = /* @__PURE__ */ __name222222(async (afterMs) => {
+  const runAppeared = /* @__PURE__ */ __name2222222(async (afterMs) => {
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5`,
       { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
@@ -399,6 +419,7 @@ __name222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name2222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name22222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name222222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
+__name2222222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 async function dispatchFinishBatchDay(env, inputs) {
   return dispatchWorkflowVerified(env, "finish_batch_day.yml", inputs);
 }
@@ -409,6 +430,7 @@ __name222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name2222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name22222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name222222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
+__name2222222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 async function dispatchBatchPregen(env, inputs) {
   return dispatchWorkflowVerified(env, "batch_pregen.yml", inputs);
 }
@@ -419,6 +441,7 @@ __name222(dispatchBatchPregen, "dispatchBatchPregen");
 __name2222(dispatchBatchPregen, "dispatchBatchPregen");
 __name22222(dispatchBatchPregen, "dispatchBatchPregen");
 __name222222(dispatchBatchPregen, "dispatchBatchPregen");
+__name2222222(dispatchBatchPregen, "dispatchBatchPregen");
 function pregenKeyboard() {
   return {
     inline_keyboard: [
@@ -434,6 +457,7 @@ __name222(pregenKeyboard, "pregenKeyboard");
 __name2222(pregenKeyboard, "pregenKeyboard");
 __name22222(pregenKeyboard, "pregenKeyboard");
 __name222222(pregenKeyboard, "pregenKeyboard");
+__name2222222(pregenKeyboard, "pregenKeyboard");
 async function ghRaw(env, path) {
   const r = await fetch(`https://raw.githubusercontent.com/${VIDEO_REPO}/main/${path}`, {
     headers: { "User-Agent": "shadow-gasp-bot" }
@@ -448,6 +472,7 @@ __name222(ghRaw, "ghRaw");
 __name2222(ghRaw, "ghRaw");
 __name22222(ghRaw, "ghRaw");
 __name222222(ghRaw, "ghRaw");
+__name2222222(ghRaw, "ghRaw");
 async function hookStillUrl(env, dd) {
   const candidates = [
     `_pipeline/batch/day${dd}/shot1.jpeg`,
@@ -470,6 +495,7 @@ __name22(hookStillUrl, "hookStillUrl");
 __name222(hookStillUrl, "hookStillUrl");
 __name2222(hookStillUrl, "hookStillUrl");
 __name22222(hookStillUrl, "hookStillUrl");
+__name222222(hookStillUrl, "hookStillUrl");
 async function dayPublishState(env, dayNum) {
   let entry = null;
   try {
@@ -503,6 +529,7 @@ __name22(dayPublishState, "dayPublishState");
 __name222(dayPublishState, "dayPublishState");
 __name2222(dayPublishState, "dayPublishState");
 __name22222(dayPublishState, "dayPublishState");
+__name222222(dayPublishState, "dayPublishState");
 async function sendHookStill(env, chatId, imgUrl, caption) {
   const r = await fetch(imgUrl, { headers: { "User-Agent": "shadow-gasp-bot" } });
   if (!r.ok) throw new Error(`couldn't fetch the still: ${r.status}`);
@@ -527,7 +554,8 @@ __name22(sendHookStill, "sendHookStill");
 __name222(sendHookStill, "sendHookStill");
 __name2222(sendHookStill, "sendHookStill");
 __name22222(sendHookStill, "sendHookStill");
-__name222222(hookStillUrl, "hookStillUrl");
+__name222222(sendHookStill, "sendHookStill");
+__name2222222(hookStillUrl, "hookStillUrl");
 async function dispatchCrosspostDecision(env, inputs) {
   return dispatchWorkflowVerified(env, "crosspost_decision.yml", inputs);
 }
@@ -538,6 +566,7 @@ __name222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name2222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name22222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name222222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
+__name2222222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 function fbIgDecisionKeyboard(day) {
   return {
     inline_keyboard: [
@@ -550,8 +579,8 @@ function fbIgDecisionKeyboard(day) {
         { text: "\u274C IG: Reject", callback_data: `igdec:${day}:reject` }
       ],
       [
-        { text: "⏰ FB: Schedule", callback_data: `fbsch:${day}` },
-        { text: "⏰ IG: Schedule", callback_data: `igsch:${day}` }
+        { text: "\u23F0 FB: Schedule", callback_data: `fbsch:${day}` },
+        { text: "\u23F0 IG: Schedule", callback_data: `igsch:${day}` }
       ]
     ]
   };
@@ -563,6 +592,7 @@ __name222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name2222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name22222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name222222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
+__name2222222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 async function dispatchGenerateTitleVariant(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/generate_title_variant.yml/dispatches`,
@@ -585,6 +615,7 @@ __name222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name2222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name22222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name222222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
+__name2222222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 async function dispatchRetitlePublished(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/retitle_published.yml/dispatches`,
@@ -607,6 +638,7 @@ __name222(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name2222(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name22222(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name222222(dispatchRetitlePublished, "dispatchRetitlePublished");
+__name2222222(dispatchRetitlePublished, "dispatchRetitlePublished");
 function titleStyleKeyboard(day) {
   return {
     inline_keyboard: [
@@ -628,6 +660,7 @@ __name222(titleStyleKeyboard, "titleStyleKeyboard");
 __name2222(titleStyleKeyboard, "titleStyleKeyboard");
 __name22222(titleStyleKeyboard, "titleStyleKeyboard");
 __name222222(titleStyleKeyboard, "titleStyleKeyboard");
+__name2222222(titleStyleKeyboard, "titleStyleKeyboard");
 function titleDraftKeyboard(day, style) {
   return {
     inline_keyboard: [
@@ -649,6 +682,7 @@ __name222(titleDraftKeyboard, "titleDraftKeyboard");
 __name2222(titleDraftKeyboard, "titleDraftKeyboard");
 __name22222(titleDraftKeyboard, "titleDraftKeyboard");
 __name222222(titleDraftKeyboard, "titleDraftKeyboard");
+__name2222222(titleDraftKeyboard, "titleDraftKeyboard");
 async function getCurrentTitle(env, dayNum) {
   const dayDir = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}`;
   const overrideR = await fetch(
@@ -684,6 +718,7 @@ __name222(getCurrentTitle, "getCurrentTitle");
 __name2222(getCurrentTitle, "getCurrentTitle");
 __name22222(getCurrentTitle, "getCurrentTitle");
 __name222222(getCurrentTitle, "getCurrentTitle");
+__name2222222(getCurrentTitle, "getCurrentTitle");
 async function commitTitleOverride(env, dayNum, title, tags) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/TITLE_OVERRIDE.json`;
   let sha;
@@ -717,6 +752,7 @@ __name222(commitTitleOverride, "commitTitleOverride");
 __name2222(commitTitleOverride, "commitTitleOverride");
 __name22222(commitTitleOverride, "commitTitleOverride");
 __name222222(commitTitleOverride, "commitTitleOverride");
+__name2222222(commitTitleOverride, "commitTitleOverride");
 async function commitHookVideo(env, dayNum, videoBytes) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/images/seq/01.mp4`;
   let sha;
@@ -755,6 +791,7 @@ __name222(commitHookVideo, "commitHookVideo");
 __name2222(commitHookVideo, "commitHookVideo");
 __name22222(commitHookVideo, "commitHookVideo");
 __name222222(commitHookVideo, "commitHookVideo");
+__name2222222(commitHookVideo, "commitHookVideo");
 async function queueDayForScheduledPublish(env, dayNum, chatId) {
   const path = "_pipeline/batch/queue.json";
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -798,6 +835,7 @@ __name222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name2222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name22222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name222222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
+__name2222222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 function describeNextIST(hh, mm) {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -819,6 +857,7 @@ __name222(describeNextIST, "describeNextIST");
 __name2222(describeNextIST, "describeNextIST");
 __name22222(describeNextIST, "describeNextIST");
 __name222222(describeNextIST, "describeNextIST");
+__name2222222(describeNextIST, "describeNextIST");
 function nextDayFiveFifteenIST() {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -840,6 +879,7 @@ __name222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name2222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name22222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name222222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
+__name2222222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 function istTimeToPublishAt(hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -867,6 +907,7 @@ __name222(istTimeToPublishAt, "istTimeToPublishAt");
 __name2222(istTimeToPublishAt, "istTimeToPublishAt");
 __name22222(istTimeToPublishAt, "istTimeToPublishAt");
 __name222222(istTimeToPublishAt, "istTimeToPublishAt");
+__name2222222(istTimeToPublishAt, "istTimeToPublishAt");
 function istDateTimeToPublishAt(dd, mm, yyyy, hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return { error: `Couldn't parse time "${hhmm}" \u2014 use HH:MM` };
@@ -893,6 +934,7 @@ __name222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name2222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name22222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name222222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
+__name2222222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 function hookGateKeyboard(runId) {
   return {
     inline_keyboard: [[
@@ -908,6 +950,7 @@ __name222(hookGateKeyboard, "hookGateKeyboard");
 __name2222(hookGateKeyboard, "hookGateKeyboard");
 __name22222(hookGateKeyboard, "hookGateKeyboard");
 __name222222(hookGateKeyboard, "hookGateKeyboard");
+__name2222222(hookGateKeyboard, "hookGateKeyboard");
 function approvalKeyboard(token, videoId) {
   const rows = [[
     { text: "\u2705 Approve", callback_data: `approve:${token}` },
@@ -926,6 +969,7 @@ __name222(approvalKeyboard, "approvalKeyboard");
 __name2222(approvalKeyboard, "approvalKeyboard");
 __name22222(approvalKeyboard, "approvalKeyboard");
 __name222222(approvalKeyboard, "approvalKeyboard");
+__name2222222(approvalKeyboard, "approvalKeyboard");
 var PAGE_PRICE_TIERS = { 20: "0", 25: "19", 35: "24", 50: "29", 75: "39", 100: "49" };
 function priceLabel(n) {
   return PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`;
@@ -937,6 +981,7 @@ __name222(priceLabel, "priceLabel");
 __name2222(priceLabel, "priceLabel");
 __name22222(priceLabel, "priceLabel");
 __name222222(priceLabel, "priceLabel");
+__name2222222(priceLabel, "priceLabel");
 function makePageCountKeyboard() {
   return {
     inline_keyboard: [[20, 25, 35, 50, 75, 100].map((n) => ({
@@ -952,6 +997,7 @@ __name222(makePageCountKeyboard, "makePageCountKeyboard");
 __name2222(makePageCountKeyboard, "makePageCountKeyboard");
 __name22222(makePageCountKeyboard, "makePageCountKeyboard");
 __name222222(makePageCountKeyboard, "makePageCountKeyboard");
+__name2222222(makePageCountKeyboard, "makePageCountKeyboard");
 var STYLE_BUTTONS = [
   ["cinematic", "\u{1F3AC}"],
   ["mosaic", "\u{1F9E9}"],
@@ -961,7 +1007,7 @@ var STYLE_BUTTONS = [
   ["documentary", "\u{1F4C1}"]
 ];
 function makeStyleKeyboard() {
-  const btn = /* @__PURE__ */ __name2222(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
+  const btn = /* @__PURE__ */ __name22222(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
   return {
     inline_keyboard: [
       STYLE_BUTTONS.slice(0, 3).map(btn),
@@ -977,6 +1023,7 @@ __name222(makeStyleKeyboard, "makeStyleKeyboard");
 __name2222(makeStyleKeyboard, "makeStyleKeyboard");
 __name22222(makeStyleKeyboard, "makeStyleKeyboard");
 __name222222(makeStyleKeyboard, "makeStyleKeyboard");
+__name2222222(makeStyleKeyboard, "makeStyleKeyboard");
 var PAGE_QUESTION = `How many pages?
 
 25 \u2014 ~41pp delivered, $${PAGE_PRICE_TIERS[35]} tier
@@ -992,8 +1039,9 @@ function pagesKeyboard(token, idx, slot) {
 __name(pagesKeyboard, "pagesKeyboard");
 __name2(pagesKeyboard, "pagesKeyboard");
 __name22(pagesKeyboard, "pagesKeyboard");
+__name222(pagesKeyboard, "pagesKeyboard");
 function topicStyleKeyboard(token, idx, slot, pages) {
-  const btn = /* @__PURE__ */ __name22(([name, icon]) => ({
+  const btn = /* @__PURE__ */ __name222(([name, icon]) => ({
     text: `${icon} ${name}`,
     callback_data: `topicgo:${token}:${idx}|${slot}|${pages}|${name}`
   }), "btn");
@@ -1008,6 +1056,7 @@ function topicStyleKeyboard(token, idx, slot, pages) {
 __name(topicStyleKeyboard, "topicStyleKeyboard");
 __name2(topicStyleKeyboard, "topicStyleKeyboard");
 __name22(topicStyleKeyboard, "topicStyleKeyboard");
+__name222(topicStyleKeyboard, "topicStyleKeyboard");
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
@@ -1023,6 +1072,7 @@ __name222(pageCountKeyboard, "pageCountKeyboard");
 __name2222(pageCountKeyboard, "pageCountKeyboard");
 __name22222(pageCountKeyboard, "pageCountKeyboard");
 __name222222(pageCountKeyboard, "pageCountKeyboard");
+__name2222222(pageCountKeyboard, "pageCountKeyboard");
 function confirmPublishKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -1038,6 +1088,7 @@ __name222(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name2222(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name22222(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name222222(confirmPublishKeyboard, "confirmPublishKeyboard");
+__name2222222(confirmPublishKeyboard, "confirmPublishKeyboard");
 var RAW_COMIC = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-comic-pipeline/main";
 var RAW_VIDEO = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main";
 var TOPICS_PER_PAGE = 8;
@@ -1047,6 +1098,7 @@ function normCase(s) {
 __name(normCase, "normCase");
 __name2(normCase, "normCase");
 __name22(normCase, "normCase");
+__name222(normCase, "normCase");
 async function loadTopics(env) {
   const [comicR, videoR, stR] = await Promise.all([
     fetch(`${RAW_COMIC}/cases_used.json`, { headers: { "User-Agent": "shadow-gasp-bot" } }),
@@ -1077,10 +1129,6 @@ async function loadTopics(env) {
   if (stR.ok) {
     const days = (await stR.json()).days || {};
     const nums = Object.keys(days).map(Number).sort((a, b) => a - b);
-    // No frontier cutoff (2026-09-14, from session hyperframe-ab): /fbpost lets any pregenerated
-    // day be scheduled out of order, so "highest published day" is not a stand-in for "everything
-    // below is stalled" -- it hid unpublished earlier days (day 51 vanished once day 91 was
-    // scheduled). A day is upcoming iff it is done and not yet published or drawn.
     for (const n of nums) {
       const d = days[String(n)];
       const k = normCase(d.case);
@@ -1107,6 +1155,7 @@ async function loadTopics(env) {
 __name(loadTopics, "loadTopics");
 __name2(loadTopics, "loadTopics");
 __name22(loadTopics, "loadTopics");
+__name222(loadTopics, "loadTopics");
 async function sendTopicsPage(env, chatId, kind, page, messageId) {
   let lists;
   try {
@@ -1154,6 +1203,7 @@ Page ${page + 1}/${pages}.` + (kind === "dn" ? " Nothing to do here \u2014 these
 __name(sendTopicsPage, "sendTopicsPage");
 __name2(sendTopicsPage, "sendTopicsPage");
 __name22(sendTopicsPage, "sendTopicsPage");
+__name222(sendTopicsPage, "sendTopicsPage");
 var RAW_VIDEO_LEDGER = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main/_pipeline/cases_used.json";
 function caseHead(name) {
   let head = (name || "").split("/")[0].replace(/\(.*?\)/g, "");
@@ -1162,6 +1212,7 @@ function caseHead(name) {
 __name(caseHead, "caseHead");
 __name2(caseHead, "caseHead");
 __name22(caseHead, "caseHead");
+__name222(caseHead, "caseHead");
 var _ledgerCache = null;
 async function ledgerCases() {
   if (_ledgerCache) return _ledgerCache;
@@ -1173,6 +1224,7 @@ async function ledgerCases() {
 __name(ledgerCases, "ledgerCases");
 __name2(ledgerCases, "ledgerCases");
 __name22(ledgerCases, "ledgerCases");
+__name222(ledgerCases, "ledgerCases");
 async function resolveShort(rec) {
   if (rec && rec.video_id) return rec.video_id;
   const name = rec && (rec.case || rec.title) || "";
@@ -1191,6 +1243,7 @@ async function resolveShort(rec) {
 __name(resolveShort, "resolveShort");
 __name2(resolveShort, "resolveShort");
 __name22(resolveShort, "resolveShort");
+__name222(resolveShort, "resolveShort");
 async function caseOfVideo(videoId) {
   try {
     const cases = await ledgerCases();
@@ -1203,6 +1256,7 @@ async function caseOfVideo(videoId) {
 __name(caseOfVideo, "caseOfVideo");
 __name2(caseOfVideo, "caseOfVideo");
 __name22(caseOfVideo, "caseOfVideo");
+__name222(caseOfVideo, "caseOfVideo");
 async function funnelComic(env, chatId, caseId, videoIdOverride) {
   const raw = await env.PENDING.get("comic:" + caseId);
   if (!raw) {
@@ -1247,6 +1301,7 @@ Result follows here.`
 __name(funnelComic, "funnelComic");
 __name2(funnelComic, "funnelComic");
 __name22(funnelComic, "funnelComic");
+__name222(funnelComic, "funnelComic");
 async function autoFunnelForCase(env, caseName, videoId, chatId) {
   if (!caseName || !videoId) return;
   try {
@@ -1277,6 +1332,7 @@ async function autoFunnelForCase(env, caseName, videoId, chatId) {
 __name(autoFunnelForCase, "autoFunnelForCase");
 __name2(autoFunnelForCase, "autoFunnelForCase");
 __name22(autoFunnelForCase, "autoFunnelForCase");
+__name222(autoFunnelForCase, "autoFunnelForCase");
 var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending", "/fbpost"];
 var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel"];
 var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen", "fbsch", "igsch", "fbpick"];
@@ -1288,23 +1344,27 @@ function commandSurface(text) {
   return "shared";
 }
 __name(commandSurface, "commandSurface");
+__name2(commandSurface, "commandSurface");
 function actionSurface(action) {
   if (VIDEO_ACTIONS.includes(action)) return "video";
   if (COMIC_ACTIONS.includes(action)) return "comics";
   return "shared";
 }
 __name(actionSurface, "actionSurface");
+__name2(actionSurface, "actionSurface");
 function botModeAllows(env, surface) {
   const mode = (env.BOT_MODE || "all").toLowerCase();
   if (mode === "all" || surface === "shared") return true;
   return mode === surface;
 }
 __name(botModeAllows, "botModeAllows");
+__name2(botModeAllows, "botModeAllows");
 function otherBotHint(env) {
   const mode = (env.BOT_MODE || "all").toLowerCase();
   return mode === "comics" ? "\u{1F4DA} This is the COMICS bot \u2014 it handles /make, /regen, /topics, /gencode, /freeclaims, /links, /promo, /funnel (plus shared /quota).\n\nVideo commands (/day, /publish, /short, /title\u2026) and hook clips go to the original Shadow Gasp bot." : "\u{1F3AC} This is the VIDEO bot \u2014 comic commands moved to the Shadow Gasp Comics bot.\n\nSend /make, /regen, /topics, /gencode, /freeclaims, /links, /promo or /funnel there instead.";
 }
 __name(otherBotHint, "otherBotHint");
+__name2(otherBotHint, "otherBotHint");
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -1955,6 +2015,7 @@ __name222(handleCallback, "handleCallback");
 __name2222(handleCallback, "handleCallback");
 __name22222(handleCallback, "handleCallback");
 __name222222(handleCallback, "handleCallback");
+__name2222222(handleCallback, "handleCallback");
 async function acceptHookClip(env, chatId, dayNum, fileId) {
   dayNum = String(dayNum);
   await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it \u2014 committing as day ${dayNum}'s hook video, then queuing it for the scheduled 04:30/05:15 IST render+publish slot. I'll confirm here once it's live.` });
@@ -1990,6 +2051,7 @@ __name2(acceptHookClip, "acceptHookClip");
 __name22(acceptHookClip, "acceptHookClip");
 __name222(acceptHookClip, "acceptHookClip");
 __name2222(acceptHookClip, "acceptHookClip");
+__name22222(acceptHookClip, "acceptHookClip");
 var COMMAND_LIST = [
   "\u{1F4D6} SHADOW GASP BOT \u2014 all commands",
   "",
@@ -2018,10 +2080,10 @@ var COMMAND_LIST = [
   "/cancel <N>  \u2014 cancel an in-progress render/publish for day N",
   "/title <N>  \u2014 draft an alt title (Shock/Curiosity/Open-loop/Direct), tap Apply to use it",
   "",
-  "⏰ SCHEDULED POSTS",
-  "/scheduled  — FB/IG posts waiting for their time, each with a Cancel button",
-  "/fbpost  — old videos not yet on FB/IG (/fbpost 45 = day 45, /fbpost dancing = title search): Approve / Reject / Schedule",
-  "(send any photo, with a caption)  — Post / Reject / Schedule it to Facebook or Instagram",
+  "\u23F0 SCHEDULED POSTS",
+  "/scheduled  \u2014 FB/IG posts waiting for their time, each with a Cancel button",
+  "/fbpost  \u2014 old videos not yet on FB/IG (/fbpost 45 = day 45, /fbpost dancing = title search): Approve / Reject / Schedule",
+  "(send any photo, with a caption)  \u2014 Post / Reject / Schedule it to Facebook or Instagram",
   "",
   "\u{1F4CA} REPORTS (nothing is built)",
   "/quota  \u2014 remaining weekly Kaggle GPU on all three accounts, before you spend any of it",
@@ -2592,6 +2654,7 @@ __name222(handleMessage, "handleMessage");
 __name2222(handleMessage, "handleMessage");
 __name22222(handleMessage, "handleMessage");
 __name222222(handleMessage, "handleMessage");
+__name2222222(handleMessage, "handleMessage");
 function b_case_id(b) {
   return b.case_id || (b.case || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 }
@@ -2599,6 +2662,7 @@ __name(b_case_id, "b_case_id");
 __name2(b_case_id, "b_case_id");
 __name22(b_case_id, "b_case_id");
 __name222(b_case_id, "b_case_id");
+__name2222(b_case_id, "b_case_id");
 async function sendApprovalMessage(env, { token, caseName, productId, title, videoId }) {
   const funnelLine = videoId ? `
 \u{1F517} From published short: https://youtu.be/${videoId}` : "";
@@ -2615,6 +2679,7 @@ __name222(sendApprovalMessage, "sendApprovalMessage");
 __name2222(sendApprovalMessage, "sendApprovalMessage");
 __name22222(sendApprovalMessage, "sendApprovalMessage");
 __name222222(sendApprovalMessage, "sendApprovalMessage");
+__name2222222(sendApprovalMessage, "sendApprovalMessage");
 async function sweepExpiredHookWaits(env) {
   const list = await env.PENDING.list({ prefix: "awaiting_short_hook:" });
   for (const key of list.keys) {
@@ -2655,23 +2720,8 @@ __name222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name22222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
-// ---------------------------------------------------------------- SCHEDULED + PHOTO POSTS
-//
-// Added 2026-09-12. ADDITIVE ONLY: the existing fbdec/igdec/promogo/promono buttons keep their
-// exact callback_data and handlers, and every existing workflow is dispatched unchanged.
-//
-// * "Schedule" parks a job in KV (`sched:jobs:<BOT_MODE>`, one list per bot so the two bots
-//   sharing this KV namespace never race on the same key). /sched/tick fires the due ones by
-//   dispatching the SAME workflow the Post/Approve button would have. This Cloudflare account is
-//   at its cron cap, so the tick comes from mindunlocked-bot's existing */10 cron through a
-//   service binding -- scheduled posts go out within ~10 min of the chosen time.
-// * Photo posts (a day's thumbnail still, or any photo sent to the bot) go through the new
-//   post_image.yml in the video repo. The photo bytes stay in KV and the workflow fetches them
-//   back from /photo/get, so the bot token never leaves the Worker.
-// * Every new button is refused outside TELEGRAM_CHAT_ID -- they post to public pages.
+__name2222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 var SCHED_SLOTS = [["h1", "+1 hour"], ["h3", "+3 hours"], ["t19", "Today 7 PM"], ["n9", "Tomorrow 9 AM"], ["n19", "Tomorrow 7 PM"]];
-// Video bot only (user, 2026-09-12): the comics bot does not get scheduling, so there is no
-// comic-promo schedule here.
 var SCHED_ACTIONS = ["fbsch", "igsch", "pqs", "pqc", "pqx", "ipg", "ipn", "ips", "fbpick"];
 var SCHED_MAX_PER_TICK = 2;
 var IST_OFFSET_MS = 330 * 60 * 1e3;
@@ -2680,27 +2730,37 @@ function istParts(ms) {
   const d = new Date(ms + IST_OFFSET_MS);
   return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), H: d.getUTCHours(), M: d.getUTCMinutes() };
 }
+__name(istParts, "istParts");
 function istToMs(y, m, d, H, M) {
   return Date.UTC(y, m - 1, d, H, M) - IST_OFFSET_MS;
 }
+__name(istToMs, "istToMs");
 function fmtIstMs(ms) {
-  const p = istParts(ms), z = (n) => String(n).padStart(2, "0");
+  const p = istParts(ms), z = /* @__PURE__ */ __name((n) => String(n).padStart(2, "0"), "z");
   return `${p.y}-${z(p.m)}-${z(p.d)} ${z(p.H)}:${z(p.M)} IST`;
 }
+__name(fmtIstMs, "fmtIstMs");
 function schedSlotMs(slot, now = Date.now()) {
   const t = istParts(now);
-  const at = (addDays, H) => istToMs(t.y, t.m, t.d + addDays, H, 0);
+  const at = /* @__PURE__ */ __name((addDays, H) => istToMs(t.y, t.m, t.d + addDays, H, 0), "at");
   switch (slot) {
-    case "h1": return now + 3600e3;
-    case "h3": return now + 3 * 3600e3;
-    case "t19": { const x = at(0, 19); return x > now + 60e3 ? x : at(1, 19); }
-    case "n9": return at(1, 9);
-    case "n19": return at(1, 19);
-    default: return null;
+    case "h1":
+      return now + 36e5;
+    case "h3":
+      return now + 3 * 36e5;
+    case "t19": {
+      const x = at(0, 19);
+      return x > now + 6e4 ? x : at(1, 19);
+    }
+    case "n9":
+      return at(1, 9);
+    case "n19":
+      return at(1, 19);
+    default:
+      return null;
   }
 }
-// "YYYY-MM-DD HH:MM" or just "HH:MM" (next occurrence), Indian time. null = not a time at all;
-// NaN = looks like a time but is invalid, so the caller can say so instead of ignoring it.
+__name(schedSlotMs, "schedSlotMs");
 function parseIstInput(text, now = Date.now()) {
   const s = String(text || "").trim();
   let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2})[:.](\d{2})$/);
@@ -2715,17 +2775,20 @@ function parseIstInput(text, now = Date.now()) {
     if (H > 23 || M > 59) return NaN;
     const t = istParts(now);
     let x = istToMs(t.y, t.m, t.d, H, M);
-    if (x <= now) x += 86400e3;
+    if (x <= now) x += 864e5;
     return x;
   }
   return null;
 }
+__name(parseIstInput, "parseIstInput");
 function schedMode(env) {
   return (env.BOT_MODE || "all").toLowerCase();
 }
+__name(schedMode, "schedMode");
 function schedKey(env) {
   return `sched:jobs:${schedMode(env)}`;
 }
+__name(schedKey, "schedKey");
 async function schedLoad(env) {
   try {
     return JSON.parse(await env.PENDING.get(schedKey(env)) || "[]");
@@ -2733,69 +2796,107 @@ async function schedLoad(env) {
     return [];
   }
 }
+__name(schedLoad, "schedLoad");
 async function schedSave(env, jobs) {
   await env.PENDING.put(schedKey(env), JSON.stringify(jobs));
 }
+__name(schedSave, "schedSave");
 function schedIsOwner(env, chatId) {
   return !!env.TELEGRAM_CHAT_ID && String(chatId) === String(env.TELEGRAM_CHAT_ID);
 }
+__name(schedIsOwner, "schedIsOwner");
 function schedId() {
   return Math.random().toString(36).slice(2, 10);
 }
+__name(schedId, "schedId");
 function platName(p) {
   return p === "ig" ? "Instagram" : "Facebook";
 }
+__name(platName, "platName");
 function schedLabel(t) {
-  if (t.kind === "video") return `Day ${t.day} video → ${platName(t.platform)}`;
-  if (t.kind === "promo") return `Comic promo "${t.name || t.case}" → ${platName(t.platform)}`;
-  return `${t.what || "Photo"} → ${platName(t.platform)}`;
+  if (t.kind === "video") return `Day ${t.day} video \u2192 ${platName(t.platform)}`;
+  if (t.kind === "promo") return `Comic promo "${t.name || t.case}" \u2192 ${platName(t.platform)}`;
+  return `${t.what || "Photo"} \u2192 ${platName(t.platform)}`;
 }
+__name(schedLabel, "schedLabel");
 async function schedOfferSlots(env, chatId, target) {
   const tok = schedId();
   await env.PENDING.put(`schtgt:${tok}`, JSON.stringify(target), { expirationTtl: 7 * 86400 });
   const b = SCHED_SLOTS.map(([code, label]) => ({ text: label, callback_data: `pqs:${tok}:${code}` }));
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: `⏰ When should this go out?
+    text: `\u23F0 When should this go out?
 ${schedLabel(target)}
 
-Times are Indian time (IST). It posts within ~10 min of the chosen time.`,
-    reply_markup: { inline_keyboard: [b.slice(0, 2), b.slice(2, 3), b.slice(3, 5), [{ text: "✏️ Custom time…", callback_data: `pqc:${tok}` }]] }
+${fbNativeTarget(target) ? "Times are Indian time (IST). Facebook itself publishes it at exactly that time \u2014 it shows in your FB Planner (Meta Business Suite), where you can move or delete it. At least 12 min ahead." : "Times are Indian time (IST). It posts within ~10 min of the chosen time."}`,
+    reply_markup: { inline_keyboard: [b.slice(0, 2), b.slice(2, 3), b.slice(3, 5), [{ text: "\u270F\uFE0F Custom time\u2026", callback_data: `pqc:${tok}` }]] }
   });
 }
+__name(schedOfferSlots, "schedOfferSlots");
+// FB VIDEOS use Facebook's own scheduler (user, 2026-09-15: "scheduled via fb planner, not in
+// github"). The upload is dispatched NOW with schedule_at; Facebook holds it in the Planner and
+// publishes at runAt. IG (API can't schedule) and photo posts keep the KV-job path below.
+var FB_NATIVE_MIN_LEAD_MS = 12 * 6e4;
+function fbNativeTarget(t) {
+  return !!t && t.kind === "video" && t.platform === "fb";
+}
+__name(fbNativeTarget, "fbNativeTarget");
+async function fbNativeSchedule(env, chatId, target, runAt) {
+  if (runAt < Date.now() + FB_NATIVE_MIN_LEAD_MS) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Facebook needs at least 10 minutes' notice (${fmtIstMs(runAt)} is too soon). Tap ⏰ FB: Schedule again and pick a later time.` });
+    return;
+  }
+  try {
+    await dispatchCrosspostDecision(env, { day: String(target.day), platform: "fb", decision: "approve", notify_chat_id: String(chatId), schedule_at: String(Math.floor(runAt / 1e3)) });
+  } catch (e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't send it to Facebook's scheduler: ${e.message}` });
+    return;
+  }
+  await tg(env, "sendMessage", {
+    chat_id: chatId,
+    text: `\u{1F4E4} Sending to Facebook's scheduler: ${schedLabel(target)}
+\u{1F552} ${fmtIstMs(runAt)}
+
+Uploading now (~2-5 min). I'll confirm here once Facebook accepts it — then it's in your FB Planner (Meta Business Suite → Planner), where you can move, edit or delete it.`
+  });
+}
+__name(fbNativeSchedule, "fbNativeSchedule");
 async function schedAdd(env, chatId, target, runAt) {
+  if (fbNativeTarget(target)) return fbNativeSchedule(env, chatId, target, runAt);
   const jobs = await schedLoad(env);
   const job = { id: schedId(), run_at: runAt, chat_id: String(chatId), target };
   jobs.push(job);
   await schedSave(env, jobs);
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: `✅ Scheduled: ${schedLabel(target)}
+    text: `\u2705 Scheduled: ${schedLabel(target)}
 \u{1F552} ${fmtIstMs(runAt)}
 
 Nothing is posted until then. /scheduled lists everything waiting.`,
-    reply_markup: { inline_keyboard: [[{ text: "✖ Cancel this schedule", callback_data: `pqx:${job.id}` }]] }
+    reply_markup: { inline_keyboard: [[{ text: "\u2716 Cancel this schedule", callback_data: `pqx:${job.id}` }]] }
   });
 }
+__name(schedAdd, "schedAdd");
 function imgKeyboard(tok) {
   return { inline_keyboard: [
     [
-      { text: "\u{1F4D8} FB: ✅ Post", callback_data: `ipg:${tok}:fb` },
-      { text: "❌ Reject", callback_data: `ipn:${tok}:fb` },
-      { text: "⏰ Schedule", callback_data: `ips:${tok}:fb` }
+      { text: "\u{1F4D8} FB: \u2705 Post", callback_data: `ipg:${tok}:fb` },
+      { text: "\u274C Reject", callback_data: `ipn:${tok}:fb` },
+      { text: "\u23F0 Schedule", callback_data: `ips:${tok}:fb` }
     ],
     [
-      { text: "\u{1F4F7} IG: ✅ Post", callback_data: `ipg:${tok}:ig` },
-      { text: "❌ Reject", callback_data: `ipn:${tok}:ig` },
-      { text: "⏰ Schedule", callback_data: `ips:${tok}:ig` }
+      { text: "\u{1F4F7} IG: \u2705 Post", callback_data: `ipg:${tok}:ig` },
+      { text: "\u274C Reject", callback_data: `ipn:${tok}:ig` },
+      { text: "\u23F0 Schedule", callback_data: `ips:${tok}:ig` }
     ]
   ] };
 }
+__name(imgKeyboard, "imgKeyboard");
 async function imgDispatch(env, tok, platform, chatId) {
   const raw = await env.PENDING.get(`imgp:${tok}`);
-  if (!raw) throw new Error("that post has expired (kept 30 days) — send the photo again");
+  if (!raw) throw new Error("that post has expired (kept 30 days) \u2014 send the photo again");
   const item = JSON.parse(raw);
-  if (item[platform] === "sent") throw new Error(`already sent to ${platName(platform)} — not posting a duplicate`);
+  if (item[platform] === "sent") throw new Error(`already sent to ${platName(platform)} \u2014 not posting a duplicate`);
   await dispatchWorkflowVerified(env, "post_image.yml", {
     platform,
     source: item.src,
@@ -2809,6 +2910,7 @@ async function imgDispatch(env, tok, platform, chatId) {
   item[platform] = "sent";
   await env.PENDING.put(`imgp:${tok}`, JSON.stringify(item), { expirationTtl: POST_TTL });
 }
+__name(imgDispatch, "imgDispatch");
 async function sendPhotoWithButtons(env, chatId, bytes, caption, replyMarkup) {
   const form = new FormData();
   form.append("chat_id", String(chatId));
@@ -2819,9 +2921,7 @@ async function sendPhotoWithButtons(env, chatId, bytes, caption, replyMarkup) {
   const body = await resp.json();
   if (!body.ok) throw new Error(`sendPhoto: ${body.description || body.error_code}`);
 }
-// The extra "post the thumbnail as a photo" offer under a freshly LIVE day. Sent as its own
-// message AFTER the existing LIVE message, and the caller wraps it in try/catch, so nothing about
-// the existing message or its Approve/Reject buttons can be affected by a failure here.
+__name(sendPhotoWithButtons, "sendPhotoWithButtons");
 async function imgOfferDay(env, day, chatId, title) {
   const tok = schedId();
   const item = { src: "day", day: String(day), caption: "", what: `Day ${day} thumbnail photo` };
@@ -2839,6 +2939,7 @@ Caption = the video's own title, description and hashtags. Nothing is posted unt
     await tg(env, "sendMessage", { chat_id: chatId, text: cap, reply_markup: imgKeyboard(tok) });
   }
 }
+__name(imgOfferDay, "imgOfferDay");
 async function imgIntakePhoto(env, msg, fileObj) {
   const chatId = msg.chat.id;
   const info = await tg(env, "getFile", { file_id: fileObj.file_id });
@@ -2854,12 +2955,13 @@ async function imgIntakePhoto(env, msg, fileObj) {
     reply_to_message_id: msg.message_id,
     text: `\u{1F5BC} Post this photo to the Shadow Gasp page?
 
-Caption: ${caption ? caption.slice(0, 600) : "(none — send the photo WITH a caption to add one)"}
+Caption: ${caption ? caption.slice(0, 600) : "(none \u2014 send the photo WITH a caption to add one)"}
 
 Nothing is posted until you tap.`,
     reply_markup: imgKeyboard(tok)
   });
 }
+__name(imgIntakePhoto, "imgIntakePhoto");
 async function schedFire(env, job) {
   const t = job.target;
   if (t.kind === "video") {
@@ -2870,19 +2972,16 @@ async function schedFire(env, job) {
     throw new Error(`unknown job kind ${t.kind}`);
   }
 }
+__name(schedFire, "schedFire");
 async function schedRunDue(env) {
   const jobs = await schedLoad(env);
   const now = Date.now();
   const due = jobs.filter((j) => j.run_at <= now).sort((a, b) => a.run_at - b.run_at).slice(0, SCHED_MAX_PER_TICK);
   if (!due.length) return { fired: 0, waiting: jobs.length };
   const ids = new Set(due.map((j) => j.id));
-  // Remove BEFORE dispatching: if the Worker dies mid-dispatch, the next tick must not post twice.
   await schedSave(env, jobs.filter((j) => !ids.has(j.id)));
   let fired = 0;
   for (const j of due) {
-    // mindunlocked-bot's cron fires TWICE per 10 min (~8 s apart), so two ticks can race for the
-    // same job before the list removal above is visible to the second. A per-job lock, written
-    // before dispatch, makes the second tick skip it.
     if (await env.PENDING.get(`sched_fired:${j.id}`)) continue;
     await env.PENDING.put(`sched_fired:${j.id}`, "1", { expirationTtl: 86400 });
     fired++;
@@ -2891,30 +2990,33 @@ async function schedRunDue(env) {
       await schedFire(env, j);
       await tg(env, "sendMessage", {
         chat_id: j.chat_id,
-        text: `⏰ Scheduled post going out now: ${schedLabel(j.target)}${lateMin > 20 ? ` (${lateMin} min late)` : ""}
+        text: `\u23F0 Scheduled post going out now: ${schedLabel(j.target)}${lateMin > 20 ? ` (${lateMin} min late)` : ""}
 I'll confirm here when it lands.`
       });
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: j.chat_id, text: `❌ Scheduled post could NOT start: ${schedLabel(j.target)}
+      await tg(env, "sendMessage", { chat_id: j.chat_id, text: `\u274C Scheduled post could NOT start: ${schedLabel(j.target)}
 ${e.message}` });
     }
   }
   return { fired, waiting: jobs.length - due.length };
 }
+__name(schedRunDue, "schedRunDue");
 async function schedListMessage(env, chatId) {
   const jobs = (await schedLoad(env)).sort((a, b) => a.run_at - b.run_at);
   if (!jobs.length) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "⏰ Nothing scheduled. Tap ⏰ Schedule on any post to add one." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "\u23F0 Nothing scheduled. Tap \u23F0 Schedule on any post to add one." });
     return;
   }
   const shown = jobs.slice(0, 30);
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: "⏰ SCHEDULED POSTS\n\n" + shown.map((j, i) => `${i + 1}. ${fmtIstMs(j.run_at)}\n   ${schedLabel(j.target)}`).join("\n") + (jobs.length > shown.length ? `\n…and ${jobs.length - shown.length} more` : "") + "\n\nTap a number to cancel that one.",
-    reply_markup: { inline_keyboard: shown.map((j, i) => [{ text: `✖ Cancel ${i + 1}`, callback_data: `pqx:${j.id}` }]) }
+    text: "\u23F0 SCHEDULED POSTS\n\n" + shown.map((j, i) => `${i + 1}. ${fmtIstMs(j.run_at)}
+   ${schedLabel(j.target)}`).join("\n") + (jobs.length > shown.length ? `
+\u2026and ${jobs.length - shown.length} more` : "") + "\n\nTap a number to cancel that one.",
+    reply_markup: { inline_keyboard: shown.map((j, i) => [{ text: `\u2716 Cancel ${i + 1}`, callback_data: `pqx:${j.id}` }]) }
   });
 }
-// Returns true when the button was one of the new ones (and has been handled).
+__name(schedListMessage, "schedListMessage");
 async function schedHandleCallback(env, cq, action, token, extra) {
   if (!SCHED_ACTIONS.includes(action)) return false;
   const chatId = cq.message.chat.id;
@@ -2931,28 +3033,28 @@ async function schedHandleCallback(env, cq, action, token, extra) {
       await fbpostPick(env, chatId, token);
     } else if (action === "pqs") {
       const raw = await env.PENDING.get(`schtgt:${token}`);
-      if (!raw) throw new Error("that time picker has expired — tap ⏰ Schedule again");
+      if (!raw) throw new Error("that time picker has expired \u2014 tap \u23F0 Schedule again");
       const runAt = schedSlotMs(extra);
       if (!runAt) throw new Error("unknown time slot");
       await env.PENDING.delete(`schtgt:${token}`);
       await tg(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } });
       await schedAdd(env, chatId, JSON.parse(raw), runAt);
     } else if (action === "pqc") {
-      if (!await env.PENDING.get(`schtgt:${token}`)) throw new Error("that time picker has expired — tap ⏰ Schedule again");
+      if (!await env.PENDING.get(`schtgt:${token}`)) throw new Error("that time picker has expired \u2014 tap \u23F0 Schedule again");
       await env.PENDING.put(`awaiting_sched_custom:${chatId}`, String(token), { expirationTtl: 3600 });
-      await tg(env, "sendMessage", { chat_id: chatId, text: "✏️ Reply with the time in Indian time (IST):\n• 2026-09-20 18:30  (date + time)\n• 18:30  (next time it's 18:30)" });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u270F\uFE0F Reply with the time in Indian time (IST):\n\u2022 2026-09-20 18:30  (date + time)\n\u2022 18:30  (next time it's 18:30)" });
     } else if (action === "pqx") {
       const jobs = await schedLoad(env);
       const job = jobs.find((j) => j.id === token);
       if (!job) {
-        await tg(env, "sendMessage", { chat_id: chatId, text: "That one is no longer waiting — it was already sent or cancelled." });
+        await tg(env, "sendMessage", { chat_id: chatId, text: "That one is no longer waiting \u2014 it was already sent or cancelled." });
       } else {
         await schedSave(env, jobs.filter((j) => j.id !== token));
-        await tg(env, "sendMessage", { chat_id: chatId, text: `✖ Cancelled: ${schedLabel(job.target)} (${fmtIstMs(job.run_at)}). Nothing will be posted.` });
+        await tg(env, "sendMessage", { chat_id: chatId, text: `\u2716 Cancelled: ${schedLabel(job.target)} (${fmtIstMs(job.run_at)}). Nothing will be posted.` });
       }
     } else if (action === "ipg") {
       await imgDispatch(env, token, extra, chatId);
-      await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E4} Posting to ${platName(extra)} now… I'll confirm here when it lands.` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E4} Posting to ${platName(extra)} now\u2026 I'll confirm here when it lands.` });
     } else if (action === "ipn") {
       const raw = await env.PENDING.get(`imgp:${token}`);
       if (raw) {
@@ -2963,18 +3065,16 @@ async function schedHandleCallback(env, cq, action, token, extra) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F6AB} ${platName(extra)}: rejected, not posted.` });
     } else if (action === "ips") {
       const raw = await env.PENDING.get(`imgp:${token}`);
-      if (!raw) throw new Error("that post has expired (kept 30 days) — send the photo again");
+      if (!raw) throw new Error("that post has expired (kept 30 days) \u2014 send the photo again");
       const item = JSON.parse(raw);
       await schedOfferSlots(env, chatId, { kind: "image", item: token, platform: extra === "ig" ? "ig" : "fb", what: item.what });
     }
   } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ ${e.message}` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C ${e.message}` });
   }
   return true;
 }
-// Returns true when the message was one of the new kinds (and has been handled). Photos used to be
-// ignored entirely by this bot, and plain non-command text too, so neither path had a behaviour
-// to preserve; a custom-time reply is only consumed when a Custom picker is actually waiting.
+__name(schedHandleCallback, "schedHandleCallback");
 async function schedHandleMessage(env, msg, text) {
   const chatId = msg.chat.id;
   if (!schedIsOwner(env, chatId)) return false;
@@ -2983,7 +3083,7 @@ async function schedHandleMessage(env, msg, text) {
     try {
       await imgIntakePhoto(env, msg, photo);
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't take that photo: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't take that photo: ${e.message}` });
     }
     return true;
   }
@@ -2996,7 +3096,7 @@ async function schedHandleMessage(env, msg, text) {
     try {
       await fbpostCommand(env, chatId, (fbpostCmd[1] || "").trim());
     } catch (e) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ /fbpost failed: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C /fbpost failed: ${e.message}` });
     }
     return true;
   }
@@ -3006,13 +3106,13 @@ async function schedHandleMessage(env, msg, text) {
     const runAt = parseIstInput(text);
     if (runAt === null) return false;
     if (Number.isNaN(runAt) || runAt <= Date.now()) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: Number.isNaN(runAt) ? "❌ That isn't a valid time. Try e.g. 2026-09-20 18:30 or 18:30." : "❌ That time has already passed. Send a future time." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: Number.isNaN(runAt) ? "\u274C That isn't a valid time. Try e.g. 2026-09-20 18:30 or 18:30." : "\u274C That time has already passed. Send a future time." });
       return true;
     }
     const raw = await env.PENDING.get(`schtgt:${tok}`);
     await env.PENDING.delete(`awaiting_sched_custom:${chatId}`);
     if (!raw) {
-      await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That time picker has expired — tap ⏰ Schedule again." });
+      await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That time picker has expired \u2014 tap \u23F0 Schedule again." });
       return true;
     }
     await env.PENDING.delete(`schtgt:${tok}`);
@@ -3021,21 +3121,19 @@ async function schedHandleMessage(env, msg, text) {
   }
   return false;
 }
+__name(schedHandleMessage, "schedHandleMessage");
 function schedAuthOk(request, env) {
   const a = request.headers.get("X-Batch-Notify-Secret");
   const b = request.headers.get("X-Shared-Secret");
   return !!env.BATCH_NOTIFY_SECRET && a === env.BATCH_NOTIFY_SECRET || !!env.WORKER_SHARED_SECRET && b === env.WORKER_SHARED_SECRET;
 }
-// New routes only; returns null for every path it doesn't own so the existing router runs as before.
+__name(schedAuthOk, "schedAuthOk");
 async function schedRoutes(request, env, url, ctx) {
   if (request.method !== "POST") return null;
   if (url.pathname === "/sched/tick") {
     if (!env.SCHED_TICK_SECRET || request.headers.get("X-Sched-Secret") !== env.SCHED_TICK_SECRET) {
       return new Response("forbidden", { status: 403 });
     }
-    // Answer at once and do the work in THIS Worker's waitUntil: the caller's cron invocation can
-    // end -- cancelling this request -- before a dispatch (with its verify sleeps) finishes. Seen
-    // 2026-09-11: the first of each pair of ticks was cancelled at ~6 s.
     if (ctx && ctx.waitUntil) {
       ctx.waitUntil(schedRunDue(env).catch((e) => console.log(`sched tick: ${e.message}`)));
       return new Response(JSON.stringify({ accepted: true }), { status: 202, headers: { "Content-Type": "application/json" } });
@@ -3054,27 +3152,20 @@ async function schedRoutes(request, env, url, ctx) {
     if (!schedAuthOk(request, env)) return new Response("forbidden", { status: 403 });
     const b = await request.json();
     const where = platName(b.platform);
-    const text = b.ok ? `✅ ${b.label || "Photo post"} is LIVE on ${where}${b.ref_id ? (b.platform === "fb" ? `: https://facebook.com/${b.ref_id}` : ` (media_id ${b.ref_id})`) : ""}` : `❌ ${b.label || "Photo post"} → ${where} FAILED: ${b.error || "unknown error"}${b.run_url ? `
+    const text = b.ok ? `\u2705 ${b.label || "Photo post"} is LIVE on ${where}${b.ref_id ? b.platform === "fb" ? `: https://facebook.com/${b.ref_id}` : ` (media_id ${b.ref_id})` : ""}` : `\u274C ${b.label || "Photo post"} \u2192 ${where} FAILED: ${b.error || "unknown error"}${b.run_url ? `
 ${b.run_url}` : ""}`;
     await tg(env, "sendMessage", { chat_id: b.chat_id || env.TELEGRAM_CHAT_ID, text });
     return new Response("ok", { status: 200 });
   }
   return null;
 }
-
-// ---------------------------------------------------------------- /fbpost (added 2026-09-12)
-//
-// Old videos not yet on Facebook / Instagram. A day is postable when it has CLOUDINARY_LINK.txt and
-// youtube.json -- exactly what crosspost_decision.yml needs -- and its FB/IG state comes from the
-// FB_POSTED / FB_REJECTED / IG_POSTED / IG_REJECTED markers that workflow commits. Picking a day
-// sends the SAME fbIgDecisionKeyboard as the "Day N is LIVE" message (Approve / Reject / Schedule),
-// so nothing new posts anything: it only finds the day.
+__name(schedRoutes, "schedRoutes");
 var FBPOST_MAX_BUTTONS = 40;
 function fbpostState(s) {
-  return s === "posted" ? "✅ posted" : s === "rejected" ? "🚫 rejected" : "— not posted";
+  return s === "posted" ? "\u2705 posted" : s === "rejected" ? "\u{1F6AB} rejected" : "\u2014 not posted";
 }
+__name(fbpostState, "fbpostState");
 async function fbpostDays(env) {
-  // One call for the whole repo tree (not one per day): stays far inside the Worker's subrequest cap.
   const r = await fetch(`https://api.github.com/repos/${VIDEO_REPO}/git/trees/main?recursive=1`, {
     headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" }
   });
@@ -3091,9 +3182,12 @@ async function fbpostDays(env) {
     ig: d.IG_POSTED ? "posted" : d.IG_REJECTED ? "rejected" : ""
   })).sort((a, b) => a.day - b.day);
   const titles = await Promise.all(list.map((x) => fbpostTitle(env, x.day)));
-  list.forEach((x, i) => { x.title = titles[i]; });
+  list.forEach((x, i) => {
+    x.title = titles[i];
+  });
   return list;
 }
+__name(fbpostDays, "fbpostDays");
 async function fbpostTitle(env, day) {
   const key = `fbpost_title:${day}`;
   const cached = await env.PENDING.get(key);
@@ -3101,27 +3195,30 @@ async function fbpostTitle(env, day) {
   try {
     const y = await (await ghRaw(env, `_pipeline/batch/day${String(day).padStart(2, "0")}/youtube.json`)).json();
     const t = String(y.title || "").slice(0, 120);
-    if (t) await env.PENDING.put(key, t);   // a published video's title doesn't change
+    if (t) await env.PENDING.put(key, t);
     return t;
   } catch {
     return "";
   }
 }
+__name(fbpostTitle, "fbpostTitle");
 async function fbpostSendDay(env, chatId, x) {
   const both = x.fb === "posted" && x.ig === "posted";
   await tg(env, "sendMessage", {
     chat_id: chatId,
     text: `\u{1F4FC} Day ${x.day}${x.title ? `: "${x.title}"` : ""}
 Facebook: ${fbpostState(x.fb)}
-Instagram: ${fbpostState(x.ig)}` + (both ? "\n\nAlready on both — nothing to post." : "\n\nApprove posts it now · ⏰ Schedule picks a time."),
+Instagram: ${fbpostState(x.ig)}` + (both ? "\n\nAlready on both \u2014 nothing to post." : "\n\nApprove posts it now \xB7 \u23F0 Schedule picks a time."),
     ...both ? {} : { reply_markup: fbIgDecisionKeyboard(x.day) }
   });
 }
+__name(fbpostSendDay, "fbpostSendDay");
 async function fbpostPick(env, chatId, day) {
   const x = (await fbpostDays(env)).find((d) => d.day === parseInt(day, 10));
   if (!x) throw new Error(`day ${day} has no Cloudinary video + caption recorded, so it can't be posted from here`);
   await fbpostSendDay(env, chatId, x);
 }
+__name(fbpostPick, "fbpostPick");
 async function fbpostCommand(env, chatId, arg) {
   const all = await fbpostDays(env);
   if (/^\d+$/.test(arg)) return fbpostPick(env, chatId, arg);
@@ -3129,21 +3226,24 @@ async function fbpostCommand(env, chatId, arg) {
   if (arg) {
     const words = arg.toLowerCase().split(/\s+/).filter(Boolean);
     hits = all.filter((x) => words.every((w) => x.title.toLowerCase().includes(w)));
-    heading = `\u{1F50E} "${arg}" — ${hits.length} match(es)`;
+    heading = `\u{1F50E} "${arg}" \u2014 ${hits.length} match(es)`;
     if (hits.length === 1) return fbpostSendDay(env, chatId, hits[0]);
   } else {
     hits = all.filter((x) => !x.fb || !x.ig);
     heading = `\u{1F4FC} ${hits.length} video(s) not yet on Facebook and/or Instagram`;
   }
   if (!hits.length) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: arg ? `No video title matches "${arg}". Try fewer words, or /fbpost to see them all.` : "✅ Every video with a Cloudinary link is already on (or rejected for) Facebook and Instagram." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: arg ? `No video title matches "${arg}". Try fewer words, or /fbpost to see them all.` : "\u2705 Every video with a Cloudinary link is already on (or rejected for) Facebook and Instagram." });
     return;
   }
-  const icon = (s) => s === "posted" ? "✅" : s === "rejected" ? "🚫" : "—";
+  const icon = /* @__PURE__ */ __name((s) => s === "posted" ? "\u2705" : s === "rejected" ? "\u{1F6AB}" : "\u2014", "icon");
   const lines = hits.map((x) => `Day ${x.day}  FB ${icon(x.fb)} IG ${icon(x.ig)}  ${x.title.slice(0, 70)}`);
   let text = heading + "\n\n";
   for (const l of lines) {
-    if (text.length + l.length > 3600) { text += "…more — narrow it with /fbpost <words>"; break; }
+    if (text.length + l.length > 3600) {
+      text += "\u2026more \u2014 narrow it with /fbpost <words>";
+      break;
+    }
     text += l + "\n";
   }
   const b = hits.slice(0, FBPOST_MAX_BUTTONS).map((x) => ({ text: `Day ${x.day}`, callback_data: `fbpick:${x.day}` }));
@@ -3151,6 +3251,7 @@ async function fbpostCommand(env, chatId, arg) {
   for (let i = 0; i < b.length; i += 5) rows.push(b.slice(i, i + 5));
   await tg(env, "sendMessage", { chat_id: chatId, text: text + "\nTap a day to Approve / Reject / Schedule it.", reply_markup: { inline_keyboard: rows } });
 }
+__name(fbpostCommand, "fbpostCommand");
 var worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -3354,9 +3455,6 @@ var worker_default = {
       if (!day || !platform || !decision) {
         return new Response("missing fields", { status: 400 });
       }
-      // post -> issue routing (2026-09-15): remember which day this FB/IG post is about. The comics bot
-      // looks this up when someone comments COMIC and, once the case's comic is published, sends that
-      // issue instead of the free #1. FB video ids have no "_"; photo/post ids do -- key on the last part.
       if (decision === "approve" && ref_id && (platform === "fb" || platform === "ig")) {
         try {
           await env.PENDING.put(`postmap:${platform}:${String(ref_id).split("_").pop()}`, JSON.stringify({ kind: "day", day: String(day), at: Date.now() }));
@@ -3366,7 +3464,11 @@ var worker_default = {
       }
       const label = platform === "fb" ? "Facebook" : "Instagram";
       let text;
-      if (decision === "approve") {
+      if (decision === "approve" && body.scheduled_at && ref_id) {
+        text = `\u{1F4C5} Day ${day} is SCHEDULED on ${label} for ${fmtIstMs(Number(body.scheduled_at) * 1e3)}.
+It's in your FB Planner (Meta Business Suite \u2192 Planner) \u2014 move, edit or delete it there. Facebook publishes it by itself.
+Video: https://facebook.com/${ref_id}`;
+      } else if (decision === "approve") {
         text = ref_id ? `\u2705 Day ${day} posted to ${label}: ${platform === "fb" ? `https://facebook.com/${ref_id}` : `media_id ${ref_id}`}` : `\u26A0\uFE0F Day ${day} ${label} approve ran but no post id came back -- check the Actions log.`;
       } else {
         text = `\u{1F6AB} Day ${day} ${label}: rejected, not posted.`;
