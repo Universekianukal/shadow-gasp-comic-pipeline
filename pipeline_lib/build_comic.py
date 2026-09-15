@@ -880,8 +880,19 @@ def render_cover(c, spec, panels_dir, missing):
 def render_title_page(c, spec, meta):
     page_bg(c)
     c.setFillColor(NEWSPRINT)
-    c.setFont(FONT_HEAVY, 26)
-    c.drawCentredString(PAGE_W / 2, PAGE_H - 2.5 * inch, spec["heading"])
+    # The heading is the case name, and a long one (#48 BLACK TIDE, 2026-09-15: "... The Boston
+    # Molasses Flood, January 15, 1919") ran off BOTH edges at a fixed 26pt. Shrink to fit like the
+    # cover title does; wrap onto a second line only if even the floor size is too wide. A heading
+    # that already fits is drawn exactly as before.
+    heading = spec["heading"]
+    hsize, room = 26, PAGE_W - 2 * MARGIN
+    while hsize > 14 and pdfmetrics.stringWidth(heading, FONT_HEAVY, hsize) > room:
+        hsize -= 1
+    hlines = ([heading] if pdfmetrics.stringWidth(heading, FONT_HEAVY, hsize) <= room
+              else wrap_to_width(heading, FONT_HEAVY, hsize, room))
+    c.setFont(FONT_HEAVY, hsize)
+    for i, hl in enumerate(hlines):
+        c.drawCentredString(PAGE_W / 2, PAGE_H - 2.5 * inch + (len(hlines) - 1 - i) * hsize * 1.1, hl)
 
     c.setStrokeColor(ink(0.78, 0.20, 0.16))
     c.setLineWidth(2)
