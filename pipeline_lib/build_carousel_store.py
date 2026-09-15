@@ -100,14 +100,17 @@ def main():
         raise SystemExit("no book cover and no square card to take the cover from")
 
     tmp = tempfile.mkdtemp(prefix="carousel_")
-    art_paths = [fetch(c, os.path.join(tmp, f"art{i}.jpg")) for i, c in enumerate(art[:3], 1)]
+    art_paths = [fetch(c, os.path.join(tmp, f"art{i}.jpg")) for i, c in enumerate(art[:4], 1)]
     if book:
         cover = fetch(book, os.path.join(tmp, "cover.jpg"))
     else:
         cover = cover_from_card(fetch(card, os.path.join(tmp, "card.jpg")), os.path.join(tmp, "cover.jpg"))
 
     free = int(a.issue) == 1
-    slides = gen_carousel.build(art_paths[0], art_paths, cover, hook, title, int(a.issue), pages, free,
+    # Slide 1 takes the first art image; the page slides take only the OTHERS, so no picture repeats
+    # (user, 2026-09-15: "in 34 1st slide and 2nd slide are same"). 3 art images -> 4 slides, 4 -> 5.
+    hook_art, page_art = art_paths[0], art_paths[1:4]
+    slides = gen_carousel.build(hook_art, page_art, cover, hook, title, int(a.issue), pages, free,
                                 os.path.join(tmp, "slides"))
     caption = gen_carousel.default_caption(hook, int(a.issue), title, pages)
     entry = gen_carousel.publish_entry(slides, a.permalink, int(a.issue), title, a.permalink, caption, repo=a.repo)

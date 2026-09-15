@@ -139,10 +139,9 @@ def slide_cta(cover, title, issue, pages, free):
 
 
 def build(hook_art, art, cover, hook, title, issue, pages, free, out_dir, hook_focus=0.35):
-    """Write 1.jpg..N.jpg into out_dir (N = 2 + len(art), art = 1..3 images). Returns the paths."""
+    """Write 1.jpg..N.jpg into out_dir (N = 2 + len(art), art = 0..3 images). Returns the paths.
+    Callers pass art that does NOT include hook_art again -- no picture may repeat in one carousel."""
     art = list(art)[:3]
-    if not art:
-        raise ValueError("a carousel needs at least one art image")
     os.makedirs(out_dir, exist_ok=True)
     foot = f"SHADOW GASP #{issue} · {title}"
     slides = [slide_hook(Image.open(hook_art), hook, f"SHADOW GASP · ISSUE #{issue}", hook_focus)]
