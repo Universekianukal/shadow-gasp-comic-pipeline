@@ -3352,14 +3352,30 @@ async function threadsPublishReply(env, replyToId, text) {
   }
   throw last;
 }
+async function threadsAlreadyReplied(env, commentId) {
+  try {
+    const r = await fetch(`${THREADS_GRAPH}/${commentId}/replies?fields=username&access_token=${encodeURIComponent(env.THREADS_ACCESS_TOKEN || "")}`);
+    const j = await r.json();
+    return (j.data || []).some((x) => String(x.username || "").toLowerCase() === THREADS_USERNAME);
+  } catch {
+    return false;
+  }
+}
 async function threadsOnReply(env, v) {
   const id = String(v.id || "");
   const who = String(v.username || "");
   if (!id || !META_KEYWORD.test(v.text || "")) return "skip";
   if (who.toLowerCase() === THREADS_USERNAME) return "own";
   if (await env.PENDING.get(`thc:${id}`)) return "dup";
-  await env.PENDING.put(`thc:${id}`, "1", { expirationTtl: 8 * 86400 });
-  const root = String(v.root_post && v.root_post.id || v.replied_to && v.replied_to.id || "");
+  // Meta delivers one comment several times AT ONCE (2026-09-16: 6 deliveries, 2 identical replies went
+  // out 3 s apart). KV has no atomic claim, so: claim with a nonce, wait a random moment, keep going only
+  // if our nonce survived, and finally ask Threads whether we already replied to this comment.
+  const nonce = crypto.randomUUID();
+  await env.PENDING.put(`thc:${id}`, nonce, { expirationTtl: 8 * 86400 });
+  await new Promise((res) => setTimeout(res, 1500 + Math.random() * 2500));
+  if (await env.PENDING.get(`thc:${id}`) !== nonce) return "dup";
+  if (await threadsAlreadyReplied(env, id)) return "dup";
+  const root =String(v.root_post && v.root_post.id || v.replied_to && v.replied_to.id || "");
   const once = `thu:${root}:${who}`;
   if (who && await env.PENDING.get(once)) return "again";
   const route = await postmapRoute(env, "th", root);
