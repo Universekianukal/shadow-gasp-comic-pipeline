@@ -1924,6 +1924,9 @@ Saved as the pending title (used if this day hasn't uploaded yet). Checking whet
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Posting to Instagram as Reels-only now..." });
     try {
       await dispatchCrosspostDecision(env, { day: String(day), platform: "ig", decision: "approve", notify_chat_id: String(chatId), ig_reels_only: "true" });
+      // user, 2026-09-16: the toast alone was missed -- a real message confirms the tap landed.
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E4} Day ${day}: posting to Instagram as Reels-only (Reels tab, not the grid)…
+Instagram takes ~2-10 min to process it. I'll confirm here when it's live.` });
     } catch (e) {
       await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't post Reels-only to Instagram for day ${day}: ${e.message}` });
     }
