@@ -585,7 +585,11 @@ function fbIgDecisionKeyboard(day) {
       // user, 2026-09-16: per-video choice. "IG: Approve" = Reel + profile grid (unchanged);
       // this one = Reels tab only (share_to_feed=false).
       [
+        { text: "\u{1F39E} FB: Reel", callback_data: `fbdec:${day}:reel` },
         { text: "\u{1F39E} IG: Reels only (not in grid)", callback_data: `igdec:${day}:reels` }
+      ],
+      [
+        { text: "⏰ FB: Schedule Reel", callback_data: `fbschr:${day}` }
       ]
     ]
   };
@@ -1919,6 +1923,20 @@ Saved as the pending title (used if this day hasn't uploaded yet). Checking whet
     }
     return;
   }
+  if (action === "fbdec" && extra === "reel") {
+    // user, 2026-09-16: post to Facebook as a REEL (Page Reels section + Reels recommendations
+    // to non-followers). "FB: Approve" is unchanged (normal video).
+    const day = token;
+    await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Posting to Facebook as a Reel now..." });
+    try {
+      await dispatchCrosspostDecision(env, { day: String(day), platform: "fb", decision: "approve", notify_chat_id: String(chatId), fb_as_reel: "true" });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E4} Day ${day}: posting to Facebook as a Reel…
+Facebook takes a few minutes to process it. I'll confirm here when it's live.` });
+    } catch (e) {
+      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't post the Reel to Facebook for day ${day}: ${e.message}` });
+    }
+    return;
+  }
   if (action === "igdec" && extra === "reels") {
     const day = token;
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Posting to Instagram as Reels-only now..." });
@@ -2740,7 +2758,7 @@ __name22222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 var SCHED_SLOTS = [["h1", "+1 hour"], ["h3", "+3 hours"], ["t19", "Today 7 PM"], ["n9", "Tomorrow 9 AM"], ["n19", "Tomorrow 7 PM"]];
-var SCHED_ACTIONS = ["fbsch", "igsch", "pqs", "pqc", "pqx", "ipg", "ipn", "ips", "fbpick"];
+var SCHED_ACTIONS = ["fbsch", "igsch", "pqs", "pqc", "pqx", "ipg", "ipn", "ips", "fbpick", "fbschr"];
 var SCHED_MAX_PER_TICK = 2;
 var IST_OFFSET_MS = 330 * 60 * 1e3;
 var POST_TTL = 30 * 86400;
@@ -2832,7 +2850,7 @@ function platName(p) {
 }
 __name(platName, "platName");
 function schedLabel(t) {
-  if (t.kind === "video") return `Day ${t.day} video \u2192 ${platName(t.platform)}`;
+  if (t.kind === "video") return `Day ${t.day} ${t.reel ? "Reel" : "video"} \u2192 ${platName(t.platform)}`;
   if (t.kind === "promo") return `Comic promo "${t.name || t.case}" \u2192 ${platName(t.platform)}`;
   return `${t.what || "Photo"} \u2192 ${platName(t.platform)}`;
 }
@@ -2864,8 +2882,12 @@ async function fbNativeSchedule(env, chatId, target, runAt) {
     await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Facebook needs at least 10 minutes' notice (${fmtIstMs(runAt)} is too soon). Tap ⏰ FB: Schedule again and pick a later time.` });
     return;
   }
+  if (target.reel && runAt > Date.now() + 29 * 864e5) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Facebook schedules Reels at most 29 days ahead (${fmtIstMs(runAt)} is too far). Tap ⏰ FB: Schedule Reel again and pick an earlier time.` });
+    return;
+  }
   try {
-    await dispatchCrosspostDecision(env, { day: String(target.day), platform: "fb", decision: "approve", notify_chat_id: String(chatId), schedule_at: String(Math.floor(runAt / 1e3)) });
+    await dispatchCrosspostDecision(env, { day: String(target.day), platform: "fb", decision: "approve", notify_chat_id: String(chatId), schedule_at: String(Math.floor(runAt / 1e3)), ...target.reel ? { fb_as_reel: "true" } : {} });
   } catch (e) {
     await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't send it to Facebook's scheduler: ${e.message}` });
     return;
@@ -3047,6 +3069,8 @@ async function schedHandleCallback(env, cq, action, token, extra) {
   try {
     if (action === "fbsch" || action === "igsch") {
       await schedOfferSlots(env, chatId, { kind: "video", day: String(token), platform: action === "fbsch" ? "fb" : "ig" });
+    } else if (action === "fbschr") {
+      await schedOfferSlots(env, chatId, { kind: "video", day: String(token), platform: "fb", reel: true });
     } else if (action === "fbpick") {
       await fbpostPick(env, chatId, token);
     } else if (action === "pqs") {
