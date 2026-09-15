@@ -1,0 +1,55 @@
+name: Carousel design preview to Telegram (one-off, manual)
+
+# Sends each folder under carousel/_samples/<set>/ to the owner's Telegram as a PREVIEW album:
+# no Post / Reject buttons, nothing can be published from it. Used to approve a carousel design
+# before it is rolled out to every comic.
+
+on:
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "Sample set under carousel/_samples/ (e.g. v2)"
+        required: true
+        default: "v2"
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send the previews
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SET: ${{ github.event.inputs.set }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          base = os.path.join("carousel", "_samples", os.environ["SET"])
+          api = f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}"
+          chat = os.environ["TELEGRAM_CHAT_ID"]
+          def call(args):
+              r = subprocess.run(["curl", "-sS"] + args, capture_output=True, text=True)
+              ok = '"ok":true' in r.stdout
+              print("  ", "ok" if ok else "FAILED " + r.stdout[:200])
+              return ok
+          call(["-X", "POST", f"{api}/sendMessage", "-d", f"chat_id={chat}",
+                "--data-urlencode", "text=🎨 CAROUSEL DESIGN PREVIEW (new style) — 4 sample comics follow. These are previews only: no Post buttons, nothing is published."])
+          for name in sorted(os.listdir(base)):
+              d = os.path.join(base, name)
+              meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8"))
+              slides = sorted((f for f in os.listdir(d) if f[0].isdigit() and f.endswith(".jpg")), key=lambda f: int(f.split(".")[0]))
+              media, form = [], []
+              for i, f in enumerate(slides):
+                  m = {"type": "photo", "media": f"attach://s{i}"}
+                  if i == 0:
+                      m["caption"] = f"PREVIEW — {meta['label']}"
+                  media.append(m)
+                  form += ["-F", f"s{i}=@{os.path.join(d, f)}"]
+              print(f"{name}: {len(slides)} slides")
+              call(["-X", "POST", f"{api}/sendMediaGroup", "-F", f"chat_id={chat}", "-F", "media=" + json.dumps(media)] + form)
+          PY
