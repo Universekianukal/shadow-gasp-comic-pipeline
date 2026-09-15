@@ -2784,33 +2784,132 @@ async function dispatchCarousel(env, inputs) {
   });
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
+async function carouselEntries(env) {
+  // Per-comic listings (carousel/entries/<iii>-<slug>.json), read through the contents API so a carousel
+  // committed a moment ago is visible at once -- raw.githubusercontent can serve a stale copy for minutes.
+  const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/carousel/entries?ref=main`, {
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" }
+  });
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Error(`carousel entries: HTTP ${r.status}`);
+  const list = await r.json();
+  return (Array.isArray(list) ? list : []).filter((f) => /^\d+-.+\.json$/.test(f.name)).map((f) => ({
+    issue: parseInt(f.name, 10), slug: f.name.replace(/^\d+-/, "").replace(/\.json$/, ""), path: f.path
+  }));
+}
+async function carouselEntry(env, path) {
+  const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/${path}?ref=main`, {
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github.raw+json", "User-Agent": "shadow-gasp-bot" }
+  });
+  if (!r.ok) return null;
+  try {
+    return JSON.parse(await r.text());
+  } catch (e) {
+    return null;
+  }
+}
+async function dispatchCarouselBuild(env, inputs) {
+  const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/build_carousel.yml/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" },
+    body: JSON.stringify({ ref: "main", inputs })
+  });
+  if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
+}
 async function carouselCommand(env, chatId, want) {
-  let idx;
+  let idx = [], entries = [];
   try {
     idx = await carouselIndex();
   } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't read the carousel list: ${e.message}` });
-    return;
+  }
+  try {
+    entries = await carouselEntries(env);
+  } catch (e) {
   }
   if (!want) {
+    const seen = new Map();
+    for (const e of idx) seen.set(Number(e.issue), `#${e.issue}  ${e.title}`);
+    for (const e of entries) if (!seen.has(e.issue)) seen.set(e.issue, `#${e.issue}  ${e.slug}`);
+    const lines = [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([n, t]) => `${t}  → /carousel ${n}`);
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: idx.length ? "🎠 CAROUSELS READY\n\n" + idx.map((e) => `#${e.issue}  ${e.title}  → /carousel ${e.issue}`).join("\n") : "No carousels built yet."
+      text: (lines.length ? "🎠 CAROUSELS READY\n\n" + lines.join("\n") + "\n\n" : "") +
+        "Any other published issue: /carousel <number> builds its carousel first (about 2 minutes), then shows the draft."
     });
     return;
   }
-  const e = idx.find((x) => String(x.issue) === want || x.slug === want.toLowerCase());
-  if (!e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ No carousel for #${want} yet. Built so far: ${idx.map((x) => "#" + x.issue).join(", ") || "none"}.` });
+  const n = /^\d+$/.test(want) ? parseInt(want, 10) : null;
+  const hit = entries.find((x) => n !== null && x.issue === n || x.slug === want.toLowerCase());
+  if (hit) {
+    const e = await carouselEntry(env, hit.path);
+    if (e) {
+      await sendCarouselDraft(env, chatId, e);
+      return;
+    }
+  }
+  const old = idx.find((x) => String(x.issue) === String(n ?? want) || x.slug === want.toLowerCase());
+  if (old) {
+    await sendCarouselDraft(env, chatId, old);
     return;
   }
+  if (n === null) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Use the issue number, e.g. /carousel 7" });
+    return;
+  }
+  // Not built yet: build it from the comic's storefront pictures, then the draft arrives here.
+  let products;
+  try {
+    products = await gumroadProducts(env);
+  } catch (e) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't read the storefront: ${e.message}` });
+    return;
+  }
+  const re = new RegExp(`#0*${n}:`);
+  const p = products.find((x) => x.published && re.test(x.name || ""));
+  if (!p) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ No published comic is issue #${n}, so there is nothing to build a carousel for.` });
+    return;
+  }
+  const lock = `carbuild:${n}`;
+  if (await env.PENDING.get(lock)) {
+    await tg(env, "sendMessage", { chat_id: chatId, text: `⏳ The carousel for #${n} is already being built — the draft will land here.` });
+    return;
+  }
+  let hook = "";
+  try {
+    const ks = await env.PENDING.list({ prefix: "comic:" });
+    for (const k of ks.keys) {
+      const rec = JSON.parse(await env.PENDING.get(k.name) || "{}");
+      if ((rec.product_url || "").replace(/\/+$/, "").endsWith("/" + p.custom_permalink)) {
+        hook = rec.hook || "";
+        break;
+      }
+    }
+  } catch (e) {
+  }
+  await env.PENDING.put(lock, "1", { expirationTtl: 900 });
+  try {
+    await dispatchCarouselBuild(env, { issue: String(n), permalink: p.custom_permalink, hook, chat_id: String(chatId) });
+  } catch (e) {
+    await env.PENDING.delete(lock);
+    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the carousel build: ${e.message}` });
+    return;
+  }
+  await tg(env, "sendMessage", { chat_id: chatId, text: `🛠 Building the carousel for ${p.name} from its store pictures… about 2 minutes. The draft lands here — nothing is posted until you tap Post.` });
+}
+async function sendCarouselDraft(env, chatId, e) {
   const n = parseInt(e.slides || 5, 10);
   await tg(env, "sendMediaGroup", {
     chat_id: chatId,
     media: Array.from({ length: n }, (_, i) => ({ type: "photo", media: `${RAW_COMIC}/carousel/${e.dir}/${i + 1}.jpg` }))
   });
   const done = await carouselPosted(e.slug);
-  const warn = ["ig", "fb"].filter((p) => done[p]).map((p) => `\n\n⚠️ Already posted on ${CAROUSEL_NAMES[p]} (${String(done[p].posted_at || "").slice(0, 10)}). Posting there again makes a DUPLICATE.`).join("");
+  let warn = ["ig", "fb"].filter((p) => done[p]).map((p) => `\n\n⚠️ Already posted on ${CAROUSEL_NAMES[p]} (${String(done[p].posted_at || "").slice(0, 10)}). Posting there again makes a DUPLICATE.`).join("");
+  try {
+    const prod = (await gumroadProducts(env)).find((x) => x.custom_permalink === e.permalink);
+    if (!prod || !prod.published) warn += "\n\n⚠️ This comic is NOT PUBLISHED on Gumroad yet — publish it first, or everyone who comments gets a dead link.";
+  } catch (err) {
+  }
   await tg(env, "sendMessage", {
     chat_id: chatId,
     text: `🎠 CAROUSEL DRAFT — #${e.issue} ${e.title} — nothing is published yet\nInstagram: swipe carousel · Facebook: one multi-photo post\n\n${(e.caption || "").slice(0, 3000)}${warn}`,
@@ -3634,6 +3733,21 @@ ${p.run_url || ""}`
 ${(p.caption || "").slice(0, 800)}${warn}`,
         reply_markup: promoDraftKeyboard(token, p.platform === "ig" ? "ig" : "fb", !!p.already)
       });
+      return new Response("ok");
+    }
+    if (request.method === "POST" && url.pathname === "/carousel/built") {
+      if (request.headers.get("X-Shared-Secret") !== env.WORKER_SHARED_SECRET) return new Response("forbidden", { status: 403 });
+      const b = await request.json();
+      try {
+        await env.PENDING.delete(`carbuild:${b.issue}`);
+      } catch (e) {
+      }
+      const chat = b.chat_id || env.TELEGRAM_CHAT_ID;
+      if (b.outcome === "success" && b.entry && b.entry.dir) {
+        await sendCarouselDraft(env, chat, b.entry);
+      } else {
+        await tg(env, "sendMessage", { chat_id: chat, text: `❌ Couldn't build the carousel for #${b.issue}.\n${b.run_url || ""}` });
+      }
       return new Response("ok");
     }
     if (request.method === "POST" && url.pathname === "/carousel/posted") {
