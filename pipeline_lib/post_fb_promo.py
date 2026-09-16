@@ -194,7 +194,6 @@ def build_caption(product, hook=None, platform="fb"):
     small, a DM link is tappable, and every comment also lifts the post's reach).
     """
     name = product.get("name", "SHADOW GASP")
-    price = product.get("price", 0) / 100
     url = product.get("short_url") or ""
     pages = ""
     fi = product.get("file_info") or {}
@@ -211,8 +210,9 @@ def build_caption(product, hook=None, platform="fb"):
         hook = " ".join(parts[:2])[:280] if parts else ""
 
     bits = [hook, "", name]
-    detail = " · ".join([x for x in ("A documentary comic", pages, "instant PDF",
-                                     f"${price:.0f}" if price else "") if x])
+    # No price in a social post (owner, 2026-09-17): it reads as an ad to people who only came to
+    # read, and that costs reach. The price is one tap away on the product page.
+    detail = " · ".join([x for x in ("A documentary comic", pages, "instant PDF") if x])
     bits += [detail, ""]
     if platform == "ig":
         bits += ["💬 Want the full comic? Comment COMIC below and I'll DM you the link.", "",
