@@ -220,7 +220,8 @@ def build_slides(pdf_path, issue, title, hook, out_dir):
     slides += [slide_panel(*render_panel(doc, c), k + 2, total) for k, c in enumerate(story)]
     if cliff:
         slides.append(slide_cliff(render_panel(doc, cliff)[0], len(slides) + 1, total))
-    cta = v2.slide_cta(v2.render(doc, 0, 150), title, issue, str(doc.page_count), total, int(issue) == 1)
+    # No page count on the last slide (owner, 2026-09-17): just issue and title.
+    cta = v2.slide_cta(v2.render(doc, 0, 150), title, issue, "", total, int(issue) == 1)
     chrome(cta, total, total, swipe=False)
     slides.append(cta)
     os.makedirs(out_dir, exist_ok=True)
