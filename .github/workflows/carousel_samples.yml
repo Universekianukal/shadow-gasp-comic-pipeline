@@ -38,7 +38,7 @@ jobs:
               print("  ", "ok" if ok else "FAILED " + r.stdout[:200])
               return ok
           call(["-X", "POST", f"{api}/sendMessage", "-d", f"chat_id={chat}",
-                "--data-urlencode", "text=🎨 CAROUSEL DESIGN PREVIEW (new style) — 4 sample comics follow. These are previews only: no Post buttons, nothing is published."])
+                "--data-urlencode", f"text=🎨 CAROUSEL DESIGN PREVIEW ({os.environ['SET']}) — {len(os.listdir(base))} sample comic(s) follow. These are previews only: no Post buttons, nothing is published."])
           for name in sorted(os.listdir(base)):
               d = os.path.join(base, name)
               meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8"))
