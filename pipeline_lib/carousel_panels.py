@@ -285,10 +285,12 @@ def slide_cta(cover, title, issue, total, free):
     into an empty dark card -- owner, 2026-09-17). No page count."""
     cover = cover.convert("RGB")
     # centre crop of the art only (focus below the masthead) so the printed title doesn't ghost behind
-    img = ImageEnhance.Brightness(g.cover_crop(cover, W, H, 0.6).filter(ImageFilter.GaussianBlur(14))).enhance(0.26)
+    # Bright enough to read as art (0.26 was "too dark", owner); dark only behind the text.
+    art = cover.crop((0, int(cover.height * 0.2), cover.width, int(cover.height * 0.76)))  # no masthead/title
+    img = ImageEnhance.Brightness(g.cover_crop(art, W, H, 0.5).filter(ImageFilter.GaussianBlur(4))).enhance(0.62)
     fade = Image.new("L", (1, H))
     for y in range(H):
-        fade.putpixel((0, y), int(230 * max(0.0, min(1.0, (y - H * 0.42) / (H * 0.30)))))
+        fade.putpixel((0, y), int(215 * max(0.0, min(1.0, (y - H * 0.55) / (H * 0.12)))))
     img = Image.composite(Image.new("RGB", (W, H), INK), img, fade.resize((W, H)))
     # the cover itself, tilted a touch with a drop shadow, like the storefront hero
     c = g.contain(cover, 500, 740)
