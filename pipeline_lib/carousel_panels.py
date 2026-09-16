@@ -7,7 +7,8 @@ unreadable -- nobody follows the story, nobody swipes on (owner, 2026-09-17).
 
 Slides (1080x1350), only real art from the first ~62% of the book (never the ending):
   1     hook         the splash art full-bleed, headline in Bebas Neue (the storefront's display face)
-  2..6  story        ONE panel per slide, zoomed to fill it, lettering and all, in reading order
+  2..6  story        ONE panel per slide, in reading order, its narration re-lettered large;
+                     a tall splash fills the whole slide (boxed, it looked empty -- owner)
   7     cliffhanger  a later panel, darkened, stamped CASE FILE CONTINUES...
   8     CTA          the cover + "Comment COMIC" (unchanged from v2)
 Panels come from the PDF itself: every panel is a placed image, so its box is exact.
@@ -16,7 +17,7 @@ import argparse
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageStat
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -89,6 +90,21 @@ def render_panel(doc, c, width=1000):
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples), text
 
 
+def raw_art(doc, c):
+    """The panel's own embedded picture -- clean art, no lettering or page margin -- or None."""
+    import io
+    page = doc[c["page"] - 1]
+    try:
+        for info in page.get_image_info(xrefs=True):
+            if info.get("xref") and all(abs(a - b) < 2 for a, b in zip(info["bbox"], c["box"])):
+                im = Image.open(io.BytesIO(doc.extract_image(info["xref"])["image"])).convert("RGB")
+                if im.width >= 600:
+                    return im
+    except Exception:
+        pass
+    return None
+
+
 # ---------------------------------------------------------------- slides
 def chrome(img, idx, total, swipe=True):
     d = ImageDraw.Draw(img)
@@ -148,12 +164,12 @@ def slide_hook(art, headline, subline, issue, total):
     return img
 
 
-def narration_block(d, text, max_w, max_h):
+def narration_block(d, text, max_w, max_h, start=50):
     """The panel's own lettering, re-set large enough to read on a phone."""
     if not text:
         return None, [], 0
     text = text.upper()
-    size = 50
+    size = start
     while size >= 30:
         f = g.font(size, "ExtraBold")
         lines = g.wrap(d, text, f, max_w)
@@ -182,6 +198,61 @@ def slide_panel(panel, narration, idx, total):
             ty += size * 1.25
     chrome(img, idx, total)
     return img
+
+
+def trim_white(img, thresh=232):
+    """Cut near-white margins (some splash art carries a white bleed strip on one side)."""
+    import numpy as np
+    a = np.asarray(img.convert("L"), dtype=float)
+    cols, rows = a.mean(axis=0), a.mean(axis=1)
+    x0, x1, y0, y1 = 0, len(cols), 0, len(rows)
+    while x0 < x1 - 10 and cols[x0] > thresh:
+        x0 += 1
+    while x1 > x0 + 10 and cols[x1 - 1] > thresh:
+        x1 -= 1
+    while y0 < y1 - 10 and rows[y0] > thresh:
+        y0 += 1
+    while y1 > y0 + 10 and rows[y1 - 1] > thresh:
+        y1 -= 1
+    return img.crop((x0, y0, x1, y1))
+
+
+def slide_splash(panel, narration, idx, total):
+    """A tall panel (a splash) fills the whole slide, like the hook: boxed, it left empty strips.
+    `panel` should be the clean embedded art -- the printed lettering is re-set on the slide.
+    The text goes over the QUIETER end of the picture, so the subject is never covered."""
+    base = g.cover_crop(trim_white(panel.convert("RGB")), W, H, 0.35)
+    d0 = ImageDraw.Draw(base)
+    f, lines, size = narration_block(d0, narration, W - 160, 300, start=44)
+    text_h = int(len(lines) * size * 1.25)
+    band = int(H * 0.4)
+    # Edge density, not tonal range: a bright empty shape (an envelope on black) is not "busy".
+    def detail(im):
+        return ImageStat.Stat(im.convert("L").filter(ImageFilter.FIND_EDGES)).mean[0]
+    at_top = detail(base.crop((0, H - band, W, H))) > detail(base.crop((0, 0, W, band))) * 1.5
+    fade = Image.new("L", (1, H))
+    reach = text_h + 260
+    for y in range(H):
+        dist = y if at_top else H - y           # distance from the text's edge of the slide
+        t = max(0.0, 1 - (dist - 110) / reach) if dist > 110 else 1.0
+        fade.putpixel((0, y), int(235 * min(1.0, t * 1.4)))
+    img = Image.composite(Image.new("RGB", (W, H), INK), base, fade.resize((W, H)))
+    d = ImageDraw.Draw(img)
+    ty = 130 if at_top else H - 150 - text_h
+    if lines:
+        d.rectangle((70, ty + 6, 80, ty + text_h - 10), fill=RED)
+        for ln in lines:
+            d.text((100, ty), ln, font=f, fill=(255, 255, 255))
+            ty += size * 1.25
+    chrome(img, idx, total)
+    return img
+
+
+def slide_story(doc, c, idx, total):
+    panel, narration = render_panel(doc, c)
+    if panel.width / panel.height < 0.9:
+        return slide_splash(raw_art(doc, c) or panel, narration, idx, total)
+    return slide_panel(panel, narration, idx, total)
 
 
 def slide_cliff(panel, idx, total):
@@ -217,7 +288,7 @@ def build_slides(pdf_path, issue, title, hook, out_dir):
     total = 1 + len(story) + (1 if cliff else 0) + 1
     head, sub = v2.headline_and_sub(hook or title)
     slides = [slide_hook(v2.hook_art(doc, hook_page), head, sub, issue, total)]
-    slides += [slide_panel(*render_panel(doc, c), k + 2, total) for k, c in enumerate(story)]
+    slides += [slide_story(doc, c, k + 2, total) for k, c in enumerate(story)]
     if cliff:
         slides.append(slide_cliff(render_panel(doc, cliff)[0], len(slides) + 1, total))
     # No page count on the last slide (owner, 2026-09-17): just issue and title.
