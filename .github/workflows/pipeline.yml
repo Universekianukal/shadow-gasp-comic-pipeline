@@ -114,6 +114,14 @@ on:
         description: "For store_assets_only: also replace the product's PDF with the rebuilt one (true/false)"
         required: false
         default: "false"
+      # Rename a book without regenerating it. The script comes back from the KV cache with the
+      # title it was written under; this replaces only script["title"] (cover, PDF, product name,
+      # permalink, carousel) before anything is built. Added 2026-09-16 for #54, whose cached title
+      # THE GHOST SHIP duplicated #20's.
+      title_override:
+        description: "Optional: new book title, replacing the one in the (cached) script"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -294,6 +302,21 @@ jobs:
       # cell's actual aspect from its tier and neighbours. The mismatch is what leaves empty
       # space in finished pages and forces panels to be regenerated on Kaggle -- the single
       # biggest source of wasted GPU time on the Heaven's Gate build.
+      - name: Apply title override
+        if: github.event.inputs.title_override != ''
+        env:
+          NEW_TITLE: ${{ github.event.inputs.title_override }}
+        run: |
+          python - <<'PY'
+          import glob, json, os
+          path = sorted(glob.glob(f"cases/{os.environ['slug']}/script_issue*.json"))[0]
+          script = json.load(open(path, encoding="utf-8"))
+          old, new = script.get("title", ""), os.environ["NEW_TITLE"].strip()
+          script["title"] = new
+          json.dump(script, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+          print(f"title: {old!r} -> {new!r} in {path}")
+          PY
+
       - name: Fit panel sizes to the page layout
         id: spec
         if: github.event.inputs.dry_run != 'true'
