@@ -91,3 +91,9 @@ def list_pages():
     if "pages" not in res:
         raise RuntimeError(f"could not list pages: {res.get('error')}")
     return [p["slug"] for p in res["pages"]]
+
+
+def user_bio():
+    """The profile bio, which the store pages quote; None if it can't be read (defaults are used)."""
+    res = _run(["user", "--json"])
+    return (res.get("user") or {}).get("bio")

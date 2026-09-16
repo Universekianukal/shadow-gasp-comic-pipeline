@@ -12,21 +12,48 @@ import re
 from . import backdrop
 
 ISSUE_RE = re.compile(r"#\s*0*(\d+)")
-PER_PAGE = 20  # 25 images max = logo + 4 backdrop characters + 20 covers
+# 12 = rows of 4 on desktop, 3 on tablet, 2 on phone (20 read as crowded, 2026-09-17). Well inside
+# the 25-image cap: logo + 4 backdrop characters + 12 covers.
+PER_PAGE = 12
 STORE_URL = "https://shadowgasp.gumroad.com/"
 PAGE_CHARS = [["c27", "51_3_3", "c45", "33_2_0"], ["c36", "32_2_1", "c01", "12_4_1"],
-              ["47_3_1", "c24", "53_3_4", "35_3_0"]]
+              ["47_3_1", "c24", "53_3_4", "35_3_0"], ["c35", "13_2_1", "29_2_2", "50_3_5"],
+              ["45_2_3", "46_4_4", "c12", "48_4_1"]]
 LOGO = "https://public-files.gumroad.com/cl21bznqqeyqx5d90dwf3rix9uva"
-BIO = [
+# Fallback only: the live text comes from the Gumroad profile bio (profile_text), so an edit there
+# reaches the store at the next sync. The hard-coded copy once said 25–50 pages while the profile
+# said 40–100.
+DEFAULT_BIO = "\n".join([
     "Some cases were never solved. Some were never fully told.",
-    "Shadow Gasp brings history's darkest true crimes and unexplained mysteries back to life "
-    "as noir comics: heists, disappearances, ghost ships and cold cases.",
-]
-PROMISES = [
-    ("🔎", "Real cases, researched from the record"),
-    ("📖", "25–50 illustrated pages per issue"),
-    ("⚡", "Read tonight, on any device"),
-]
+    "Shadow Gasp brings history's darkest true crimes and unexplained mysteries back to life as noir "
+    "comics: heists, disappearances, ghost ships and cold cases.",
+    "🔎 Real cases, researched from the record",
+    "📖 40–100 illustrated pages per issue",
+    "⚡ Read tonight, on any device",
+    "Pick a case. Turn off the lights.",
+])
+
+
+def profile_text(bio):
+    """Profile bio -> {"paras": [...], "promises": [(icon, text)], "closer": str}.
+
+    Lines that start with an emoji are the promises; the last plain line after them is the
+    sign-off; plain lines before them are the intro paragraphs.
+    """
+    paras, promises, closer = [], [], ""
+    for line in (bio or DEFAULT_BIO).splitlines():
+        line = re.sub(r"\s+\.$", ".", line.strip())
+        if not line:
+            continue
+        if not line[0].isalnum() and " " in line:
+            icon, text = line.split(" ", 1)
+            promises.append((icon, text.strip().rstrip(".")))
+        elif promises:
+            closer = line
+        else:
+            paras.append(line)
+    return {"paras": paras, "promises": promises, "closer": closer or "Pick a case. Turn off the lights."}
+
 
 CSS = """
 @import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;600;800&display=swap");
@@ -72,7 +99,9 @@ CSS = """
 .sg .files-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:64px 0 22px;flex-wrap:wrap}
 .sg .files-head .display{font-size:clamp(44px,6vw,72px)}
 .sg .files-head span{color:var(--muted);font-size:13px;letter-spacing:.2em;text-transform:uppercase}
-.sg .grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:28px 20px}
+.sg .grid{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:36px 24px}
+.sg .grid>li{flex:0 0 calc((100% - 72px) / 4);min-width:0}
+@media (max-width:980px){.sg .grid>li{flex-basis:calc((100% - 48px) / 3)}}
 .sg .card{display:block;opacity:0;animation:sg-in .6s ease forwards}
 .sg .card .cv{position:relative;aspect-ratio:368/564;overflow:hidden;border-radius:3px;background-color:#000;
   box-shadow:0 12px 30px rgba(0,0,0,.55),0 0 0 1px var(--line);transition:transform .25s ease,box-shadow .25s ease}
@@ -97,7 +126,8 @@ CSS = """
   .sg .hero p.tag{margin-left:auto;margin-right:auto}
   .sg .brief{grid-template-columns:1fr}
   .sg .tape{display:none}
-  .sg .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 14px}
+  .sg .grid{gap:24px 14px}
+  .sg .grid>li{flex-basis:calc((100% - 14px) / 2)}
   .sg .card h3{font-size:20px}
 }
 @media (prefers-reduced-motion:reduce){.sg .card{animation:none;opacity:1}.sg *{transition:none!important}}
@@ -167,7 +197,7 @@ def header(total, k):
     )
 
 
-def intro(live):
+def intro(live, profile):
     e = html.escape
     new = live[0]
     first = next((p for p in live if issue_no(p["name"]) == 1), None)
@@ -181,9 +211,9 @@ def intro(live):
         # payment page (pay-what-you-want products don't redirect, so #1 keeps its product link).
         f'<a class="btn" href="{e(new["short_url"])}?wanted=true">Get the comic — {e(new["formatted_price"])}</a></div></section>',
         '<section class="brief"><div>'
-        + "".join(f"<p>{e(t)}</p>" for t in BIO)
+        + "".join(f"<p>{e(t)}</p>" for t in profile["paras"])
         + "</div><ul>"
-        + "".join(f"<li><span>{i}</span>{e(t)}</li>" for i, t in PROMISES)
+        + "".join(f"<li><span>{e(i)}</span>{e(t)}</li>" for i, t in profile["promises"])
         + "</ul></section>",
     ]
     if first:
@@ -196,19 +226,19 @@ def intro(live):
     return parts
 
 
-def page(live, k, pages):
+def page(live, k, pages, profile):
     chunk = live[(k - 1) * PER_PAGE : k * PER_PAGE]
     title = "The Case Files" if k == 1 else f"Case Files · Page {k}"
     bd_css, bd_html = backdrop.backdrop(PAGE_CHARS[(k - 1) % len(PAGE_CHARS)], ".sg")
     parts = [f"<style>{CSS}\n{bd_css}</style>",'<div class="sg">', bd_html, '<div class="wrap fg">', header(len(live), k)]
     if k == 1:
-        parts += intro(live)
+        parts += intro(live, profile)
     parts += [
         f'<div class="files-head"><h2 class="display">{title}</h2>'
         f"<span>No. {issue_no(chunk[0]['name'])} → No. {issue_no(chunk[-1]['name'])}</span></div>",
         '<ul class="grid">' + "".join(card(p, i) for i, p in enumerate(chunk)) + "</ul>",
         pager(k, pages),
-        '<footer class="foot"><p class="display">Pick a case. Turn off the lights.</p>'
+        f'<footer class="foot"><p class="display">{html.escape(profile["closer"])}</p>'
         "<p>New case files are added as they are researched.</p></footer>",
         "</div></div>",
     ]
@@ -220,7 +250,8 @@ def live_issues(products):
     return sorted(live, key=lambda p: issue_no(p["name"]), reverse=True)
 
 
-def build_pages(products):
+def build_pages(products, bio=None):
     live = live_issues(products)
     pages = -(-len(live) // PER_PAGE)
-    return {page_slug(k): page(live, k, pages) for k in range(1, pages + 1)}
+    profile = profile_text(bio)
+    return {page_slug(k): page(live, k, pages, profile) for k in range(1, pages + 1)}

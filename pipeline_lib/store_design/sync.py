@@ -121,7 +121,7 @@ def upgrade_landings(products, dry_run, force=()):
 
 def sync_store(products, dry_run):
     state = _load_state()
-    pages = store_pages.build_pages(products)
+    pages = store_pages.build_pages(products, publish.user_bio())
     existing = None
     pushed, failed = [], []
     for k, (slug, html) in enumerate(pages.items(), 1):
