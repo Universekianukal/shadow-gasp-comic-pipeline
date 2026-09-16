@@ -23,10 +23,12 @@ def _run(args, tries=4):
             last = json.loads(r.stdout)
         except ValueError:
             last = {"success": False, "error": {"type": "internal_error", "message": (r.stdout + r.stderr)[:300]}}
-        # Only transport failures are worth repeating; a validation error will not change.
-        if (last.get("error") or {}).get("type") != "internal_error":
+        # Only transient failures are worth repeating; a validation error will not change. Gumroad's
+        # sanitizer also has its own "temporary issue on our end ... try again" api_error.
+        err = last.get("error") or {}
+        if err.get("type") != "internal_error" and "try again" not in str(err.get("message", "")).lower():
             return last
-        time.sleep(4 * (attempt + 1))
+        time.sleep(15 * (attempt + 1))
     return last
 
 
