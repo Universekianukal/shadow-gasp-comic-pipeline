@@ -158,8 +158,8 @@ def build(hook_art, art, cover, hook, title, issue, pages, free, out_dir, hook_f
 def default_caption(hook, issue, title, pages):
     """Hook, what it is, the call to action. The CTA is the one the user approved for #1; it must not
     repeat slide 5's line word for word (user rule)."""
-    what = f"SHADOW GASP #{issue}: {title}, a {pages}-page documentary comic." if pages else \
-        f"SHADOW GASP #{issue}: {title}, a documentary comic."
+    # No page count in captions (owner, 2026-09-17); `pages` is kept for callers.
+    what = f"SHADOW GASP #{issue}: {title}, a documentary comic."
     return f"{hook.strip()} 🕯️\n\n{what}\n\nCurious how it ends? Comment COMIC and check your DMs 📩\n\n{HASHTAGS}"
 
 
