@@ -10,7 +10,7 @@ Slides (1080x1350), only real art from the first ~62% of the book (never the end
   2..6  story        ONE panel per slide, in reading order, its narration re-lettered large;
                      a tall splash fills the whole slide (boxed, it looked empty -- owner)
   7     cliffhanger  a later panel, darkened, stamped CASE FILE CONTINUES...
-  8     CTA          the cover + "Comment COMIC" (unchanged from v2)
+  8     CTA          the cover large over its own art + "COMMENT COMIC" (no page count)
 Panels come from the PDF itself: every panel is a placed image, so its box is exact.
 """
 import argparse
@@ -256,29 +256,69 @@ def slide_story(doc, c, idx, total):
 
 
 def slide_cliff(panel, idx, total):
-    img = backdrop(panel, 0.18)
-    fg = ImageEnhance.Brightness(g.contain(panel, W - 80, H - 250)).enhance(0.45)
-    # the lower half melts into black: the story is cut off, not shown
-    mask = Image.new("L", fg.size, 255)
-    md = ImageDraw.Draw(mask)
-    for yy in range(fg.height):
-        t = max(0.0, (yy - fg.height * 0.35) / (fg.height * 0.65))
-        md.line((0, yy, fg.width, yy), fill=int(255 * (1 - min(1.0, t))))
-    x, y = (W - fg.width) // 2, 118 + (H - 250 - fg.height) // 2
-    img.paste(fg, (x, y), mask)
-    stamp = Image.new("RGBA", (900, 260), (0, 0, 0, 0))
+    """The next beat, withheld: the panel fills the slide, darkened, under a red stamp."""
+    base = ImageEnhance.Brightness(g.cover_crop(trim_white(panel.convert("RGB")), W, H, 0.4)).enhance(0.42)
+    vignette = Image.new("L", (W, H), 0)
+    vd = ImageDraw.Draw(vignette)
+    for i in range(0, 260, 4):                     # dark edges pull the eye to the stamp
+        vd.rectangle((i, i, W - i, H - i), outline=int(200 * (1 - i / 260)), width=4)
+    img = Image.composite(Image.new("RGB", (W, H), INK), base, vignette.filter(ImageFilter.GaussianBlur(40)))
+    stamp = Image.new("RGBA", (940, 280), (0, 0, 0, 0))
     sd = ImageDraw.Draw(stamp)
-    sd.rectangle((8, 8, 891, 251), outline=RED, width=10)
-    sf = bebas(118)
+    sd.rectangle((0, 0, 939, 279), fill=(11, 11, 13, 150))
+    sd.rectangle((8, 8, 931, 271), outline=RED, width=10)
+    sf = bebas(124)
     label = "CASE FILE CONTINUES…"
-    sd.text(((900 - sd.textlength(label, font=sf)) / 2, 58), label, font=sf, fill=RED)
+    sd.text(((940 - sd.textlength(label, font=sf)) / 2, 62), label, font=sf, fill=RED)
     stamp = stamp.rotate(-6, expand=True, resample=Image.BICUBIC)
-    img.paste(stamp, ((W - stamp.width) // 2, H // 2 - stamp.height // 2 + 40), stamp)
+    img.paste(stamp, ((W - stamp.width) // 2, H // 2 - stamp.height // 2 - 20), stamp)
     d = ImageDraw.Draw(img)
-    q = "What happened next is in the full comic."
-    qf = g.font(40, "Bold")
-    d.text(((W - d.textlength(q, font=qf)) / 2, H - 190), q, font=qf, fill=CREAM)
+    q = "WHAT HAPPENED NEXT IS IN THE FULL COMIC."
+    qf = bebas(64)
+    d.text(((W - d.textlength(q, font=qf)) / 2, H - 230), q, font=qf, fill=(255, 255, 255))
     chrome(img, idx, total)
+    return img
+
+
+def slide_cta(cover, title, issue, total, free):
+    """Last slide: the cover big, the ask bigger. The cover art fills the ground (v2 blurred it
+    into an empty dark card -- owner, 2026-09-17). No page count."""
+    cover = cover.convert("RGB")
+    # centre crop of the art only (focus below the masthead) so the printed title doesn't ghost behind
+    img = ImageEnhance.Brightness(g.cover_crop(cover, W, H, 0.6).filter(ImageFilter.GaussianBlur(14))).enhance(0.26)
+    fade = Image.new("L", (1, H))
+    for y in range(H):
+        fade.putpixel((0, y), int(230 * max(0.0, min(1.0, (y - H * 0.42) / (H * 0.30)))))
+    img = Image.composite(Image.new("RGB", (W, H), INK), img, fade.resize((W, H)))
+    # the cover itself, tilted a touch with a drop shadow, like the storefront hero
+    c = g.contain(cover, 500, 740)
+    card = Image.new("RGBA", (c.width + 12, c.height + 12), CREAM + (255,))
+    card.paste(c, (6, 6))
+    card = card.rotate(-4, expand=True, resample=Image.BICUBIC)
+    shadow = Image.new("RGBA", (card.width + 80, card.height + 80), (0, 0, 0, 0))
+    shadow.paste((0, 0, 0, 200), (40, 50, 40 + card.width, 50 + card.height), card.split()[3])
+    shadow = shadow.filter(ImageFilter.GaussianBlur(22))
+    cx = (W - card.width) // 2
+    img.paste(shadow, (cx - 40, 90), shadow)
+    img.paste(card, (cx, 100), card)
+    d = ImageDraw.Draw(img)
+    y = 100 + card.height + 20
+
+    def center(text, fnt, fill, yy):
+        d.text(((W - d.textlength(text, font=fnt)) / 2, yy), text, font=fnt, fill=fill)
+    center("WANT THE FULL STORY?", bebas(58), CREAM, y)
+    y += 64
+    big = bebas(190)
+    w1, w2 = d.textlength("COMMENT ", font=big), d.textlength("COMIC", font=big)
+    x = (W - w1 - w2) / 2
+    d.text((x, y), "COMMENT ", font=big, fill=(255, 255, 255))
+    d.text((x + w1, y), "COMIC", font=big, fill=RED)
+    y += 188
+    center("Your first case is on us." if free else "and we'll DM you the link.", g.font(40, "Bold"),
+           RED if free else CREAM, y)
+    y += 64
+    center(f"ISSUE #{issue}  ·  {title}", bebas(40), (170, 165, 155), y)
+    chrome(img, total, total, swipe=False)
     return img
 
 
@@ -290,11 +330,9 @@ def build_slides(pdf_path, issue, title, hook, out_dir):
     slides = [slide_hook(v2.hook_art(doc, hook_page), head, sub, issue, total)]
     slides += [slide_story(doc, c, k + 2, total) for k, c in enumerate(story)]
     if cliff:
-        slides.append(slide_cliff(render_panel(doc, cliff)[0], len(slides) + 1, total))
-    # No page count on the last slide (owner, 2026-09-17): just issue and title.
-    cta = v2.slide_cta(v2.render(doc, 0, 150), title, issue, "", total, int(issue) == 1)
-    chrome(cta, total, total, swipe=False)
-    slides.append(cta)
+        art = raw_art(doc, cliff) or render_panel(doc, cliff)[0]
+        slides.append(slide_cliff(art, len(slides) + 1, total))
+    slides.append(slide_cta(v2.render(doc, 0, 170), title, issue, total, int(issue) == 1))
     os.makedirs(out_dir, exist_ok=True)
     paths = []
     for k, s in enumerate(slides, 1):
