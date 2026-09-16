@@ -141,6 +141,10 @@ def poster_url(permalink_or_case):
     return f"{RAW}/promo/{hits[-1]}" if hits else None
 
 
+# The 16:9 store hero is 1.78; the wide art strips beside it are 1.93-2.21 and must not pass for it.
+HERO_MIN, HERO_MAX = 1.7, 1.85
+
+
 def cover_url(product, platform="fb"):
     """Pick the cover to post, by SHAPE rather than by position.
 
@@ -153,9 +157,10 @@ def cover_url(product, platform="fb"):
     Square wins on both platforms anyway: it is the card gen_promo_card.py builds for exactly
     this purpose, and it occupies more of a feed than a letterbox does.
 
-    ⭐ Without a square card, the HORIZONTAL banner comes next and the vertical book cover last.
-    Ranking purely by distance from square picked the 0.66 book cover over the 1.78 banner --
-    HEAVEN'S GATE (#2, no square card) went to /promo as its tall cover (2026-09-17).
+    ⭐ OWNER'S RULE (2026-09-17): the HORIZONTAL cover leads -- the 16:9 store hero (the comic
+    beside its title, issue and hook, ratio ~1.78, inside IG's window). Then a square card, then
+    other wide strips, and the vertical book cover only when nothing else exists. Ranking purely
+    by distance from square once picked HEAVEN'S GATE's 0.66 book cover over its 1.78 banner.
     """
     covers = [c["url"] for c in (product.get("covers") or []) if c.get("url")]
     if not covers:
@@ -170,8 +175,15 @@ def cover_url(product, platform="fb"):
         ratio = w / h if h else 0
         if platform == "ig" and not (IG_MIN_RATIO <= ratio <= IG_MAX_RATIO):
             continue                      # Instagram would refuse it; do not offer it
-        shape = 0 if 0.9 <= ratio <= 1.1 else (1 if ratio > 1.1 else 2)   # square, landscape, portrait
-        scored.append((shape, abs(ratio - 1.0), u, (w, h, ratio)))
+        if HERO_MIN <= ratio <= HERO_MAX:
+            shape = 0                     # the 16:9 hero
+        elif 0.9 <= ratio <= 1.1:
+            shape = 1                     # square card
+        elif ratio > 1.1:
+            shape = 2                     # other wide strips
+        else:
+            shape = 3                     # the vertical book cover
+        scored.append((shape, abs(ratio - 1.78), u, (w, h, ratio)))
     if not scored:
         if platform == "ig":
             raise SystemExit(
@@ -179,7 +191,7 @@ def cover_url(product, platform="fb"):
                 "~0.66 and the marketing strips are ~1.9-2.2. Add a square promo card as a "
                 "Gumroad cover first.")
         return covers[0], None
-    scored.sort()                          # square, then landscape, then portrait
+    scored.sort()                          # hero, square, wide, portrait
     _, _, url, dims = scored[0]
     return url, dims
 
@@ -313,15 +325,14 @@ def main():
     if custom:
         caption = custom[:2200]
         print("caption : custom (edited in Telegram)")
-    # The purpose-built poster wins when the build produced one; the Gumroad cover is the
-    # fallback for books built before posters existed.
-    img = poster_url(product.get("custom_permalink"))
-    dims = None
-    if img:
-        dims = None
-        print("image   : social poster (built by the pipeline)")
-    else:
-        img, dims = cover_url(product, a.platform)
+    # The horizontal store hero leads (owner, 2026-09-17). The square social poster the build makes
+    # is the fallback for a comic without one, then the other Gumroad covers.
+    img, dims = cover_url(product, a.platform)
+    if not (dims and HERO_MIN <= dims[2] <= HERO_MAX):
+        poster = poster_url(product.get("custom_permalink"))
+        if poster:
+            img, dims = poster, None
+            print("image   : social poster (built by the pipeline)")
 
     print(f"platform: {a.platform}")
     print(f"product : {product['name']}  (${product.get('price', 0) / 100:.0f})")
