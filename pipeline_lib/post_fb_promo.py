@@ -152,6 +152,10 @@ def cover_url(product, platform="fb"):
 
     Square wins on both platforms anyway: it is the card gen_promo_card.py builds for exactly
     this purpose, and it occupies more of a feed than a letterbox does.
+
+    ⭐ Without a square card, the HORIZONTAL banner comes next and the vertical book cover last.
+    Ranking purely by distance from square picked the 0.66 book cover over the 1.78 banner --
+    HEAVEN'S GATE (#2, no square card) went to /promo as its tall cover (2026-09-17).
     """
     covers = [c["url"] for c in (product.get("covers") or []) if c.get("url")]
     if not covers:
@@ -166,7 +170,8 @@ def cover_url(product, platform="fb"):
         ratio = w / h if h else 0
         if platform == "ig" and not (IG_MIN_RATIO <= ratio <= IG_MAX_RATIO):
             continue                      # Instagram would refuse it; do not offer it
-        scored.append((abs(ratio - 1.0), u, (w, h, ratio)))
+        shape = 0 if 0.9 <= ratio <= 1.1 else (1 if ratio > 1.1 else 2)   # square, landscape, portrait
+        scored.append((shape, abs(ratio - 1.0), u, (w, h, ratio)))
     if not scored:
         if platform == "ig":
             raise SystemExit(
@@ -174,8 +179,8 @@ def cover_url(product, platform="fb"):
                 "~0.66 and the marketing strips are ~1.9-2.2. Add a square promo card as a "
                 "Gumroad cover first.")
         return covers[0], None
-    scored.sort()                          # closest to square first
-    _, url, dims = scored[0]
+    scored.sort()                          # square, then landscape, then portrait
+    _, _, url, dims = scored[0]
     return url, dims
 
 
