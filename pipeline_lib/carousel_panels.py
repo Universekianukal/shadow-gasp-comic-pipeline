@@ -63,6 +63,67 @@ def panels(doc, first, last, skip_pages):
 STORY_SHARE = 0.7   # story panels come from the first 70% of the preview window
 
 
+def _narration(doc, c):
+    import fitz
+    blocks = [" ".join(bl[4].split()) for bl in doc[c["page"] - 1].get_text("blocks", clip=fitz.Rect(*c["box"]))]
+    return _drop_sfx_runs(" ".join(t for t in blocks if len(t) > 25 and not t.isdigit() and not _is_sfx(t)))
+
+
+STORY_PROMPT = """You are cutting an Instagram carousel for a true-crime documentary comic, "{title}".
+The carousel opens with this hook: "{hook}"
+
+Below are candidate panels from the FIRST PART of the comic, in reading order, with the narration
+printed in each. The reader sees ONLY these slides, one panel per slide, with its narration.
+
+Choose exactly {n} panels for the story slides and 1 panel for a cliffhanger slide so that a stranger
+can follow a clear mini-story and ends up wanting the full comic:
+- in reading order (ascending ids), telling setup -> incident -> the mystery deepening -> a twist;
+- every slide must make sense given the hook and the slides before it: never pick a panel whose
+  narration depends on a person, event or object that the chosen slides have not introduced;
+- prefer panels with concrete narration (who, what, when); avoid panels with empty narration;
+- the cliffhanger has a higher id than all story panels and raises a question it does not answer;
+- never reveal how the case ends or who did it.
+
+Candidates:
+{items}
+
+Return JSON: {{"story": [ids], "cliffhanger": id, "why": "one sentence"}}"""
+
+
+def pick_panels_llm(doc, title, hook):
+    """Story chosen by a language model from the narration, so the slides connect (owner,
+    2026-09-17). Falls back to the art-only picker when no model is configured or the answer is
+    unusable. Among panels on one page the model sees each; art quality breaks nothing here
+    because every candidate already passed the size/art filters."""
+    hook_page, story, cliff = pick_panels(doc)
+    provider = os.environ.get("COMIC_LLM_PROVIDER", "")
+    if not provider or provider == "mock":
+        return hook_page, story, cliff, "art picker (no model configured)"
+    base = v2.pick(doc)
+    first, last = base["window"]
+    cands = sorted(panels(doc, first, last, {base["hook"]}), key=lambda c: (c["page"], c["box"][1], c["box"][0]))
+    for c in cands:
+        c["text"] = _narration(doc, c)
+    cands = [c for c in cands if c["text"]][:70]
+    if len(cands) < STORY_PANELS + 1:
+        return hook_page, story, cliff, "art picker (too few captioned panels)"
+    items = chr(10).join(f'{i}. (page {c["page"]}) {c["text"][:300]}' for i, c in enumerate(cands))
+    try:
+        import llm
+        ans = llm.LLM(provider=provider, model=os.environ.get("COMIC_LLM_MODEL") or None).json(
+            STORY_PROMPT.format(title=title, hook=hook, n=STORY_PANELS, items=items), max_tokens=3000)
+        ids = [int(x) for x in ans["story"]]
+        cid = int(ans["cliffhanger"])
+        ok = (len(ids) == STORY_PANELS and ids == sorted(set(ids)) and all(0 <= i < len(cands) for i in ids)
+              and ids[-1] < cid < len(cands))
+        if not ok:
+            raise ValueError(f"unusable answer {ans}")
+        return hook_page, [cands[i] for i in ids], cands[cid], "story model: " + str(ans.get("why", ""))[:200]
+    except Exception as e:  # noqa: BLE001 - a carousel must still build
+        print(f"WARNING: story model failed ({e}) -- using the art picker", flush=True)
+        return hook_page, story, cliff, "art picker (model failed)"
+
+
 def pick_panels(doc):
     """Hook as v2; story = the best panel from each of STORY_PANELS equal slices of the EARLY window,
     so the carousel follows the book from its opening (owner, 2026-09-17: #1 skipped straight to
@@ -364,7 +425,8 @@ def slide_cta(cover, title, issue, total, free):
 
 def build_slides(pdf_path, issue, title, hook, out_dir):
     doc = v2._open(pdf_path)
-    hook_page, story, cliff = pick_panels(doc)
+    hook_page, story, cliff, how = pick_panels_llm(doc, title, hook)
+    print(f"#{issue} picks: {how}", flush=True)
     total = 1 + len(story) + (1 if cliff else 0) + 1
     head, sub = v2.headline_and_sub(hook or title)
     slides = [slide_hook(v2.hook_art(doc, hook_page), head, sub, issue, total)]
@@ -379,7 +441,7 @@ def build_slides(pdf_path, issue, title, hook, out_dir):
         p = os.path.join(out_dir, f"{k}.jpg")
         s.save(p, quality=90)
         paths.append(p)
-    picks = {"hook": hook_page, "story": [(c["page"], [round(v) for v in c["box"]]) for c in story],
+    picks = {"how": how, "hook": hook_page, "story": [(c["page"], [round(v) for v in c["box"]]) for c in story],
              "cliff": (cliff["page"], [round(v) for v in cliff["box"]]) if cliff else None}
     return paths, picks
 

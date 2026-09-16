@@ -1,0 +1,57 @@
+name: Carousel v3 preview to Telegram (manual)
+
+# Builds panel-story carousels (pipeline_lib/carousel_panels.py) for the given issues from their
+# Gumroad PDFs and sends them to the owner as PREVIEW albums. Nothing is committed or published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: "Issue numbers, e.g. 1,51"
+        required: true
+        default: "1,51"
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            pipeline_lib
+            fonts
+            carousel/entries
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install requests Pillow PyMuPDF numpy
+
+      - name: Install Gumroad CLI
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || { echo "::error::Gumroad CLI did not install"; exit 1; }
+
+      - name: Authenticate Gumroad CLI
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Build and send previews
+        env:
+          ISSUES: ${{ github.event.inputs.issues }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          COMIC_LLM_PROVIDER: fireworks
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cd pipeline_lib && python carousel_v3_preview.py --issues "$ISSUES"
