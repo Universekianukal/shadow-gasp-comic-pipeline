@@ -100,6 +100,10 @@ def candidates(slides):
             # A sliver or a strip is a prop or a fragment, not a character.
             if fig.height < 0.35 * panel.height or not 0.25 <= fig.width / fig.height <= 1.6:
                 continue
+            # A figure running off the TOP of the panel has its head cut off (#56's 56_4_4 went
+            # live like that); bodies running off the bottom are fine, the backdrop fades them out.
+            if box[1] <= 2:
+                continue
             yield f"{slide}_{k}", fig, cover * main
 
 
