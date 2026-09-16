@@ -15,6 +15,7 @@ import html
 from . import backdrop
 
 STORE_URL = "https://shadowgasp.gumroad.com/"
+SUBSCRIBE_URL = STORE_URL + "subscribe"  # Gumroad's own follow form (see store_pages.py)
 LOGO = "https://public-files.gumroad.com/cl21bznqqeyqx5d90dwf3rix9uva"
 DISCLOSURE = (
     "Based on real events and public records. Dialogue is dramatized where no verbatim "
@@ -37,6 +38,8 @@ a{color:inherit;text-decoration:none}
 .top{display:flex;align-items:center;gap:12px;padding:22px 0;border-bottom:1px solid var(--line)}
 .top img{width:42px;height:42px;border-radius:50%;border:2px solid var(--red)}
 .top .display{font-size:28px}
+.top .sub{background:var(--red);color:#fff;font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;
+  padding:10px 16px;border-radius:2px;box-shadow:4px 4px 0 var(--red-deep)}
 .top .all{margin-left:auto;font-size:12px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
   border:1px solid var(--line);padding:9px 14px;transition:border-color .2s,background .2s}
 .top .all:hover{border-color:var(--paper);background:rgba(255,255,255,.04)}
@@ -92,6 +95,7 @@ section.block{padding:clamp(56px,8vw,96px) 0 0}
   border-bottom:2px solid var(--red);padding-bottom:4px}
 footer{margin-top:clamp(64px,9vw,110px);border-top:1px solid var(--line);padding:34px 0 48px;text-align:center}
 footer .display{font-size:clamp(34px,5vw,56px)}
+footer p.subline{margin:14px 0 18px;color:var(--muted)}
 footer p.small{max-width:720px;margin:16px auto 0;font-size:12px;color:#77726b}
 .rise{opacity:0;animation:rise .8s cubic-bezier(.2,.7,.2,1) forwards}
 .d1{animation-delay:.08s}.d2{animation-delay:.18s}.d3{animation-delay:.28s}.d4{animation-delay:.38s}
@@ -104,6 +108,8 @@ footer p.small{max-width:720px;margin:16px auto 0;font-size:12px;color:#77726b}
   .buyrow{justify-content:center}
   .stamp{font-size:22px;left:-14px;bottom:-30px}
   .top .all{padding:8px 10px;letter-spacing:.12em}
+  .top .sub{padding:8px 10px;letter-spacing:.12em;box-shadow:none}
+  .top .display{display:none}
   .exhibit{grid-template-columns:1fr;gap:8px}
   .more{grid-template-columns:repeat(2,minmax(0,1fr))}
   .sticky{display:block;z-index:5;position:fixed;left:0;right:0;bottom:0;padding:10px 14px;background:rgba(11,11,13,.92);
@@ -160,6 +166,7 @@ def build_html(case, related):
     <a href="{STORE_URL}"><img src="{LOGO}" alt="Shadow Gasp"></a>
     <a href="{STORE_URL}" class="display">Shadow Gasp</a>
     <a class="all" href="{STORE_URL}">All case files</a>
+    <a class="sub" href="{SUBSCRIBE_URL}">Subscribe</a>
   </header>
 
   <section class="hero">
@@ -210,6 +217,8 @@ def build_html(case, related):
 
   <footer>
     <p class="display">Pick a case. Turn off the lights.</p>
+    <p class="subline">New case files, straight to your inbox.</p>
+    <a class="buy" href="{SUBSCRIBE_URL}">Subscribe free</a>
     <p class="small">{e(DISCLOSURE)}</p>
   </footer>
 </div>

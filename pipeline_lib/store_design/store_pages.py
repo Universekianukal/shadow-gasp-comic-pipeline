@@ -16,6 +16,9 @@ ISSUE_RE = re.compile(r"#\s*0*(\d+)")
 # the 25-image cap: logo + 4 backdrop characters + 12 covers.
 PER_PAGE = 12
 STORE_URL = "https://shadowgasp.gumroad.com/"
+# Gumroad's own follow form. Custom pages cannot embed it (no data-gumroad hook for following),
+# and their links may only leave for the store host, so every subscribe CTA links here.
+SUBSCRIBE_URL = STORE_URL + "subscribe"
 PAGE_CHARS = [["c27", "51_3_3", "c45", "33_2_0"], ["c36", "32_2_1", "c01", "12_4_1"],
               ["47_3_1", "c24", "53_3_4", "35_3_0"], ["c35", "13_2_1", "29_2_2", "50_3_5"],
               ["45_2_3", "46_4_4", "c12", "48_4_1"]]
@@ -69,7 +72,15 @@ CSS = """
 .sg .top img{width:52px;height:52px;border-radius:50%;border:2px solid var(--red)}
 .sg .top .display{font-size:34px}
 .sg .top small{display:block;color:var(--muted);font-size:11px;letter-spacing:.24em;text-transform:uppercase}
-.sg .tape{margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:800;letter-spacing:.2em;
+.sg .top .sub{margin-left:auto;order:3;background:var(--red);color:#fff;font-size:12px;font-weight:800;letter-spacing:.18em;
+  text-transform:uppercase;padding:10px 16px;border-radius:2px;box-shadow:4px 4px 0 var(--red-deep)}
+.sg .top .sub:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--red-deep)}
+.sg .subscribe{display:flex;flex-wrap:wrap;gap:18px 32px;align-items:center;justify-content:space-between;margin:28px 0 0;
+  padding:26px 28px;border:1px solid var(--line);background:linear-gradient(90deg,rgba(208,52,44,.18),rgba(20,20,24,.6))}
+.sg .subscribe .display{font-size:clamp(30px,4vw,42px)}
+.sg .subscribe p{margin:6px 0 0;color:#d9d3ca}
+.sg .foot .btn{margin-top:22px}
+.sg .tape{order:2;margin-left:18px;background:var(--red);color:#fff;font-size:11px;font-weight:800;letter-spacing:.2em;
   text-transform:uppercase;padding:6px 12px;transform:rotate(-2deg)}
 .sg .hero{display:grid;grid-template-columns:minmax(0,340px) 1fr;gap:clamp(24px,5vw,64px);align-items:center;padding:clamp(32px,6vw,72px) 0}
 .sg .hero-cover{position:relative;aspect-ratio:368/564;overflow:hidden;border-radius:4px;
@@ -193,7 +204,8 @@ def header(total, k):
     return (
         f'<header class="top"><a{home}><img src="{LOGO}" alt="Shadow Gasp"></a>'
         f'<a{home}><h2 class="display">Shadow Gasp</h2><small>True crime · Documentary comics</small></a>'
-        f'<span class="tape">{total} case files open</span></header>'
+        f'<span class="tape">{total} case files open</span>'
+        f'<a class="sub" href="{SUBSCRIBE_URL}">Subscribe</a></header>'
     )
 
 
@@ -223,6 +235,12 @@ def intro(live, profile):
             f"<p>{e(tagline(first.get('description'), 170))}</p></div>"
             f'<a class="btn ghost" href="{e(first["short_url"])}">Pay what you want</a></section>'
         )
+    parts.append(
+        '<section class="subscribe"><div>'
+        '<h2 class="display">Never miss a case file</h2>'
+        "<p>Subscribe and every new case lands in your inbox the day it opens.</p></div>"
+        f'<a class="btn" href="{SUBSCRIBE_URL}">Subscribe free</a></section>'
+    )
     return parts
 
 
@@ -239,7 +257,8 @@ def page(live, k, pages, profile):
         '<ul class="grid">' + "".join(card(p, i) for i, p in enumerate(chunk)) + "</ul>",
         pager(k, pages),
         f'<footer class="foot"><p class="display">{html.escape(profile["closer"])}</p>'
-        "<p>New case files are added as they are researched.</p></footer>",
+        "<p>New case files are added as they are researched.</p>"
+        f'<a class="btn" href="{SUBSCRIBE_URL}">Subscribe for new cases</a></footer>',
         "</div></div>",
     ]
     return "\n".join(parts)

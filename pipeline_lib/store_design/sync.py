@@ -7,7 +7,7 @@
 2. --cut-issues 54,55: cut CANDIDATE characters for existing comics from their committed carousel
    slides (on the Actions runner, not a laptop). Nothing goes live from this.
    --approve 54_3_1,56_4_4: move reviewed candidates into chars/ and re-render those comics.
-   --refresh-issues 54,56: re-render those comics' landing pages (e.g. after removing a character).
+   --refresh-issues 54,56 | all: re-render those (or all) comics' landing pages.
 3. The store pages (home + /case-files-N) are rebuilt from the product list and pushed only when
    their HTML differs from what was last pushed (state.json).
 
@@ -159,8 +159,12 @@ def main():
 
     if a.cut_issues:
         cut_characters([int(x) for x in _list(a.cut_issues)])
-    force = approve(_list(a.approve)) | {int(x) for x in _list(a.refresh_issues)}
     products = publish.list_products()
+    refresh = _list(a.refresh_issues)
+    if "all" in refresh:
+        # A template change: re-render every published comic's page.
+        refresh = [store_pages.issue_no(p["name"]) for p in store_pages.live_issues(products)]
+    force = approve(_list(a.approve)) | {int(x) for x in refresh}
     if not a.dry_run:
         force |= auto_approve(products)
     upgraded, bad_landings = upgrade_landings(products, a.dry_run, force)
