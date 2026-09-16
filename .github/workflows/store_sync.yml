@@ -7,8 +7,11 @@ name: Store Sync (Gumroad storefront pages)
 # Pushes only what changed (store_design/state.json). Publication comes from the Gumroad API's
 # `published` field, never from a page answering 200 -- drafts answer 200 too.
 #
-# Manual: cut_issues="54,55" cuts backdrop characters for existing comics from their committed
-# carousel slides on this runner (never a laptop) and re-renders those comics' landing pages.
+# Manual:
+#  cut_issues="54,55"        cut CANDIDATE backdrop characters from those comics' committed carousel
+#                            slides on this runner (never a laptop); review candidates/<NN>_sheet.png
+#  approve_chars="54_3_1"    move reviewed candidates into the live set and re-render those comics
+#  refresh_issues="54,56"    re-render those comics' landing pages
 
 on:
   schedule:
@@ -17,6 +20,14 @@ on:
     inputs:
       cut_issues:
         description: "Optional: issue numbers to cut backdrop characters for, e.g. 54,55,56"
+        required: false
+        default: ""
+      approve_chars:
+        description: "Optional: candidate keys to put live, e.g. 57_3_1,57_4_0 (see candidates/<NN>_sheet.png)"
+        required: false
+        default: ""
+      refresh_issues:
+        description: "Optional: issue numbers whose landing page to re-render"
         required: false
         default: ""
       dry_run:
@@ -67,21 +78,25 @@ jobs:
       - name: Sync storefront
         env:
           CUT_ISSUES: ${{ github.event.inputs.cut_issues }}
+          APPROVE: ${{ github.event.inputs.approve_chars }}
+          REFRESH: ${{ github.event.inputs.refresh_issues }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           cd pipeline_lib
           ARGS=()
           [ -n "$CUT_ISSUES" ] && ARGS+=(--cut-issues "$CUT_ISSUES")
+          [ -n "$APPROVE" ] && ARGS+=(--approve "$APPROVE")
+          [ -n "$REFRESH" ] && ARGS+=(--refresh-issues "$REFRESH")
           [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
           python -m store_design.sync "${ARGS[@]}"
 
-      - name: Commit sync state and new characters
+      - name: Commit sync state and characters
         if: always()
         run: |
           git config user.name "shadow-gasp-bot"
           git config user.email "bot@shadowgasp.example"
-          git add pipeline_lib/store_design/state.json pipeline_lib/store_design/chars/
+          git add -A pipeline_lib/store_design/state.json pipeline_lib/store_design/chars/ pipeline_lib/store_design/candidates/
           git commit -m "store sync: storefront state" || { echo "nothing to commit"; exit 0; }
           for attempt in 1 2 3; do
             git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME" && exit 0

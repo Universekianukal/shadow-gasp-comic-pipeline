@@ -5,11 +5,15 @@
 Slides 2-4 of a carousel are real comic pages centred on a 1080x1350 card. Each page is split
 into panels on its gutters, every panel goes through rembg's human-segmentation model, and a
 cut-out is kept only when it is one solid figure with no lettering in it. The best few are tinted
-blood-red and written to chars/<NN>_<slide>_<panel>.json.
+blood-red and written to candidates/<NN>_<slide>_<panel>.json, with a preview sheet
+candidates/<NN>_sheet.png.
 
-The 2026-09-16 set was hand-picked from 103 candidates; this keeps the same filters but nobody
-looks, so a messy cut-out can occasionally get through. Needs: rembg, onnxruntime, scipy, numpy,
-Pillow (rapidocr-onnxruntime optional, for the lettering check).
+⭐⭐ CANDIDATES ONLY. The human-segmentation model happily cuts out life rings, palm trees and
+headless torsos (first cloud run, 2026-09-16: 5 of 6 picks were junk), and a face detector did not
+separate them either (YuNet at 0.7 kept 5 junk and lost two thirds of the good figures). Nothing
+reaches a live page until someone approves it: store_sync.yml approve_chars=<keys> moves the
+chosen files into chars/. Needs: rembg, onnxruntime, scipy, numpy, Pillow
+(rapidocr-onnxruntime optional, for the lettering check).
 """
 import argparse
 import base64
@@ -21,7 +25,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CHARS_DIR = os.path.join(HERE, "chars")
+CANDIDATES_DIR = os.path.join(HERE, "candidates")
 PAGE_BOX = (150, 115, 930, 1318)  # the comic page inside a carousel slide
 BODY = np.array([36, 22, 26], float)    # silhouette fill, a touch lighter than the #0b0b0d ground
 LIGHT = np.array([150, 44, 38], float)  # highlights glow blood-red
@@ -97,7 +101,7 @@ def candidates(slides):
             yield f"{slide}_{k}", fig, cover * main
 
 
-def cut_issue(issue, slides, keep=3):
+def cut_issue(issue, slides, keep=6):
     try:
         from rapidocr_onnxruntime import RapidOCR
         ocr = RapidOCR()
@@ -110,18 +114,36 @@ def cut_issue(issue, slides, keep=3):
         picked.append((name, fig))
         if len(picked) == keep:
             break
-    os.makedirs(CHARS_DIR, exist_ok=True)
-    written = []
+    os.makedirs(CANDIDATES_DIR, exist_ok=True)
+    written, shaded = [], []
     for name, fig in picked:
         img = shade(fig)
         buf = io.BytesIO()
         img.save(buf, "WEBP", quality=60, method=6)
         key = f"{int(issue):02d}_{name}"
-        with open(os.path.join(CHARS_DIR, f"{key}.json"), "w", encoding="utf-8", newline="\n") as f:
+        with open(os.path.join(CANDIDATES_DIR, f"{key}.json"), "w", encoding="utf-8", newline="\n") as f:
             json.dump({"uri": "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode(),
                        "w": img.width, "h": img.height}, f, separators=(",", ":"))
         written.append(key)
+        shaded.append(img)
+    if shaded:
+        _sheet(issue, written, shaded)
     return written
+
+
+def _sheet(issue, keys, images):
+    """One PNG to review an issue's candidates by eye (on GitHub or anywhere)."""
+    from PIL import ImageDraw
+
+    cell = 260
+    sheet = Image.new("RGBA", (cell * len(images), cell + 30), (11, 11, 13, 255))
+    draw = ImageDraw.Draw(sheet)
+    for i, (key, img) in enumerate(zip(keys, images)):
+        thumb = img.copy()
+        thumb.thumbnail((cell - 20, cell - 10))
+        sheet.alpha_composite(thumb, (i * cell + 10, 28))
+        draw.text((i * cell + 10, 8), key, fill=(255, 220, 0))
+    sheet.convert("RGB").save(os.path.join(CANDIDATES_DIR, f"{int(issue):02d}_sheet.png"))
 
 
 def main():

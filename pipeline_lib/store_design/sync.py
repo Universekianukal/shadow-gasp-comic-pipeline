@@ -4,8 +4,10 @@
 
 1. Any PUBLISHED comic whose landing page is not in this design (a build that fell back to the
    old template, or a comic made before it) gets one, built from its current page's own text.
-2. --cut-issues 54,55: cut characters for existing comics from their committed carousel slides
-   (so the work runs on the Actions runner, not a laptop) and re-render those landing pages.
+2. --cut-issues 54,55: cut CANDIDATE characters for existing comics from their committed carousel
+   slides (on the Actions runner, not a laptop). Nothing goes live from this.
+   --approve 54_3_1,56_4_4: move reviewed candidates into chars/ and re-render those comics.
+   --refresh-issues 54,56: re-render those comics' landing pages (e.g. after removing a character).
 3. The store pages (home + /case-files-N) are rebuilt from the product list and pushed only when
    their HTML differs from what was last pushed (state.json).
 
@@ -46,8 +48,22 @@ def cut_characters(issues):
             d = json.load(f)["dir"]
         slides = [os.path.join(REPO, "carousel", d, f"{i}.jpg") for i in (2, 3, 4)]
         cut[n] = characters.cut_issue(n, [s for s in slides if os.path.exists(s)])
-        print(f"#{n}: characters {cut[n] or 'none usable'}")
+        print(f"#{n}: candidate characters {cut[n] or 'none usable'}")
     return cut
+
+
+def approve(keys):
+    """Move reviewed candidates into the live set; returns the issues they belong to."""
+    issues = set()
+    for key in keys:
+        src = os.path.join(HERE, "candidates", f"{key}.json")
+        if not os.path.exists(src):
+            print(f"::warning::no candidate {key}")
+            continue
+        os.replace(src, os.path.join(HERE, "chars", f"{key}.json"))
+        issues.add(int(key.split("_", 1)[0]))
+        print(f"approved {key}")
+    return issues
 
 
 def upgrade_landings(products, dry_run, force=()):
@@ -101,9 +117,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--cut-issues", default="", help="comma-separated issue numbers")
+    ap.add_argument("--approve", default="", help="comma-separated candidate keys, e.g. 54_3_1")
+    ap.add_argument("--refresh-issues", default="", help="comma-separated issue numbers")
     a = ap.parse_args()
-    issues = [int(x) for x in a.cut_issues.replace(" ", "").split(",") if x]
-    force = [n for n, keys in cut_characters(issues).items() if keys] if issues else []
+
+    def _list(value):
+        return [x for x in value.replace(" ", "").split(",") if x]
+
+    if a.cut_issues:
+        cut_characters([int(x) for x in _list(a.cut_issues)])
+    force = approve(_list(a.approve)) | {int(x) for x in _list(a.refresh_issues)}
     products = publish.list_products()
     upgraded, bad_landings = upgrade_landings(products, a.dry_run, force)
     pushed, bad_pages = sync_store(products, a.dry_run)

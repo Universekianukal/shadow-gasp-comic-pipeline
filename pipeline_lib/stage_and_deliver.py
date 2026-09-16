@@ -736,16 +736,18 @@ def main():
         print(f"WARNING: carousel build failed ({e}) — continuing without it")
 
     # ---- Backdrop characters for the storefront design (2026-09-16) ----
-    # People cut out of the carousel's story pages (slides 2-4) on this runner's CPU, filed under
-    # pipeline_lib/store_design/chars/ and committed with the ledgers. Never fatal: without them the
-    # landing page simply uses the shared set.
+    # People cut out of the carousel's story pages (slides 2-4) on this runner's CPU, filed as
+    # CANDIDATES under pipeline_lib/store_design/candidates/ and committed with the ledgers. They go
+    # live only once approved (store_sync.yml approve_chars) -- the model also cuts out props.
+    # Never fatal: the landing page uses the hand-picked shared set meanwhile.
     try:
         from store_design import characters as _characters
         _slides = [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                 "carousel", carousel_entry["dir"], f"{i}.jpg") for i in (2, 3, 4)]
         _cut = _characters.cut_issue(int(str(script.get("issue_no", "0")).lstrip("0") or 0),
                                      [p for p in _slides if os.path.exists(p)])
-        print(f"backdrop characters: {_cut or 'none usable -- shared set'}", flush=True)
+        print(f"backdrop character candidates: {_cut or 'none usable'} "
+              "(review candidates/<NN>_sheet.png, approve with store_sync.yml)", flush=True)
     except Exception as e:
         print(f"WARNING: character cut-outs skipped ({e})", flush=True)
 
