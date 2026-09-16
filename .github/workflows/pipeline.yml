@@ -115,8 +115,8 @@ on:
         required: false
         default: "false"
       # Rename a book without regenerating it. The script comes back from the KV cache with the
-      # title it was written under; this replaces only script["title"] (cover, PDF, product name,
-      # permalink, carousel) before anything is built. Added 2026-09-16 for #54, whose cached title
+      # title it was written under; this replaces every field holding that title (cover, title page,
+      # product name, permalink, carousel) and the PDF name before anything is built. Added 2026-09-16 for #54, whose cached title
       # THE GHOST SHIP duplicated #20's.
       title_override:
         description: "Optional: new book title, replacing the one in the (cached) script"
@@ -308,13 +308,29 @@ jobs:
           NEW_TITLE: ${{ github.event.inputs.title_override }}
         run: |
           python - <<'PY'
-          import glob, json, os
+          import glob, json, os, re
           path = sorted(glob.glob(f"cases/{os.environ['slug']}/script_issue*.json"))[0]
           script = json.load(open(path, encoding="utf-8"))
           old, new = script.get("title", ""), os.environ["NEW_TITLE"].strip()
-          script["title"] = new
+          # The title is copied into several fields (cover.title printed on the cover,
+          # title_page.heading, ...): replace every string that IS the old title, nothing else.
+          hits = []
+          def swap(node, where):
+              if isinstance(node, dict):
+                  for k, v in node.items():
+                      if isinstance(v, str) and v.strip().lower() == old.strip().lower():
+                          node[k] = new; hits.append(f"{where}.{k}")
+                      else:
+                          swap(v, f"{where}.{k}")
+              elif isinstance(node, list):
+                  for i, v in enumerate(node):
+                      swap(v, f"{where}[{i}]")
+          swap(script, "script")
+          # The PDF (and the buyer's download) is named after the title too.
+          words = re.sub(r"[^A-Za-z0-9]+", "_", new.title()).strip("_")
+          script["output"] = f"{words}_issue{script.get('issue_no', '')}.pdf"
           json.dump(script, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-          print(f"title: {old!r} -> {new!r} in {path}")
+          print(f"title: {old!r} -> {new!r} in {path}: {', '.join(hits)}; output={script['output']}")
           PY
 
       - name: Fit panel sizes to the page layout
