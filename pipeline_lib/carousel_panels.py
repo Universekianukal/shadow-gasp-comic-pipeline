@@ -60,21 +60,58 @@ def panels(doc, first, last, skip_pages):
     return out
 
 
+STORY_SHARE = 0.7   # story panels come from the first 70% of the preview window
+
+
 def pick_panels(doc):
+    """Hook as v2; story = the best panel from each of STORY_PANELS equal slices of the EARLY window,
+    so the carousel follows the book from its opening (owner, 2026-09-17: #1 skipped straight to
+    the suspects); cliffhanger = the best panel after the last story panel, still inside the window."""
     base = v2.pick(doc)
     first, last = base["window"]
     cands = panels(doc, first, last, {base["hook"]})
+    if not cands:
+        return base["hook"], [], None
+    story_end = first + max(STORY_PANELS, int((last - first) * STORY_SHARE))
+    early = [c for c in cands if c["page"] <= story_end]
     story = []
-    for c in sorted(cands, key=lambda c: -c["score"]):
+    span = (story_end - first + 1) / STORY_PANELS
+    for k in range(STORY_PANELS):
+        lo, hi = first + k * span, first + (k + 1) * span
+        bucket = [c for c in early if lo <= c["page"] < hi and all(c["page"] != s["page"] for s in story)]
+        if bucket:
+            story.append(max(bucket, key=lambda c: c["score"]))
+    # a bucket with no art: fill from the remaining early panels, still one per page
+    for c in sorted(early, key=lambda c: -c["score"]):
+        if len(story) >= STORY_PANELS:
+            break
         if all(c["page"] != s["page"] for s in story):
             story.append(c)
-        if len(story) == STORY_PANELS:
-            break
     story.sort(key=lambda c: (c["page"], c["box"][1], c["box"][0]))
-    rest = [c for c in cands if c not in story and all(c["page"] != s["page"] for s in story)]
-    later = [c for c in rest if story and c["page"] > story[-1]["page"]]
-    cliff = max(later or rest, key=lambda c: c["score"]) if (later or rest) else None
+    after = [c for c in cands if story and c["page"] > story[-1]["page"]]
+    rest = [c for c in cands if all(c["page"] != s["page"] for s in story)]
+    pool = after or rest
+    cliff = max(pool, key=lambda c: c["score"]) if pool else None
     return base["hook"], story, cliff
+
+
+def _is_sfx(block):
+    """Lettered sound effects ("WHOOSH WHOOSH WHOOSH") are art, not narration."""
+    words = block.split()
+    return len(words) >= 3 and len(set(w.strip(".,!?").upper() for w in words)) <= 2
+
+
+def _drop_sfx_runs(text):
+    out, words = [], text.split()
+    i = 0
+    while i < len(words):
+        j = i
+        while j + 1 < len(words) and words[j + 1].upper() == words[i].upper():
+            j += 1
+        if j - i < 2:                       # a word said 3+ times in a row is a sound effect
+            out.extend(words[i:j + 1])
+        i = j + 1
+    return " ".join(out)
 
 
 def render_panel(doc, c, width=1000):
@@ -86,7 +123,8 @@ def render_panel(doc, c, width=1000):
     pix = doc[c["page"] - 1].get_pixmap(clip=rect, dpi=min(dpi, 600))
     # Narration boxes only: page numbers and short act labels ("ACCIDENT") are text too.
     blocks = [" ".join(bl[4].split()) for bl in doc[c["page"] - 1].get_text("blocks", clip=rect)]
-    text = " ".join(t for t in blocks if len(t) > 25 and not t.isdigit())
+    text = " ".join(t for t in blocks if len(t) > 25 and not t.isdigit() and not _is_sfx(t))
+    text = _drop_sfx_runs(text)
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples), text
 
 
