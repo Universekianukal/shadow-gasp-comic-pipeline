@@ -17,7 +17,7 @@ CHARS_DIR = os.path.join(HERE, "chars")
 
 # The strongest figures, used where an issue has none of its own.
 POOL = ["c27", "51_3_3", "c45", "33_2_0", "c36", "32_2_1", "c01", "12_4_1", "47_3_1", "c35",
-        "13_2_1", "29_2_2", "50_3_5", "c24", "45_2_3", "35_3_0", "46_4_4", "c12", "53_3_4", "48_4_1"]
+        "13_2_1", "29_2_2", "50_3_5", "c24", "45_2_3", "35_3_0", "c16", "c12", "53_3_4", "48_4_1"]
 # (side, top as % of page height)
 STORE_SLOTS = [("right", 2), ("left", 26), ("right", 50), ("left", 74)]
 # Comic pages: the hero cover already fills the top right.

@@ -21,7 +21,7 @@ STORE_URL = "https://shadowgasp.gumroad.com/"
 SUBSCRIBE_URL = STORE_URL + "subscribe"
 PAGE_CHARS = [["c27", "51_3_3", "c45", "33_2_0"], ["c36", "32_2_1", "c01", "12_4_1"],
               ["47_3_1", "c24", "53_3_4", "35_3_0"], ["c35", "13_2_1", "29_2_2", "50_3_5"],
-              ["45_2_3", "46_4_4", "c12", "48_4_1"]]
+              ["45_2_3", "c16", "c12", "48_4_1"]]
 LOGO = "https://public-files.gumroad.com/cl21bznqqeyqx5d90dwf3rix9uva"
 # Fallback only: the live text comes from the Gumroad profile bio (profile_text), so an edit there
 # reaches the store at the next sync. The hard-coded copy once said 25–50 pages while the profile
