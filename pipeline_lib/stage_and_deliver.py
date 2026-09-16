@@ -724,15 +724,30 @@ def main():
         # Never fatal. A finished, priced, uploaded book must not be lost to a marketing asset.
         print(f"WARNING: social poster build failed ({e}) — continuing without it")
 
+    carousel_entry = None
     # ---- Instagram/Facebook carousel, from the real pages (2026-09-15) ----
     # Same reason as the poster: this is the only moment the pages exist. Filed under carousel/ (committed
     # with the ledgers) so /carousel <n> in Telegram can show the draft later. Opening third only -- never
     # the ending. Never fatal.
     try:
         import carousel_from_book
-        carousel_from_book.build(comic_dir, script, pdf_path, permalink)
+        carousel_entry = carousel_from_book.build(comic_dir, script, pdf_path, permalink)
     except Exception as e:
         print(f"WARNING: carousel build failed ({e}) — continuing without it")
+
+    # ---- Backdrop characters for the storefront design (2026-09-16) ----
+    # People cut out of the carousel's story pages (slides 2-4) on this runner's CPU, filed under
+    # pipeline_lib/store_design/chars/ and committed with the ledgers. Never fatal: without them the
+    # landing page simply uses the shared set.
+    try:
+        from store_design import characters as _characters
+        _slides = [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "carousel", carousel_entry["dir"], f"{i}.jpg") for i in (2, 3, 4)]
+        _cut = _characters.cut_issue(int(str(script.get("issue_no", "0")).lstrip("0") or 0),
+                                     [p for p in _slides if os.path.exists(p)])
+        print(f"backdrop characters: {_cut or 'none usable -- shared set'}", flush=True)
+    except Exception as e:
+        print(f"WARNING: character cut-outs skipped ({e})", flush=True)
 
     # Square storefront tile, styled as a comic cover. A shop tile for a comic
     # IS its cover -- series banner, title, issue number. A bare atmospheric
@@ -794,7 +809,27 @@ def main():
     # product's own just-uploaded cover URL. Only ever published if Gumroad's
     # own sanitizer reports it clean -- a broken landing page would make the
     # product unpurchasable, worse than just leaving the default page.
+    #
+    # The storefront design (store_design/, live since 2026-09-16) is tried first; any failure there
+    # falls through to the original template below, which is left exactly as it was.
+    landing_done = False
     try:
+        if not product_id:
+            raise RuntimeError("no Gumroad product was staged")
+        import gen_landing_page
+        from store_design import cases as _cases, landing as _landing, publish as _publish
+        _products = _publish.list_products()
+        _product = next(p for p in _products if p["id"] == product_id)
+        _case = _cases.from_script(script, _product, gen_landing_page._fact_paragraphs(script))
+        ok, err = _publish.publish_landing(
+            product_id, _landing.build_html(_case, _cases.related(_products, _case["issue_no"])))
+        print(f"Landing page (storefront design): {'published' if ok else 'FAILED (' + str(err) + ')'}")
+        landing_done = ok
+    except Exception as e:
+        print(f"WARNING: storefront-design landing page failed ({e}) -- trying the original template")
+    try:
+        if landing_done:
+            raise StopIteration
         if not product_id:
             raise RuntimeError("no Gumroad product was staged")
         import gen_landing_page
@@ -806,6 +841,8 @@ def main():
                 f.write(gen_landing_page.build_html(script, cover_url))
             ok, err = gen_landing_page.publish_if_safe(product_id, landing_path)
             print(f"Landing page: {'published' if ok else 'SKIPPED (' + str(err) + ')'}")
+    except StopIteration:
+        pass
     except Exception as e:
         print(f"WARNING: landing page step failed ({e}) — default product page stays in place")
 
