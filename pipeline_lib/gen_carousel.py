@@ -176,8 +176,10 @@ def publish_entry(slide_paths, slug, issue, title, permalink, caption, repo=REPO
     edir = os.path.join(repo, "carousel", "entries")
     os.makedirs(edir, exist_ok=True)
     # One listing per comic: a rebuild replaces it (the older slide folder is simply no longer referenced).
+    # Matched on the ISSUE NUMBER, never the slug: two comics can share a slug (#54 "THE GHOST SHIP"
+    # deleted #20's 020-the-ghost-ship.json on 2026-09-16), and a retitled rebuild changes the slug.
     for old in os.listdir(edir):
-        if old[:1].isdigit() and old.split("-", 1)[-1] == f"{slug}.json":
+        if old.endswith(".json") and old.split("-", 1)[0] == f"{int(issue):03d}":
             os.remove(os.path.join(edir, old))
     with open(os.path.join(edir, f"{int(issue):03d}-{slug}.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(entry, f, indent=2, ensure_ascii=False)

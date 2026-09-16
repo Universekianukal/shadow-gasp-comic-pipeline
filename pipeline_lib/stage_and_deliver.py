@@ -128,6 +128,51 @@ def slugify(title):
     return s[:40].strip("-") or "issue"
 
 
+def _issue_in_name(name):
+    """'SHADOW GASP #20: THE GHOST SHIP' -> 20; None when the name carries no issue number."""
+    m = re.search(r"#\s*0*(\d+)\b", name or "")
+    return int(m.group(1)) if m else None
+
+
+def _owner_of(permalink, products):
+    return next((p for p in products
+                 if p.get("custom_permalink") == permalink
+                 or (p.get("short_url") or "").rstrip("/").endswith("/" + permalink)), None)
+
+
+def book_permalink(title, issue_no):
+    """The permalink this issue will live at, decided ONCE and used by every step.
+
+    Normally slugify(title). But two books can share a title slug: #54 (MV Joyita) was titled
+    GHOST SHIP while #20 THE GHOST SHIP already owned /l/the-ghost-ship, so on 2026-09-16 the
+    build refused to overwrite #20 and #54 shipped with no product, no Publish button and no
+    funnel. When a DIFFERENT issue owns the slug, this issue takes '<slug>-<issue>' instead. A
+    product with the SAME issue number is this book's own earlier build, so the plain slug stays
+    and stage_draft's rebuild path updates it as before.
+    """
+    base = slugify(title)
+    try:
+        issue = int(issue_no)
+    except (TypeError, ValueError):
+        return base
+    try:
+        products = gumroad(["products", "list", "--all"]).get("products", [])
+    except Exception as e:
+        # Unchanged behaviour when Gumroad can't be asked; stage_draft still refuses to touch
+        # another issue's product.
+        print(f"WARNING: could not check permalink '{base}' for collisions ({e})", flush=True)
+        return base
+    for candidate in (base, f"{base[:36].strip('-')}-{issue}"):
+        owner = _owner_of(candidate, products)
+        if owner is None or _issue_in_name(owner.get("name")) == issue:
+            if candidate != base:
+                other = _issue_in_name(_owner_of(base, products).get("name"))
+                print(f"permalink '{base}' belongs to #{other} -- issue #{issue} will live at "
+                      f"'{candidate}'", flush=True)
+            return candidate
+    raise RuntimeError(f"permalinks '{base}' and '{base}-{issue}' both belong to other issues")
+
+
 def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
                 preview_paths=None, thumbnail_path=None, permalink=None):
     # Deliberate defaults, all left OFF because the API's absence of a flag IS
@@ -164,11 +209,16 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
         # the first one left behind and the whole run dies at the last step. Update that draft
         # in place instead: a rebuild is meant to REPLACE the previous attempt, not to fail or
         # to litter the store with poisoned-ground-2.
-        existing = next((p for p in gumroad(["products", "list", "--all"]).get("products", [])
-                         if p.get("custom_permalink") == permalink
-                         or (p.get("short_url") or "").rstrip("/").endswith("/" + permalink)), None)
+        existing = _owner_of(permalink, gumroad(["products", "list", "--all"]).get("products", []))
         if not existing:
             raise
+        mine, theirs = _issue_in_name(name), _issue_in_name(existing.get("name"))
+        if mine is not None and theirs is not None and mine != theirs:
+            # Another issue's product, not an earlier build of this one -- even a draft must not
+            # be overwritten with this book's file. book_permalink() normally prevents this.
+            raise RuntimeError(
+                f"permalink '{permalink}' belongs to a different issue (#{theirs}, "
+                f"{existing['id']}); not touching it")
         if existing.get("published") or (existing.get("sales_count") or 0) > 0:
             # Never silently overwrite something buyers can already see.
             #
@@ -505,6 +555,8 @@ def main():
         raise SystemExit("No script_issueNN.json found")
     script_path = scripts[0]
     script = json.load(open(script_path, encoding="utf-8"))
+    # One permalink for the product, poster, carousel and funnel URL -- see book_permalink().
+    permalink = book_permalink(script["title"], script.get("issue_no"))
 
     build_comic = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_comic.py")
     # ABSOLUTE path. script_path is built from --case-dir, which the workflow passes relative to
@@ -663,7 +715,7 @@ def main():
             # lives at /l/the-silent-sea, and the slug rules differ on apostrophes too --
             # HEAVEN'S GATE is "heavensgate" on the storefront and neither slugify() produces
             # that. Using the exact permalink both sides already hold removes the guess.
-            poster_path = os.path.join(_dest_dir, f"{slugify(script['title'])}-{_digest}.jpg")
+            poster_path = os.path.join(_dest_dir, f"{permalink}-{_digest}.jpg")
             shutil.copyfile(_tmp, poster_path)
             print(f"social poster: promo/{os.path.basename(poster_path)}", flush=True)
         else:
@@ -678,7 +730,7 @@ def main():
     # the ending. Never fatal.
     try:
         import carousel_from_book
-        carousel_from_book.build(comic_dir, script, pdf_path, slugify(script["title"]))
+        carousel_from_book.build(comic_dir, script, pdf_path, permalink)
     except Exception as e:
         print(f"WARNING: carousel build failed ({e}) — continuing without it")
 
@@ -730,7 +782,7 @@ def main():
             pdf_path=pdf_path, cover_path=cover_path, price=args.price,
             description=description, tags=tags, category=DEFAULT_CATEGORY,
             preview_paths=previews, thumbnail_path=thumb_path,
-            permalink=slugify(script["title"]),
+            permalink=permalink,
         )
         print(f"Staged Gumroad draft: {product_id}")
     except Exception as e:
@@ -915,7 +967,7 @@ def main():
         # Same permalink stage_draft() just set, so this is the buyer-facing URL, not a
         # random Gumroad slug. Still a DRAFT url at this point -- the funnel job refuses to
         # put it in a public description until the product is actually published.
-        product_url=f"https://shadowgasp.gumroad.com/l/{slugify(script['title'])}",
+        product_url=f"https://shadowgasp.gumroad.com/l/{permalink}",
         pages=args.target_pages,
         # Straight from the workflow input. Blank means the default pair, which is a real answer
         # and not a missing one -- /regen must be able to tell "built on the default account"
