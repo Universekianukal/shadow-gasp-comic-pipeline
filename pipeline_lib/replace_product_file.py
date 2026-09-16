@@ -10,7 +10,7 @@ This is that narrow half, run only when someone names the product on purpose:
   - the same seller check and product resolution as refresh_store_assets.py,
   - refuses if the rebuilt PDF still carries a single ART PENDING page,
   - `products update <id> --file` (which APPENDS a file embed), then prune_stale_files() so the
-    buyer's download list holds exactly one file: the one just uploaded,
+    buyer's download list holds the new PDF, then a matching EPUB (attach_epub),
   - reads the product back and prints what a buyer now gets.
 It never touches price, name, description, tags, permalink, covers, thumbnail or published state.
 
@@ -25,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from refresh_store_assets import assert_account, build_pdf, placeholder_pages, resolve_product  # noqa: E402
-from stage_and_deliver import gumroad, prune_stale_files  # noqa: E402
+from stage_and_deliver import _file_kind, attach_epub, gumroad, prune_stale_files  # noqa: E402
 
 
 def main():
@@ -65,19 +65,26 @@ def main():
     gumroad(["products", "update", pid, "--file", pdf_path, "--file-name", os.path.basename(pdf_path)])
     print("uploaded the rebuilt PDF", flush=True)
     prune_stale_files(pid)
+    # The EPUB is made from the PDF, so a replaced PDF needs a matching EPUB.
+    try:
+        attach_epub(pid, pdf_path, product["name"])
+    except Exception as e:
+        print(f"WARNING: EPUB not refreshed ({e})", flush=True)
 
     # ⭐ Read it back: what a buyer downloads is the content document's fileEmbeds, not `files`.
     pages = gumroad(["products", "content", "get", pid])
     if isinstance(pages, dict):
         pages = pages.get("pages", [pages])
-    embeds = [n for page in pages for n in ((page.get("description") or {}).get("content") or [])
-              if n.get("type") == "fileEmbed"]
+    embeds = [(n.get("attrs") or {}).get("id") for page in pages
+              for n in ((page.get("description") or {}).get("content") or []) if n.get("type") == "fileEmbed"]
     view = gumroad(["products", "view", pid])
     after = view.get("product", view) or {}
-    print(f"buyer-visible files now: {len(embeds)}  file_info: {after.get('file_info')}  "
+    kinds = {f["id"]: _file_kind(f) for f in after.get("files") or []}
+    got = sorted(kinds.get(i, "?") for i in embeds)
+    print(f"buyer-visible files now: {got}  file_info: {after.get('file_info')}  "
           f"published={after.get('published')}", flush=True)
-    if len(embeds) != 1:
-        raise SystemExit(f"expected exactly 1 downloadable file after the swap, found {len(embeds)} -- check "
+    if got.count("pdf") != 1 or len(got) > 2:
+        raise SystemExit(f"expected exactly 1 PDF (+ 1 EPUB) after the swap, found {got} -- check "
                          "the product's Content tab by hand")
 
 

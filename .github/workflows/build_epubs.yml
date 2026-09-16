@@ -1,0 +1,83 @@
+name: Build EPUBs (Gumroad)
+
+# Gives published comics a fixed-layout EPUB next to their PDF (pipeline_lib/add_epubs.py).
+# New comics get theirs at build time (stage_and_deliver.attach_epub); this backfills and repairs.
+# Every EPUB passes W3C epubcheck before it is uploaded.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: "all, or issue numbers like 3,5,12"
+        required: true
+        default: "all"
+      dry_run:
+        description: "Build and validate only, upload nothing (true/false)"
+        required: false
+        default: "false"
+      force:
+        description: "Rebuild even for comics that already have an EPUB (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-epubs
+  cancel-in-progress: false
+
+jobs:
+  epubs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            pipeline_lib
+            fonts
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install requests Pillow PyMuPDF numpy
+
+      - name: Install epubcheck
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            curl -fsSL -o /tmp/epubcheck.zip https://github.com/w3c/epubcheck/releases/download/v5.1.0/epubcheck-5.1.0.zip && break
+            sleep $((attempt * 5))
+          done
+          unzip -q /tmp/epubcheck.zip -d /tmp
+          java -jar /tmp/epubcheck-5.1.0/epubcheck.jar --version
+
+      - name: Install Gumroad CLI
+        # Same guard as pipeline.yml: `curl | bash` reports success when the download fails.
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            echo "install attempt $attempt failed, retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || {
+            echo "::error::Gumroad CLI did not install after 5 attempts"; exit 1; }
+
+      - name: Authenticate Gumroad CLI
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Build and attach EPUBs
+        env:
+          ISSUES: ${{ github.event.inputs.issues }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          ARGS=(--issues "$ISSUES" --epubcheck /tmp/epubcheck-5.1.0/epubcheck.jar)
+          [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
+          [ "$FORCE" = "true" ] && ARGS+=(--force)
+          python pipeline_lib/add_epubs.py "${ARGS[@]}"

@@ -247,8 +247,19 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
         return existing["id"]
 
 
+def _file_kind(f):
+    """'pdf' / 'epub' / ... from the file's type or name."""
+    kind = (f.get("filetype") or "").lower().lstrip(".")
+    if not kind:
+        kind = os.path.splitext(f.get("name") or "")[1].lower().lstrip(".")
+    return kind
+
+
 def prune_stale_files(product_id):
-    """Leave exactly ONE downloadable file on the product: the newest upload.
+    """Leave ONE downloadable file of each kind on the product: the newest PDF and the newest EPUB.
+
+    (Until 2026-09-17 this kept exactly one file. Buyers now get the comic as PDF + EPUB, and
+    keeping only the last upload would have deleted whichever of the two went up first.)
 
     `products update --file` APPENDS. This is the same trap the covers hit four lines up, and it
     went unnoticed far longer for one reason: a failed cover upload breaks the build loudly,
@@ -266,8 +277,8 @@ def prune_stale_files(product_id):
     same art, one substituted string. A buyer paying $4.99 could open a book that prints a
     different price, and would have no way to tell which of the ten was the real one.
 
-    Keeping the LAST entry is what makes this correct rather than arbitrary: Gumroad returns
-    files in upload order, so the last is the one this run just uploaded.
+    Keeping the LAST entry of each kind is what makes this correct rather than arbitrary: Gumroad
+    returns files in upload order, so the last is the one this run just uploaded.
 
     Best-effort. A staged, priced, uploaded comic must not be lost to a tidying step, so every
     failure here warns and returns instead of raising.
@@ -275,9 +286,12 @@ def prune_stale_files(product_id):
     try:
         product = gumroad(["products", "view", product_id])
         files = (product.get("product", product) or {}).get("files") or []
-        if len(files) < 2:
+        newest = {}
+        for f in files:
+            newest[_file_kind(f)] = f["id"]
+        if len(files) <= len(newest):
             return
-        keep = files[-1]["id"]
+        keep = set(newest.values())
 
         pages = gumroad(["products", "content", "get", product_id])
         if isinstance(pages, dict):
@@ -287,7 +301,7 @@ def prune_stale_files(product_id):
             body["content"] = [
                 node for node in body.get("content", [])
                 if node.get("type") != "fileEmbed"
-                or (node.get("attrs") or {}).get("id") == keep
+                or (node.get("attrs") or {}).get("id") in keep
             ]
 
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
@@ -298,9 +312,27 @@ def prune_stale_files(product_id):
             gumroad(["products", "content", "set", product_id, path, "--yes"])
         finally:
             os.unlink(path)
-        print(f"pruned {len(files) - 1} stale file(s) from {product_id}, kept {keep}", flush=True)
+        print(f"pruned {len(files) - len(keep)} stale file(s) from {product_id}, kept {sorted(keep)}", flush=True)
     except Exception as exc:  # noqa: BLE001 - tidying must never sink a finished build
         print(f"WARNING: could not prune stale files from {product_id}: {exc}", flush=True)
+
+
+def attach_epub(product_id, pdf_path, title, description=""):
+    """Upload a fixed-layout EPUB of this PDF next to it, then prune. Returns the EPUB path.
+
+    Buyers get the comic as PDF + EPUB (owner, 2026-09-17). Raises on failure; callers decide
+    whether that is fatal (it never is for a finished build).
+    """
+    import pdf_to_epub
+
+    epub_path = os.path.splitext(pdf_path)[0] + ".epub"
+    pdf_to_epub.build(pdf_path, epub_path, title, product_id, description)
+    gumroad(["products", "update", product_id, "--file", epub_path,
+             "--file-name", os.path.basename(epub_path)])
+    prune_stale_files(product_id)
+    print(f"EPUB attached: {os.path.basename(epub_path)} "
+          f"({os.path.getsize(epub_path) / 1e6:.1f} MB)", flush=True)
+    return epub_path
 
 
 # Telegram bot API hard limit for sendDocument. Not configurable, not raisable by any plan.
@@ -804,6 +836,10 @@ def main():
             permalink=permalink,
         )
         print(f"Staged Gumroad draft: {product_id}")
+        try:
+            attach_epub(product_id, pdf_path, product_name)
+        except Exception as e:
+            print(f"WARNING: EPUB not attached ({e}) -- the PDF is on the product", flush=True)
     except Exception as e:
         gumroad_error = " ".join(str(e).split())[:300]
         print(f"WARNING: Gumroad draft NOT staged ({gumroad_error}) -- delivering the PDF anyway",
