@@ -76,9 +76,13 @@ def main():
     pdf = download(url, os.path.join(tempfile.mkdtemp(prefix="carousel_src_"), "comic.pdf"))
     print(f"#{a.issue} {title}: fetched the buyer's PDF ({name}, {os.path.getsize(pdf) / 1e6:.1f} MB)", flush=True)
 
-    entry = carousel_from_pdf.build(pdf, int(a.issue), title, hook, a.permalink, repo=a.repo)
-    print(f"carousel: {entry['slides']} slides -> carousel/{entry['dir']}  (hook p{entry['picks']['hook']}, "
-          f"story {entry['picks']['story']})", flush=True)
+    try:
+        import carousel_panels  # v3 panel story (2026-09-17); v2 pages are the fallback
+        entry = carousel_panels.build(pdf, int(a.issue), title, hook, a.permalink, repo=a.repo)
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: panel-story carousel failed ({e}) -- building the page carousel", flush=True)
+        entry = carousel_from_pdf.build(pdf, int(a.issue), title, hook, a.permalink, repo=a.repo)
+    print(f"carousel: {entry['slides']} slides -> carousel/{entry['dir']}  (picks {entry['picks']})", flush=True)
     json.dump(entry, open(a.result, "w", encoding="utf-8"), ensure_ascii=False)
 
 

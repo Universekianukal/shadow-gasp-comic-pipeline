@@ -433,6 +433,9 @@ jobs:
           # Recorded against the book so a later /regen searches the account that actually
           # holds its art. A case is pinned to its account and nothing wrote down which one.
           KAGGLE_ACCOUNT_SLOT: ${{ github.event.inputs.kaggle_account }}
+          # the v3 carousel's story model (carousel_panels.pick_panels_llm)
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER || 'fireworks' }}
         run: |
           python pipeline_lib/stage_and_deliver.py \
             --case-dir cases/${{ env.slug }} \

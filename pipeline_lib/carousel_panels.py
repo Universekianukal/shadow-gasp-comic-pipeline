@@ -108,20 +108,31 @@ def pick_panels_llm(doc, title, hook):
     if len(cands) < STORY_PANELS + 1:
         return hook_page, story, cliff, "art picker (too few captioned panels)"
     items = chr(10).join(f'{i}. (page {c["page"]}) {c["text"][:300]}' for i, c in enumerate(cands))
-    try:
-        import llm
-        ans = llm.LLM(provider=provider, model=os.environ.get("COMIC_LLM_MODEL") or None).json(
-            STORY_PROMPT.format(title=title, hook=hook, n=STORY_PANELS, items=items), max_tokens=3000)
-        ids = [int(x) for x in ans["story"]]
-        cid = int(ans["cliffhanger"])
-        ok = (len(ids) == STORY_PANELS and ids == sorted(set(ids)) and all(0 <= i < len(cands) for i in ids)
-              and ids[-1] < cid < len(cands))
-        if not ok:
-            raise ValueError(f"unusable answer {ans}")
-        return hook_page, [cands[i] for i in ids], cands[cid], "story model: " + str(ans.get("why", ""))[:200]
-    except Exception as e:  # noqa: BLE001 - a carousel must still build
-        print(f"WARNING: story model failed ({e}) -- using the art picker", flush=True)
-        return hook_page, story, cliff, "art picker (model failed)"
+    # Fireworks' reasoning models think silently for minutes, then answer all at once; their
+    # thinking is billed against max_tokens (a small budget returns NOTHING); connections drop
+    # at random. llm.py streams (keeps the socket busy), retries transport errors and doubles a
+    # truncated budget. On top: a roomy first budget, and one fresh ask if the answer is unusable.
+    import time
+    import llm
+    prompt = STORY_PROMPT.format(title=title, hook=hook, n=STORY_PANELS, items=items)
+    last = None
+    for attempt in (1, 2):
+        t0 = time.time()
+        try:
+            ans = llm.LLM(provider=provider, model=os.environ.get("COMIC_LLM_MODEL") or None).json(
+                prompt, max_tokens=12000)
+            ids = [int(x) for x in ans["story"]]
+            cid = int(ans["cliffhanger"])
+            ok = (len(ids) == STORY_PANELS and ids == sorted(set(ids)) and all(0 <= i < len(cands) for i in ids)
+                  and ids[-1] < cid < len(cands))
+            if not ok:
+                raise ValueError(f"unusable answer {ans}")
+            print(f"  story model answered in {time.time() - t0:.0f}s (attempt {attempt})", flush=True)
+            return hook_page, [cands[i] for i in ids], cands[cid], "story model: " + str(ans.get("why", ""))[:200]
+        except Exception as e:  # noqa: BLE001 - a carousel must still build
+            last = e
+            print(f"WARNING: story model attempt {attempt} failed after {time.time() - t0:.0f}s: {e}", flush=True)
+    return hook_page, story, cliff, f"art picker (model failed: {str(last)[:80]})"
 
 
 def pick_panels(doc):
@@ -444,6 +455,23 @@ def build_slides(pdf_path, issue, title, hook, out_dir):
     picks = {"how": how, "hook": hook_page, "story": [(c["page"], [round(v) for v in c["box"]]) for c in story],
              "cliff": (cliff["page"], [round(v) for v in cliff["box"]]) if cliff else None}
     return paths, picks
+
+
+def build(pdf_path, issue, title, hook, permalink, repo=g.REPO):
+    """Same contract as carousel_from_pdf.build(): render, file under carousel/, return the entry."""
+    import tempfile
+    try:
+        import json as _json
+        ov = _json.load(open(os.path.join(repo, "carousel", "hook_overrides.json"), encoding="utf-8"))
+        hook = ov.get(permalink) or hook
+    except (OSError, ValueError):
+        pass
+    paths, picks = build_slides(pdf_path, issue, title, hook or title, tempfile.mkdtemp(prefix="carousel_v3_"))
+    # no page count in captions (owner, 2026-09-17)
+    entry = g.publish_entry(paths, permalink, int(issue), title, permalink,
+                            g.default_caption(hook or title, int(issue), title, ""), repo=repo)
+    entry["picks"] = picks
+    return entry
 
 
 def main():

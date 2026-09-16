@@ -19,7 +19,14 @@ def build(comic_dir, script, pdf_path, permalink, repo=None):
     issue = int(str(script.get("issue_no", "0")).lstrip("0") or 0)
     title = (script.get("title") or "").strip()
     hook = (script.get("promo_hook") or title).strip()
-    entry = carousel_from_pdf.build(pdf_path, issue, title, hook, permalink, repo=repo or carousel_from_pdf.g.REPO)
+    repo = repo or carousel_from_pdf.g.REPO
+    try:
+        # v3 panel story (2026-09-17); the whole-page v2 is the fallback.
+        import carousel_panels
+        entry = carousel_panels.build(pdf_path, issue, title, hook, permalink, repo=repo)
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: panel-story carousel failed ({e}) -- building the page carousel", flush=True)
+        entry = carousel_from_pdf.build(pdf_path, issue, title, hook, permalink, repo=repo)
     print(f"carousel: {entry['slides']} slides from the book -> carousel/{entry['dir']} "
-          f"(hook p{entry['picks']['hook']}, story {entry['picks']['story']})", flush=True)
+          f"(picks {entry['picks']})", flush=True)
     return entry

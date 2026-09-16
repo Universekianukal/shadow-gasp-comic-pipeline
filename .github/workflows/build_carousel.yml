@@ -46,7 +46,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install deps
-        run: pip install Pillow PyMuPDF requests
+        run: pip install Pillow PyMuPDF requests numpy
 
       - name: Install Gumroad CLI
         # `curl ... | bash` reports success when the download fails -- same guard as the pipeline.
@@ -68,6 +68,9 @@ jobs:
           ISSUE: ${{ github.event.inputs.issue }}
           PERMALINK: ${{ github.event.inputs.permalink }}
           HOOK: ${{ github.event.inputs.hook }}
+          # the v3 carousel's story model (carousel_panels.pick_panels_llm)
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          COMIC_LLM_PROVIDER: fireworks
         run: |
           export PATH="$PATH:$HOME/.local/bin"
           python pipeline_lib/build_carousel_store.py --issue "$ISSUE" --permalink "$PERMALINK" --hook "$HOOK" --result /tmp/car_built.json

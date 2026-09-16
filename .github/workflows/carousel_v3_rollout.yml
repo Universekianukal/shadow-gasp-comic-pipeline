@@ -1,0 +1,58 @@
+name: Carousel v3 rollout (rebuild published comics)
+
+# Rebuilds carousels in the panel-story style (pipeline_lib/carousel_v3_rollout.py), one comic at a
+# time, pushing every 5. Nothing is posted: new drafts appear via /carousel <n> as usual.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: "all, or issue numbers like 1,51"
+        required: true
+        default: "all"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: carousel-write
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install requests Pillow PyMuPDF numpy
+
+      - name: Install Gumroad CLI
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || { echo "::error::Gumroad CLI did not install"; exit 1; }
+
+      - name: Authenticate Gumroad CLI
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Rebuild carousels
+        env:
+          ISSUES: ${{ github.event.inputs.issues }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          COMIC_LLM_PROVIDER: fireworks
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          git config user.name "shadow-gasp-bot"
+          git config user.email "bot@shadowgasp.example"
+          cd pipeline_lib && python carousel_v3_rollout.py --issues "$ISSUES"
