@@ -52,17 +52,50 @@ def cut_characters(issues):
     return cut
 
 
+CANDIDATES = os.path.join(HERE, "candidates")
+
+
+def _close(issue):
+    """The owner's decision is made: drop the issue's remaining candidates, sheet and manifest."""
+    for path in glob.glob(os.path.join(CANDIDATES, f"{issue:02d}_*")):
+        os.remove(path)
+
+
 def approve(keys):
-    """Move reviewed candidates into the live set; returns the issues they belong to."""
+    """The owner's picks go live; the rest of those issues' candidates are dropped."""
     issues = set()
     for key in keys:
-        src = os.path.join(HERE, "candidates", f"{key}.json")
+        src = os.path.join(CANDIDATES, f"{key}.json")
         if not os.path.exists(src):
             print(f"::warning::no candidate {key}")
             continue
         os.replace(src, os.path.join(HERE, "chars", f"{key}.json"))
         issues.add(int(key.split("_", 1)[0]))
         print(f"approved {key}")
+    for n in issues:
+        _close(n)
+    return issues
+
+
+def auto_approve(products):
+    """A comic PUBLISHED with nothing picked gets its top candidates (the owner's rule)."""
+    from .characters import AUTO_PICK
+
+    published = {store_pages.issue_no(p["name"]) for p in store_pages.live_issues(products)}
+    issues = set()
+    for path in glob.glob(os.path.join(CANDIDATES, "*_pending.json")):
+        with open(path, encoding="utf-8") as f:
+            pending = json.load(f)
+        n = int(pending["issue"])
+        if n not in published:
+            continue
+        for key in pending["ranked"][:AUTO_PICK]:
+            src = os.path.join(CANDIDATES, f"{key}.json")
+            if os.path.exists(src):
+                os.replace(src, os.path.join(HERE, "chars", f"{key}.json"))
+                print(f"#{n} published with no pick -- auto-approved {key}")
+        _close(n)
+        issues.add(n)
     return issues
 
 
@@ -128,6 +161,8 @@ def main():
         cut_characters([int(x) for x in _list(a.cut_issues)])
     force = approve(_list(a.approve)) | {int(x) for x in _list(a.refresh_issues)}
     products = publish.list_products()
+    if not a.dry_run:
+        force |= auto_approve(products)
     upgraded, bad_landings = upgrade_landings(products, a.dry_run, force)
     pushed, bad_pages = sync_store(products, a.dry_run)
     print(f"landing pages upgraded: {upgraded or 'none'}")

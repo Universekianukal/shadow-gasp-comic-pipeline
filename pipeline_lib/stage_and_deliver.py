@@ -737,17 +737,19 @@ def main():
 
     # ---- Backdrop characters for the storefront design (2026-09-16) ----
     # People cut out of the carousel's story pages (slides 2-4) on this runner's CPU, filed as
-    # CANDIDATES under pipeline_lib/store_design/candidates/ and committed with the ledgers. They go
-    # live only once approved (store_sync.yml approve_chars) -- the model also cuts out props.
-    # Never fatal: the landing page uses the hand-picked shared set meanwhile.
+    # CANDIDATES under pipeline_lib/store_design/candidates/ and committed with the ledgers; their
+    # sheet goes to Telegram below. The owner picks (store_sync.yml approve_chars); publishing with
+    # no pick makes store sync take the top few itself. Never fatal: the landing page uses the
+    # hand-picked shared set meanwhile.
+    character_candidates = []
     try:
         from store_design import characters as _characters
         _slides = [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                 "carousel", carousel_entry["dir"], f"{i}.jpg") for i in (2, 3, 4)]
-        _cut = _characters.cut_issue(int(str(script.get("issue_no", "0")).lstrip("0") or 0),
-                                     [p for p in _slides if os.path.exists(p)])
-        print(f"backdrop character candidates: {_cut or 'none usable'} "
-              "(review candidates/<NN>_sheet.png, approve with store_sync.yml)", flush=True)
+        character_candidates = _characters.cut_issue(
+            int(str(script.get("issue_no", "0")).lstrip("0") or 0),
+            [p for p in _slides if os.path.exists(p)])
+        print(f"backdrop character candidates: {character_candidates or 'none usable'}", flush=True)
     except Exception as e:
         print(f"WARNING: character cut-outs skipped ({e})", flush=True)
 
@@ -983,6 +985,22 @@ def main():
                 print(f"sent {len(sheets)} {label} contact sheet(s) to Telegram", flush=True)
         except Exception as e:
             print(f"WARNING: could not send {label} contact sheets ({e}) -- not fatal", flush=True)
+    # Backdrop character candidates for this comic's storefront page, for the owner to pick from.
+    if character_candidates:
+        try:
+            from store_design import characters as _characters
+            _n = int(str(script.get("issue_no", "0")).lstrip("0") or 0)
+            _auto = ", ".join(character_candidates[:_characters.AUTO_PICK])
+            telegram_send_photo(
+                bot_token, chat_id, _characters.sheet_path(_n),
+                caption=(f"\U0001f3ad #{_n} backdrop characters for its store page: "
+                         f"{', '.join(character_candidates)}\n"
+                         "Pick the ones you want before you publish: tell Claude the codes, or run "
+                         "Store Sync with approve_chars.\n"
+                         f"Publish without picking and these are used automatically: {_auto}"))
+            print("sent character candidates to Telegram", flush=True)
+        except Exception as e:
+            print(f"WARNING: could not send character candidates ({e}) -- not fatal", flush=True)
     # The approval record is ABOUT a Gumroad product -- Publish/Reject act on it -- so with no
     # product there is nothing to approve, and the Worker rejects the registration outright
     # ("missing fields"). Skip it rather than fail the run: the PDF has already been delivered

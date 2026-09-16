@@ -1,8 +1,9 @@
 # Backdrop character candidates
 
-Cut automatically from each new comic's carousel pages (`store_design/characters.py`).
-**None of these are live.** The cutter also picks up props (life rings, palm trees, headless
-torsos), so each issue's `<NN>_sheet.png` is reviewed by eye first.
+Cut automatically from each new comic's carousel pages (`store_design/characters.py`) and sent to
+Telegram as `<NN>_sheet.jpg`. **None of these are live yet.**
 
-To put chosen figures live on that comic's page, run **Store Sync** (`store_sync.yml`) with
-`approve_chars` = the keys printed on the sheet, e.g. `57_3_1,57_4_0`.
+- **Owner picks:** run **Store Sync** (`store_sync.yml`) with `approve_chars` = the codes on the
+  sheet, e.g. `57_3_1,57_4_0` (or ask Claude). The rest of that comic's candidates are dropped.
+- **No pick:** once the comic is published, the next hourly Store Sync puts the top 3 live itself
+  (`<NN>_pending.json` lists them best first).

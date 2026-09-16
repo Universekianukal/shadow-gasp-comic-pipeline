@@ -6,13 +6,15 @@ Slides 2-4 of a carousel are real comic pages centred on a 1080x1350 card. Each 
 into panels on its gutters, every panel goes through rembg's human-segmentation model, and a
 cut-out is kept only when it is one solid figure with no lettering in it. The best few are tinted
 blood-red and written to candidates/<NN>_<slide>_<panel>.json, with a preview sheet
-candidates/<NN>_sheet.png.
+candidates/<NN>_sheet.jpg (sent to Telegram by the build) and candidates/<NN>_pending.json
+(the keys, best first).
 
 ⭐⭐ CANDIDATES ONLY. The human-segmentation model happily cuts out life rings, palm trees and
 headless torsos (first cloud run, 2026-09-16: 5 of 6 picks were junk), and a face detector did not
 separate them either (YuNet at 0.7 kept 5 junk and lost two thirds of the good figures). Nothing
-reaches a live page until someone approves it: store_sync.yml approve_chars=<keys> moves the
-chosen files into chars/. Needs: rembg, onnxruntime, scipy, numpy, Pillow
+reaches a live page until it is decided: store_sync.yml approve_chars=<keys> puts the owner's
+picks live; if the comic is PUBLISHED with nothing picked, store sync takes the top AUTO_PICK
+itself (the owner's rule, 2026-09-17). Needs: rembg, onnxruntime, scipy, numpy, Pillow
 (rapidocr-onnxruntime optional, for the lettering check).
 """
 import argparse
@@ -128,11 +130,25 @@ def cut_issue(issue, slides, keep=6):
         shaded.append(img)
     if shaded:
         _sheet(issue, written, shaded)
+        with open(pending_path(issue), "w", encoding="utf-8", newline="\n") as f:
+            json.dump({"issue": int(issue), "ranked": written}, f, indent=1)
+            f.write("\n")
     return written
 
 
+AUTO_PICK = 3
+
+
+def pending_path(issue):
+    return os.path.join(CANDIDATES_DIR, f"{int(issue):02d}_pending.json")
+
+
+def sheet_path(issue):
+    return os.path.join(CANDIDATES_DIR, f"{int(issue):02d}_sheet.jpg")
+
+
 def _sheet(issue, keys, images):
-    """One PNG to review an issue's candidates by eye (on GitHub or anywhere)."""
+    """One image to review an issue's candidates by eye (Telegram, GitHub)."""
     from PIL import ImageDraw
 
     cell = 260
@@ -143,7 +159,7 @@ def _sheet(issue, keys, images):
         thumb.thumbnail((cell - 20, cell - 10))
         sheet.alpha_composite(thumb, (i * cell + 10, 28))
         draw.text((i * cell + 10, 8), key, fill=(255, 220, 0))
-    sheet.convert("RGB").save(os.path.join(CANDIDATES_DIR, f"{int(issue):02d}_sheet.png"))
+    sheet.convert("RGB").save(sheet_path(issue), quality=90)
 
 
 def main():
