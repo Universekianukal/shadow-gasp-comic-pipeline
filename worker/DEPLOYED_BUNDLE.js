@@ -14,6 +14,8 @@ var __defProp22222 = Object.defineProperty;
 var __name22222 = /* @__PURE__ */ __name2222((target, value) => __defProp22222(target, "name", { value, configurable: true }), "__name");
 var __defProp222222 = Object.defineProperty;
 var __name222222 = /* @__PURE__ */ __name22222((target, value) => __defProp222222(target, "name", { value, configurable: true }), "__name");
+var __defProp2222222 = Object.defineProperty;
+var __name2222222 = /* @__PURE__ */ __name222222((target, value) => __defProp2222222(target, "name", { value, configurable: true }), "__name");
 var GITHUB_REPO = "Universekianukal/shadow-gasp-comic-pipeline";
 var VIDEO_REPO = "Universekianukal/shadow-gasp-pipeline";
 var KAGGLE_SLOTS = [["IMAGE", "anuragmishra108"], ["VIDEO", "kianukal"], ["MAHADEVI", "mahadevi108"]];
@@ -60,6 +62,7 @@ __name222(tg, "tg");
 __name2222(tg, "tg");
 __name22222(tg, "tg");
 __name222222(tg, "tg");
+__name2222222(tg, "tg");
 async function dispatchAction(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/action.yml/dispatches`,
@@ -84,6 +87,7 @@ __name222(dispatchAction, "dispatchAction");
 __name2222(dispatchAction, "dispatchAction");
 __name22222(dispatchAction, "dispatchAction");
 __name222222(dispatchAction, "dispatchAction");
+__name2222222(dispatchAction, "dispatchAction");
 async function dispatchPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -106,6 +110,7 @@ __name222(dispatchPipeline, "dispatchPipeline");
 __name2222(dispatchPipeline, "dispatchPipeline");
 __name22222(dispatchPipeline, "dispatchPipeline");
 __name222222(dispatchPipeline, "dispatchPipeline");
+__name2222222(dispatchPipeline, "dispatchPipeline");
 async function dispatchPostPromo(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_promo.yml/dispatches`,
@@ -124,13 +129,10 @@ async function dispatchPostPromo(env, inputs) {
 __name(dispatchPostPromo, "dispatchPostPromo");
 __name2(dispatchPostPromo, "dispatchPostPromo");
 __name22(dispatchPostPromo, "dispatchPostPromo");
+__name222(dispatchPostPromo, "dispatchPostPromo");
 async function gumroadProducts(env) {
-  // ⚠️ Gumroad's GET /v2/products returns 10 products per page (RESULTS_PER_PAGE = 10 in its
-  // api/v2/links_controller.rb) and hands over `next_page_key` while more remain. Reading only the
-  // first page made /promo show 10 of 42 comics (2026-09-15). Follow the cursor to the end; the cap
-  // and the repeated-key check mean a misbehaving response can never loop forever.
   const all = [];
-  const seen = new Set();
+  const seen = /* @__PURE__ */ new Set();
   let pageKey = null;
   for (let page = 0; page < 30; page++) {
     const q = `access_token=${encodeURIComponent(env.GUMROAD_ACCESS_TOKEN || "")}` + (pageKey ? `&page_key=${encodeURIComponent(pageKey)}` : "");
@@ -147,6 +149,7 @@ async function gumroadProducts(env) {
 __name(gumroadProducts, "gumroadProducts");
 __name2(gumroadProducts, "gumroadProducts");
 __name22(gumroadProducts, "gumroadProducts");
+__name222(gumroadProducts, "gumroadProducts");
 async function promoPosted(env) {
   try {
     const r = await fetch(
@@ -163,6 +166,7 @@ async function promoPosted(env) {
 __name(promoPosted, "promoPosted");
 __name2(promoPosted, "promoPosted");
 __name22(promoPosted, "promoPosted");
+__name222(promoPosted, "promoPosted");
 var REGISTRY_PATH = "issues.json";
 var KAGGLE_ACCOUNTS_FALLBACK = "-:anuragmishra108,B:mahadevi108,C:kianukal";
 function caseSlug(name) {
@@ -171,6 +175,7 @@ function caseSlug(name) {
 __name(caseSlug, "caseSlug");
 __name2(caseSlug, "caseSlug");
 __name22(caseSlug, "caseSlug");
+__name222(caseSlug, "caseSlug");
 function b64decode(s) {
   const bin = atob(String(s).replace(/\s/g, ""));
   return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
@@ -178,6 +183,7 @@ function b64decode(s) {
 __name(b64decode, "b64decode");
 __name2(b64decode, "b64decode");
 __name22(b64decode, "b64decode");
+__name222(b64decode, "b64decode");
 function b64encode(text) {
   const bytes = new TextEncoder().encode(text);
   let bin = "";
@@ -187,6 +193,7 @@ function b64encode(text) {
 __name(b64encode, "b64encode");
 __name2(b64encode, "b64encode");
 __name22(b64encode, "b64encode");
+__name222(b64encode, "b64encode");
 function ghHeaders(env) {
   return {
     Authorization: `Bearer ${env.GITHUB_TOKEN}`,
@@ -198,12 +205,14 @@ function ghHeaders(env) {
 __name(ghHeaders, "ghHeaders");
 __name2(ghHeaders, "ghHeaders");
 __name22(ghHeaders, "ghHeaders");
+__name222(ghHeaders, "ghHeaders");
 function parseKaggleAccounts(s) {
   return String(s || "").split(",").map((p) => p.split(":")).filter((p) => p.length === 2 && p[0].trim() && p[1].trim()).map((p) => ({ slot: p[0].trim(), handle: p[1].trim() }));
 }
 __name(parseKaggleAccounts, "parseKaggleAccounts");
 __name2(parseKaggleAccounts, "parseKaggleAccounts");
 __name22(parseKaggleAccounts, "parseKaggleAccounts");
+__name222(parseKaggleAccounts, "parseKaggleAccounts");
 async function kaggleAccounts(env) {
   try {
     const r = await fetch(
@@ -223,6 +232,7 @@ async function kaggleAccounts(env) {
 __name(kaggleAccounts, "kaggleAccounts");
 __name2(kaggleAccounts, "kaggleAccounts");
 __name22(kaggleAccounts, "kaggleAccounts");
+__name222(kaggleAccounts, "kaggleAccounts");
 async function readRegistry(env) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/contents/${REGISTRY_PATH}?ref=main`,
@@ -244,6 +254,7 @@ async function readRegistry(env) {
 __name(readRegistry, "readRegistry");
 __name2(readRegistry, "readRegistry");
 __name22(readRegistry, "readRegistry");
+__name222(readRegistry, "readRegistry");
 async function peekCase(env, caseName) {
   const cur = await readRegistry(env);
   if (!cur) return null;
@@ -257,6 +268,7 @@ async function peekCase(env, caseName) {
 __name(peekCase, "peekCase");
 __name2(peekCase, "peekCase");
 __name22(peekCase, "peekCase");
+__name222(peekCase, "peekCase");
 async function reserveCase(env, caseName, wantSlot) {
   const slug = caseSlug(caseName);
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -303,6 +315,7 @@ async function reserveCase(env, caseName, wantSlot) {
 __name(reserveCase, "reserveCase");
 __name2(reserveCase, "reserveCase");
 __name22(reserveCase, "reserveCase");
+__name222(reserveCase, "reserveCase");
 async function dispatchFunnelComicLink(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/funnel_comic_link.yml/dispatches`,
@@ -323,6 +336,7 @@ __name2(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 __name22(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 __name222(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 __name2222(dispatchFunnelComicLink, "dispatchFunnelComicLink");
+__name22222(dispatchFunnelComicLink, "dispatchFunnelComicLink");
 async function dispatchGenCode(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/gen_code.yml/dispatches`,
@@ -345,6 +359,7 @@ __name222(dispatchGenCode, "dispatchGenCode");
 __name2222(dispatchGenCode, "dispatchGenCode");
 __name22222(dispatchGenCode, "dispatchGenCode");
 __name222222(dispatchGenCode, "dispatchGenCode");
+__name2222222(dispatchGenCode, "dispatchGenCode");
 async function dispatchVideoPipeline(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/pipeline.yml/dispatches`,
@@ -367,9 +382,10 @@ __name222(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name2222(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name22222(dispatchVideoPipeline, "dispatchVideoPipeline");
 __name222222(dispatchVideoPipeline, "dispatchVideoPipeline");
-var sleep = /* @__PURE__ */ __name222222((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
+__name2222222(dispatchVideoPipeline, "dispatchVideoPipeline");
+var sleep = /* @__PURE__ */ __name2222222((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "sleep");
 async function dispatchWorkflowVerified(env, workflowFile, inputs) {
-  const dispatchOnce = /* @__PURE__ */ __name222222(async () => {
+  const dispatchOnce = /* @__PURE__ */ __name2222222(async () => {
     const beforeMs2 = Date.now();
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/dispatches`,
@@ -386,7 +402,7 @@ async function dispatchWorkflowVerified(env, workflowFile, inputs) {
     if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
     return beforeMs2;
   }, "dispatchOnce");
-  const runAppeared = /* @__PURE__ */ __name222222(async (afterMs) => {
+  const runAppeared = /* @__PURE__ */ __name2222222(async (afterMs) => {
     const r = await fetch(
       `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5`,
       { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN_VIDEO}`, "User-Agent": "shadow-gasp-bot" } }
@@ -410,6 +426,7 @@ __name222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name2222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name22222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 __name222222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
+__name2222222(dispatchWorkflowVerified, "dispatchWorkflowVerified");
 async function dispatchFinishBatchDay(env, inputs) {
   return dispatchWorkflowVerified(env, "finish_batch_day.yml", inputs);
 }
@@ -420,6 +437,7 @@ __name222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name2222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name22222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 __name222222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
+__name2222222(dispatchFinishBatchDay, "dispatchFinishBatchDay");
 async function dispatchBatchPregen(env, inputs) {
   return dispatchWorkflowVerified(env, "batch_pregen.yml", inputs);
 }
@@ -430,6 +448,7 @@ __name222(dispatchBatchPregen, "dispatchBatchPregen");
 __name2222(dispatchBatchPregen, "dispatchBatchPregen");
 __name22222(dispatchBatchPregen, "dispatchBatchPregen");
 __name222222(dispatchBatchPregen, "dispatchBatchPregen");
+__name2222222(dispatchBatchPregen, "dispatchBatchPregen");
 function pregenKeyboard() {
   return {
     inline_keyboard: [
@@ -445,6 +464,7 @@ __name222(pregenKeyboard, "pregenKeyboard");
 __name2222(pregenKeyboard, "pregenKeyboard");
 __name22222(pregenKeyboard, "pregenKeyboard");
 __name222222(pregenKeyboard, "pregenKeyboard");
+__name2222222(pregenKeyboard, "pregenKeyboard");
 async function ghRaw(env, path) {
   const r = await fetch(`https://raw.githubusercontent.com/${VIDEO_REPO}/main/${path}`, {
     headers: { "User-Agent": "shadow-gasp-bot" }
@@ -459,6 +479,7 @@ __name222(ghRaw, "ghRaw");
 __name2222(ghRaw, "ghRaw");
 __name22222(ghRaw, "ghRaw");
 __name222222(ghRaw, "ghRaw");
+__name2222222(ghRaw, "ghRaw");
 async function hookStillUrl(env, dd) {
   const candidates = [
     `_pipeline/batch/day${dd}/shot1.jpeg`,
@@ -481,6 +502,7 @@ __name22(hookStillUrl, "hookStillUrl");
 __name222(hookStillUrl, "hookStillUrl");
 __name2222(hookStillUrl, "hookStillUrl");
 __name22222(hookStillUrl, "hookStillUrl");
+__name222222(hookStillUrl, "hookStillUrl");
 async function dayPublishState(env, dayNum) {
   let entry = null;
   try {
@@ -514,6 +536,7 @@ __name22(dayPublishState, "dayPublishState");
 __name222(dayPublishState, "dayPublishState");
 __name2222(dayPublishState, "dayPublishState");
 __name22222(dayPublishState, "dayPublishState");
+__name222222(dayPublishState, "dayPublishState");
 async function sendHookStill(env, chatId, imgUrl, caption) {
   const r = await fetch(imgUrl, { headers: { "User-Agent": "shadow-gasp-bot" } });
   if (!r.ok) throw new Error(`couldn't fetch the still: ${r.status}`);
@@ -538,7 +561,8 @@ __name22(sendHookStill, "sendHookStill");
 __name222(sendHookStill, "sendHookStill");
 __name2222(sendHookStill, "sendHookStill");
 __name22222(sendHookStill, "sendHookStill");
-__name222222(hookStillUrl, "hookStillUrl");
+__name222222(sendHookStill, "sendHookStill");
+__name2222222(hookStillUrl, "hookStillUrl");
 async function dispatchCrosspostDecision(env, inputs) {
   return dispatchWorkflowVerified(env, "crosspost_decision.yml", inputs);
 }
@@ -549,6 +573,7 @@ __name222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name2222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name22222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 __name222222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
+__name2222222(dispatchCrosspostDecision, "dispatchCrosspostDecision");
 function fbIgDecisionKeyboard(day) {
   return {
     inline_keyboard: [
@@ -570,6 +595,7 @@ __name222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name2222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name22222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 __name222222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
+__name2222222(fbIgDecisionKeyboard, "fbIgDecisionKeyboard");
 async function dispatchGenerateTitleVariant(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/generate_title_variant.yml/dispatches`,
@@ -592,6 +618,7 @@ __name222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name2222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name22222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 __name222222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
+__name2222222(dispatchGenerateTitleVariant, "dispatchGenerateTitleVariant");
 async function dispatchRetitlePublished(env, inputs) {
   const r = await fetch(
     `https://api.github.com/repos/${VIDEO_REPO}/actions/workflows/retitle_published.yml/dispatches`,
@@ -614,6 +641,7 @@ __name222(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name2222(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name22222(dispatchRetitlePublished, "dispatchRetitlePublished");
 __name222222(dispatchRetitlePublished, "dispatchRetitlePublished");
+__name2222222(dispatchRetitlePublished, "dispatchRetitlePublished");
 function titleStyleKeyboard(day) {
   return {
     inline_keyboard: [
@@ -635,6 +663,7 @@ __name222(titleStyleKeyboard, "titleStyleKeyboard");
 __name2222(titleStyleKeyboard, "titleStyleKeyboard");
 __name22222(titleStyleKeyboard, "titleStyleKeyboard");
 __name222222(titleStyleKeyboard, "titleStyleKeyboard");
+__name2222222(titleStyleKeyboard, "titleStyleKeyboard");
 function titleDraftKeyboard(day, style) {
   return {
     inline_keyboard: [
@@ -656,6 +685,7 @@ __name222(titleDraftKeyboard, "titleDraftKeyboard");
 __name2222(titleDraftKeyboard, "titleDraftKeyboard");
 __name22222(titleDraftKeyboard, "titleDraftKeyboard");
 __name222222(titleDraftKeyboard, "titleDraftKeyboard");
+__name2222222(titleDraftKeyboard, "titleDraftKeyboard");
 async function getCurrentTitle(env, dayNum) {
   const dayDir = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}`;
   const overrideR = await fetch(
@@ -691,6 +721,7 @@ __name222(getCurrentTitle, "getCurrentTitle");
 __name2222(getCurrentTitle, "getCurrentTitle");
 __name22222(getCurrentTitle, "getCurrentTitle");
 __name222222(getCurrentTitle, "getCurrentTitle");
+__name2222222(getCurrentTitle, "getCurrentTitle");
 async function commitTitleOverride(env, dayNum, title, tags) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/TITLE_OVERRIDE.json`;
   let sha;
@@ -724,6 +755,7 @@ __name222(commitTitleOverride, "commitTitleOverride");
 __name2222(commitTitleOverride, "commitTitleOverride");
 __name22222(commitTitleOverride, "commitTitleOverride");
 __name222222(commitTitleOverride, "commitTitleOverride");
+__name2222222(commitTitleOverride, "commitTitleOverride");
 async function commitHookVideo(env, dayNum, videoBytes) {
   const path = `_pipeline/batch/day${String(dayNum).padStart(2, "0")}/images/seq/01.mp4`;
   let sha;
@@ -762,6 +794,7 @@ __name222(commitHookVideo, "commitHookVideo");
 __name2222(commitHookVideo, "commitHookVideo");
 __name22222(commitHookVideo, "commitHookVideo");
 __name222222(commitHookVideo, "commitHookVideo");
+__name2222222(commitHookVideo, "commitHookVideo");
 async function queueDayForScheduledPublish(env, dayNum, chatId) {
   const path = "_pipeline/batch/queue.json";
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -805,6 +838,7 @@ __name222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name2222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name22222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 __name222222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
+__name2222222(queueDayForScheduledPublish, "queueDayForScheduledPublish");
 function describeNextIST(hh, mm) {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -826,6 +860,7 @@ __name222(describeNextIST, "describeNextIST");
 __name2222(describeNextIST, "describeNextIST");
 __name22222(describeNextIST, "describeNextIST");
 __name222222(describeNextIST, "describeNextIST");
+__name2222222(describeNextIST, "describeNextIST");
 function nextDayFiveFifteenIST() {
   const nowUtc = /* @__PURE__ */ new Date();
   const nowIst = new Date(nowUtc.getTime() + 5.5 * 3600 * 1e3);
@@ -847,6 +882,7 @@ __name222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name2222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name22222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 __name222222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
+__name2222222(nextDayFiveFifteenIST, "nextDayFiveFifteenIST");
 function istTimeToPublishAt(hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -874,6 +910,7 @@ __name222(istTimeToPublishAt, "istTimeToPublishAt");
 __name2222(istTimeToPublishAt, "istTimeToPublishAt");
 __name22222(istTimeToPublishAt, "istTimeToPublishAt");
 __name222222(istTimeToPublishAt, "istTimeToPublishAt");
+__name2222222(istTimeToPublishAt, "istTimeToPublishAt");
 function istDateTimeToPublishAt(dd, mm, yyyy, hhmm) {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return { error: `Couldn't parse time "${hhmm}" \u2014 use HH:MM` };
@@ -900,6 +937,7 @@ __name222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name2222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name22222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 __name222222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
+__name2222222(istDateTimeToPublishAt, "istDateTimeToPublishAt");
 function hookGateKeyboard(runId) {
   return {
     inline_keyboard: [[
@@ -915,6 +953,7 @@ __name222(hookGateKeyboard, "hookGateKeyboard");
 __name2222(hookGateKeyboard, "hookGateKeyboard");
 __name22222(hookGateKeyboard, "hookGateKeyboard");
 __name222222(hookGateKeyboard, "hookGateKeyboard");
+__name2222222(hookGateKeyboard, "hookGateKeyboard");
 function approvalKeyboard(token, videoId) {
   const rows = [[
     { text: "\u2705 Approve", callback_data: `approve:${token}` },
@@ -933,6 +972,7 @@ __name222(approvalKeyboard, "approvalKeyboard");
 __name2222(approvalKeyboard, "approvalKeyboard");
 __name22222(approvalKeyboard, "approvalKeyboard");
 __name222222(approvalKeyboard, "approvalKeyboard");
+__name2222222(approvalKeyboard, "approvalKeyboard");
 var PAGE_PRICE_TIERS = { 20: "0", 25: "19", 35: "24", 50: "29", 75: "39", 100: "49" };
 function priceLabel(n) {
   return PAGE_PRICE_TIERS[n] === "0" ? `${n}pp (FREE)` : `${n}pp ($${PAGE_PRICE_TIERS[n]})`;
@@ -944,6 +984,7 @@ __name222(priceLabel, "priceLabel");
 __name2222(priceLabel, "priceLabel");
 __name22222(priceLabel, "priceLabel");
 __name222222(priceLabel, "priceLabel");
+__name2222222(priceLabel, "priceLabel");
 function makePageCountKeyboard() {
   return {
     inline_keyboard: [[20, 25, 35, 50, 75, 100].map((n) => ({
@@ -959,6 +1000,7 @@ __name222(makePageCountKeyboard, "makePageCountKeyboard");
 __name2222(makePageCountKeyboard, "makePageCountKeyboard");
 __name22222(makePageCountKeyboard, "makePageCountKeyboard");
 __name222222(makePageCountKeyboard, "makePageCountKeyboard");
+__name2222222(makePageCountKeyboard, "makePageCountKeyboard");
 var STYLE_BUTTONS = [
   ["cinematic", "\u{1F3AC}"],
   ["mosaic", "\u{1F9E9}"],
@@ -968,7 +1010,7 @@ var STYLE_BUTTONS = [
   ["documentary", "\u{1F4C1}"]
 ];
 function makeStyleKeyboard() {
-  const btn = /* @__PURE__ */ __name2222(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
+  const btn = /* @__PURE__ */ __name22222(([name, icon]) => ({ text: `${icon} ${name}`, callback_data: `make_style:${name}` }), "btn");
   return {
     inline_keyboard: [
       STYLE_BUTTONS.slice(0, 3).map(btn),
@@ -984,6 +1026,7 @@ __name222(makeStyleKeyboard, "makeStyleKeyboard");
 __name2222(makeStyleKeyboard, "makeStyleKeyboard");
 __name22222(makeStyleKeyboard, "makeStyleKeyboard");
 __name222222(makeStyleKeyboard, "makeStyleKeyboard");
+__name2222222(makeStyleKeyboard, "makeStyleKeyboard");
 var PAGE_QUESTION = `How many pages?
 
 25 \u2014 ~41pp delivered, $${PAGE_PRICE_TIERS[35]} tier
@@ -999,8 +1042,9 @@ function pagesKeyboard(token, idx, slot) {
 __name(pagesKeyboard, "pagesKeyboard");
 __name2(pagesKeyboard, "pagesKeyboard");
 __name22(pagesKeyboard, "pagesKeyboard");
+__name222(pagesKeyboard, "pagesKeyboard");
 function topicStyleKeyboard(token, idx, slot, pages) {
-  const btn = /* @__PURE__ */ __name22(([name, icon]) => ({
+  const btn = /* @__PURE__ */ __name222(([name, icon]) => ({
     text: `${icon} ${name}`,
     callback_data: `topicgo:${token}:${idx}|${slot}|${pages}|${name}`
   }), "btn");
@@ -1015,6 +1059,7 @@ function topicStyleKeyboard(token, idx, slot, pages) {
 __name(topicStyleKeyboard, "topicStyleKeyboard");
 __name2(topicStyleKeyboard, "topicStyleKeyboard");
 __name22(topicStyleKeyboard, "topicStyleKeyboard");
+__name222(topicStyleKeyboard, "topicStyleKeyboard");
 function pageCountKeyboard(token) {
   return {
     inline_keyboard: [[20, 35, 50, 75, 100].map((n) => ({
@@ -1030,6 +1075,7 @@ __name222(pageCountKeyboard, "pageCountKeyboard");
 __name2222(pageCountKeyboard, "pageCountKeyboard");
 __name22222(pageCountKeyboard, "pageCountKeyboard");
 __name222222(pageCountKeyboard, "pageCountKeyboard");
+__name2222222(pageCountKeyboard, "pageCountKeyboard");
 function confirmPublishKeyboard(token) {
   return {
     inline_keyboard: [[
@@ -1045,6 +1091,7 @@ __name222(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name2222(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name22222(confirmPublishKeyboard, "confirmPublishKeyboard");
 __name222222(confirmPublishKeyboard, "confirmPublishKeyboard");
+__name2222222(confirmPublishKeyboard, "confirmPublishKeyboard");
 var RAW_COMIC = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-comic-pipeline/main";
 var RAW_VIDEO = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main";
 var TOPICS_PER_PAGE = 8;
@@ -1054,6 +1101,7 @@ function normCase(s) {
 __name(normCase, "normCase");
 __name2(normCase, "normCase");
 __name22(normCase, "normCase");
+__name222(normCase, "normCase");
 async function loadTopics(env) {
   const [comicR, videoR, stR] = await Promise.all([
     fetch(`${RAW_COMIC}/cases_used.json`, { headers: { "User-Agent": "shadow-gasp-bot" } }),
@@ -1084,10 +1132,6 @@ async function loadTopics(env) {
   if (stR.ok) {
     const days = (await stR.json()).days || {};
     const nums = Object.keys(days).map(Number).sort((a, b) => a - b);
-    // No frontier cutoff (2026-09-14, from session hyperframe-ab): /fbpost lets any pregenerated
-    // day be scheduled out of order, so "highest published day" is not a stand-in for "everything
-    // below is stalled" -- it hid unpublished earlier days (day 51 vanished once day 91 was
-    // scheduled). A day is upcoming iff it is done and not yet published or drawn.
     for (const n of nums) {
       const d = days[String(n)];
       const k = normCase(d.case);
@@ -1114,6 +1158,7 @@ async function loadTopics(env) {
 __name(loadTopics, "loadTopics");
 __name2(loadTopics, "loadTopics");
 __name22(loadTopics, "loadTopics");
+__name222(loadTopics, "loadTopics");
 async function sendTopicsPage(env, chatId, kind, page, messageId) {
   let lists;
   try {
@@ -1161,6 +1206,7 @@ Page ${page + 1}/${pages}.` + (kind === "dn" ? " Nothing to do here \u2014 these
 __name(sendTopicsPage, "sendTopicsPage");
 __name2(sendTopicsPage, "sendTopicsPage");
 __name22(sendTopicsPage, "sendTopicsPage");
+__name222(sendTopicsPage, "sendTopicsPage");
 var RAW_VIDEO_LEDGER = "https://raw.githubusercontent.com/Universekianukal/shadow-gasp-pipeline/main/_pipeline/cases_used.json";
 function caseHead(name) {
   let head = (name || "").split("/")[0].replace(/\(.*?\)/g, "");
@@ -1169,6 +1215,7 @@ function caseHead(name) {
 __name(caseHead, "caseHead");
 __name2(caseHead, "caseHead");
 __name22(caseHead, "caseHead");
+__name222(caseHead, "caseHead");
 var _ledgerCache = null;
 async function ledgerCases() {
   if (_ledgerCache) return _ledgerCache;
@@ -1180,6 +1227,7 @@ async function ledgerCases() {
 __name(ledgerCases, "ledgerCases");
 __name2(ledgerCases, "ledgerCases");
 __name22(ledgerCases, "ledgerCases");
+__name222(ledgerCases, "ledgerCases");
 async function resolveShort(rec) {
   if (rec && rec.video_id) return rec.video_id;
   const name = rec && (rec.case || rec.title) || "";
@@ -1198,6 +1246,7 @@ async function resolveShort(rec) {
 __name(resolveShort, "resolveShort");
 __name2(resolveShort, "resolveShort");
 __name22(resolveShort, "resolveShort");
+__name222(resolveShort, "resolveShort");
 async function caseOfVideo(videoId) {
   try {
     const cases = await ledgerCases();
@@ -1210,6 +1259,7 @@ async function caseOfVideo(videoId) {
 __name(caseOfVideo, "caseOfVideo");
 __name2(caseOfVideo, "caseOfVideo");
 __name22(caseOfVideo, "caseOfVideo");
+__name222(caseOfVideo, "caseOfVideo");
 async function funnelComic(env, chatId, caseId, videoIdOverride) {
   const raw = await env.PENDING.get("comic:" + caseId);
   if (!raw) {
@@ -1254,6 +1304,7 @@ Result follows here.`
 __name(funnelComic, "funnelComic");
 __name2(funnelComic, "funnelComic");
 __name22(funnelComic, "funnelComic");
+__name222(funnelComic, "funnelComic");
 async function autoFunnelForCase(env, caseName, videoId, chatId) {
   if (!caseName || !videoId) return;
   try {
@@ -1284,6 +1335,7 @@ async function autoFunnelForCase(env, caseName, videoId, chatId) {
 __name(autoFunnelForCase, "autoFunnelForCase");
 __name2(autoFunnelForCase, "autoFunnelForCase");
 __name22(autoFunnelForCase, "autoFunnelForCase");
+__name222(autoFunnelForCase, "autoFunnelForCase");
 var VIDEO_COMMANDS = ["/day", "/publish", "/short", "/title", "/cancel", "/pregen", "/retention", "/trending"];
 var COMIC_COMMANDS = ["/make", "/regen", "/topics", "/gencode", "/freeclaims", "/links", "/promo", "/funnel", "/carousel"];
 var VIDEO_ACTIONS = ["clip", "hk", "edittitle", "titlestyle", "title_apply", "title_discard", "title_regen", "title_retry", "fbdec", "igdec", "pregen"];
@@ -1295,23 +1347,27 @@ function commandSurface(text) {
   return "shared";
 }
 __name(commandSurface, "commandSurface");
+__name2(commandSurface, "commandSurface");
 function actionSurface(action) {
   if (VIDEO_ACTIONS.includes(action)) return "video";
   if (COMIC_ACTIONS.includes(action)) return "comics";
   return "shared";
 }
 __name(actionSurface, "actionSurface");
+__name2(actionSurface, "actionSurface");
 function botModeAllows(env, surface) {
   const mode = (env.BOT_MODE || "all").toLowerCase();
   if (mode === "all" || surface === "shared") return true;
   return mode === surface;
 }
 __name(botModeAllows, "botModeAllows");
+__name2(botModeAllows, "botModeAllows");
 function otherBotHint(env) {
   const mode = (env.BOT_MODE || "all").toLowerCase();
   return mode === "comics" ? "\u{1F4DA} This is the COMICS bot \u2014 it handles /make, /regen, /topics, /gencode, /freeclaims, /links, /promo, /funnel (plus shared /quota).\n\nVideo commands (/day, /publish, /short, /title\u2026) and hook clips go to the original Shadow Gasp bot." : "\u{1F3AC} This is the VIDEO bot \u2014 comic commands moved to the Shadow Gasp Comics bot.\n\nSend /make, /regen, /topics, /gencode, /freeclaims, /links, /promo or /funnel there instead.";
 }
 __name(otherBotHint, "otherBotHint");
+__name2(otherBotHint, "otherBotHint");
 async function handleCallback(env, cq) {
   const data = cq.data || "";
   const [action, token, extra] = data.split(":");
@@ -1399,7 +1455,8 @@ ${item.u}
 Post where?`,
         reply_markup: { inline_keyboard: [[
           { text: "\u{1F4D8} Facebook", callback_data: `promopv:${token}:${extra}|fb` },
-          { text: "\u{1F4F8} Instagram", callback_data: `promopv:${token}:${extra}|ig` }
+          { text: "\u{1F4F8} Instagram", callback_data: `promopv:${token}:${extra}|ig` },
+          { text: "\u{1F9F5} Threads", callback_data: `promopv:${token}:${extra}|th` }
         ]] }
       });
       return;
@@ -1415,7 +1472,7 @@ Post where?`,
     try {
       await dispatchPostPromo(env, {
         case: itemG && (itemG.c || itemG.n) || item.c || item.n,
-        platform: platG === "ig" ? "ig" : "fb",
+        platform: platG === "ig" ? "ig" : platG === "th" ? "th" : "fb",
         mode: "post",
         force: forceG === "f" ? "true" : "false",
         ...capG && capG.edited ? { caption: capG.caption } : {}
@@ -1427,7 +1484,7 @@ Post where?`,
     await tg(env, "editMessageCaption", {
       chat_id: chatId,
       message_id: messageId,
-      caption: `\u{1F4E2} Publishing to ${platG === "ig" ? "Instagram" : "Facebook"}\u2026
+      caption: `\u{1F4E2} Publishing to ${platG === "ig" ? "Instagram" : platG === "th" ? "Threads" : "Facebook"}\u2026
 I'll confirm here when it lands.`
     });
     return;
@@ -1449,7 +1506,7 @@ I'll confirm here when it lands.`
     try {
       await dispatchPostPromo(env, {
         case: itemV.c || itemV.n,
-        platform: platV === "ig" ? "ig" : "fb",
+        platform: platV === "ig" ? "ig" : platV === "th" ? "th" : "fb",
         mode: "preview",
         force: "false"
       });
@@ -1460,16 +1517,14 @@ I'll confirm here when it lands.`
     await tg(env, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
-      text: `\u{1F5BC} Building the ${platV === "ig" ? "Instagram" : "Facebook"} draft for "${itemV.n}" \u2014 the image and caption land here in about a minute.`
+      text: `\u{1F5BC} Building the ${platV === "ig" ? "Instagram" : platV === "th" ? "Threads" : "Facebook"} draft for "${itemV.n}" \u2014 the image and caption land here in about a minute.`
     });
     return;
   }
   if (action === "carpost") {
-    // extra = "<ig|fb>[|f]". Drafts sent before Facebook existed carry "" or "f" -> Instagram.
     const [platC, forceC] = String(extra || "").split("|");
     const plat = platC === "fb" ? "fb" : platC === "th" ? "th" : "ig";
     const force = forceC === "f" || platC === "f";
-    // A double tap must not publish two copies: lock per platform until post_carousel.yml reports back (or 15 min).
     const lock = `carlock:${token}:${plat}`;
     if (await env.PENDING.get(lock)) {
       await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: `Already publishing to ${CAROUSEL_NAMES[plat]}.` });
@@ -1482,24 +1537,23 @@ I'll confirm here when it lands.`
       else await dispatchCarousel(env, { slug: token, platform: plat, force: force ? "true" : "false" });
     } catch (e) {
       await env.PENDING.delete(lock);
-      await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the ${CAROUSEL_NAMES[plat]} post: ${e.message}` });
+      await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the ${CAROUSEL_NAMES[plat]} post: ${e.message}` });
       return;
     }
-    // Keep the OTHER platform's button on the draft, so both can be posted from one draft.
     const others = ["ig", "fb", "th"].filter((p) => p !== plat);
     const doneC = await carouselPosted(token);
     await tg(env, "editMessageReplyMarkup", {
       chat_id: chatId,
       message_id: messageId,
-      reply_markup: { inline_keyboard: [others.map((p) => carouselButton(token, p, doneC)), [{ text: "✖ Close", callback_data: `carno:${token}:` }]] }
+      reply_markup: { inline_keyboard: [others.map((p) => carouselButton(token, p, doneC)), [{ text: "\u2716 Close", callback_data: `carno:${token}:` }]] }
     });
-    await tg(env, "sendMessage", { chat_id: chatId, text: `📢 Publishing the carousel to ${CAROUSEL_NAMES[plat]}… I'll confirm here when it lands.` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E2} Publishing the carousel to ${CAROUSEL_NAMES[plat]}\u2026 I'll confirm here when it lands.` });
     return;
   }
   if (action === "carno") {
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Closed" });
     await tg(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } });
-    await tg(env, "sendMessage", { chat_id: chatId, text: "✖ Draft closed — nothing more will be posted from it." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "\u2716 Draft closed \u2014 nothing more will be posted from it." });
     return;
   }
   if (action === "promoed") {
@@ -2009,6 +2063,7 @@ __name222(handleCallback, "handleCallback");
 __name2222(handleCallback, "handleCallback");
 __name22222(handleCallback, "handleCallback");
 __name222222(handleCallback, "handleCallback");
+__name2222222(handleCallback, "handleCallback");
 async function acceptHookClip(env, chatId, dayNum, fileId) {
   dayNum = String(dayNum);
   await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F4E5} Got it \u2014 committing as day ${dayNum}'s hook video, then queuing it for the scheduled 04:30/05:15 IST render+publish slot. I'll confirm here once it's live.` });
@@ -2044,6 +2099,7 @@ __name2(acceptHookClip, "acceptHookClip");
 __name22(acceptHookClip, "acceptHookClip");
 __name222(acceptHookClip, "acceptHookClip");
 __name2222(acceptHookClip, "acceptHookClip");
+__name22222(acceptHookClip, "acceptHookClip");
 var COMMAND_LIST = [
   "\u{1F4D6} SHADOW GASP BOT \u2014 all commands",
   "",
@@ -2401,10 +2457,6 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       await tg(env, "sendMessage", { chat_id: chatId, text: "No PUBLISHED comics to promote. Drafts are skipped \u2014 a link to a draft is a 404." });
       return;
     }
-    // 2026-09-13 (user): list EVERY published comic by ISSUE number, each tappable -- including ones
-    // already posted (marked ✅; their draft warns, and its Post button then re-posts on purpose with
-    // force). `/promo 12` jumps straight to issue #12. The KV list keeps the same {n,u,c,pr} items,
-    // so the promo -> promopv -> promogo buttons below work unchanged.
     let promoRecs = [];
     try {
       const ks = await env.PENDING.list({ prefix: "comic:" });
@@ -2417,12 +2469,12 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
       }).filter(Boolean);
     } catch (e) {
     }
-    const promoIssueOf = (p) => {
+    const promoIssueOf = /* @__PURE__ */ __name((p) => {
       const perma = (p.custom_permalink || "").toLowerCase();
       const rec = perma && promoRecs.find((r) => (r.product_url || "").toLowerCase().replace(/\/+$/, "").endsWith("/" + perma));
       const n = rec && parseInt(rec.issue, 10) || parseInt(((p.name || "").match(/#\s*0*(\d+)/) || [])[1], 10);
       return Number.isFinite(n) ? n : null;
-    };
+    }, "promoIssueOf");
     const promoItems = products.map((p) => ({ p, issue: promoIssueOf(p), done: posted.has(p.custom_permalink || "") })).sort((x, y) => (x.issue ?? 1e9) - (y.issue ?? 1e9) || (x.p.name || "").localeCompare(y.p.name || ""));
     const token = Math.random().toString(36).slice(2, 10);
     await env.PENDING.put(
@@ -2432,9 +2484,9 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
     );
     const promoWant = text.slice("/promo".length).trim().replace(/^#/, "");
     if (promoWant) {
-      const i = /^\d+$/.test(promoWant) ? promoItems.findIndex((x) => x.issue === parseInt(promoWant, 10)) : -1;
+      const i = /^\d+$/.test(promoWant) ? promoItems.findIndex((x2) => x2.issue === parseInt(promoWant, 10)) : -1;
       if (i < 0) {
-        await tg(env, "sendMessage", { chat_id: chatId, text: `❌ No published comic is issue #${promoWant}. Send /promo to see them all.` });
+        await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C No published comic is issue #${promoWant}. Send /promo to see them all.` });
         return;
       }
       const x = promoItems[i];
@@ -2442,29 +2494,30 @@ Cancel manually from the Actions tab if one of these is it: https://github.com/$
         chat_id: chatId,
         text: `\u{1F4E2} #${x.issue} ${x.p.name}
 $${Math.round((x.p.price || 0) / 100)}
-${x.p.short_url}` + (x.done ? "\n\n✅ Already promoted before — the draft will warn you before anything goes out." : "") + "\n\nPost where?",
+${x.p.short_url}` + (x.done ? "\n\n\u2705 Already promoted before \u2014 the draft will warn you before anything goes out." : "") + "\n\nPost where?",
         reply_markup: { inline_keyboard: [[
           { text: "\u{1F4D8} Facebook", callback_data: `promopv:${token}:${i}|fb` },
-          { text: "\u{1F4F8} Instagram", callback_data: `promopv:${token}:${i}|ig` }
+          { text: "\u{1F4F8} Instagram", callback_data: `promopv:${token}:${i}|ig` },
+          { text: "\u{1F9F5} Threads", callback_data: `promopv:${token}:${i}|th` }
         ]] }
       });
       return;
     }
     let promoBody = "";
     for (const x of promoItems) {
-      const line = `${x.issue ? "#" + String(x.issue).padStart(2, "0") : "#?"}  ${x.p.name}  — $${Math.round((x.p.price || 0) / 100)}${x.done ? "  ✅ posted" : ""}`;
+      const line = `${x.issue ? "#" + String(x.issue).padStart(2, "0") : "#?"}  ${x.p.name}  \u2014 $${Math.round((x.p.price || 0) / 100)}${x.done ? "  \u2705 posted" : ""}`;
       if (promoBody.length + line.length > 3300) {
-        promoBody += "…more — use /promo <issue number>\n";
+        promoBody += "\u2026more \u2014 use /promo <issue number>\n";
         break;
       }
       promoBody += line + "\n";
     }
-    const promoButtons = promoItems.slice(0, 100).map((x, i) => ({ text: `${x.issue ? "#" + x.issue : "?"}${x.done ? " ✅" : ""}`, callback_data: `promo:${token}:${i}` }));
+    const promoButtons = promoItems.slice(0, 100).map((x, i) => ({ text: `${x.issue ? "#" + x.issue : "?"}${x.done ? " \u2705" : ""}`, callback_data: `promo:${token}:${i}` }));
     const rows = [];
     for (let i = 0; i < promoButtons.length; i += 5) rows.push(promoButtons.slice(i, i + 5));
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: "\u{1F4E2} PROMOTE A COMIC — pick any issue\n\n" + promoBody + "\nTap an issue to see the exact post before anything goes out. ✅ = promoted before; you can post it again (the draft warns first).\nTip: /promo 12 jumps straight to issue #12.",
+      text: "\u{1F4E2} PROMOTE A COMIC \u2014 pick any issue\n\n" + promoBody + "\nTap an issue to see the exact post before anything goes out. \u2705 = promoted before; you can post it again (the draft warns first).\nTip: /promo 12 jumps straight to issue #12.",
       reply_markup: { inline_keyboard: rows }
     });
     return;
@@ -2689,6 +2742,7 @@ __name222(handleMessage, "handleMessage");
 __name2222(handleMessage, "handleMessage");
 __name22222(handleMessage, "handleMessage");
 __name222222(handleMessage, "handleMessage");
+__name2222222(handleMessage, "handleMessage");
 function b_case_id(b) {
   return b.case_id || (b.case || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 }
@@ -2696,6 +2750,7 @@ __name(b_case_id, "b_case_id");
 __name2(b_case_id, "b_case_id");
 __name22(b_case_id, "b_case_id");
 __name222(b_case_id, "b_case_id");
+__name2222(b_case_id, "b_case_id");
 async function sendApprovalMessage(env, { token, caseName, productId, title, videoId }) {
   const funnelLine = videoId ? `
 \u{1F517} From published short: https://youtu.be/${videoId}` : "";
@@ -2712,6 +2767,7 @@ __name222(sendApprovalMessage, "sendApprovalMessage");
 __name2222(sendApprovalMessage, "sendApprovalMessage");
 __name22222(sendApprovalMessage, "sendApprovalMessage");
 __name222222(sendApprovalMessage, "sendApprovalMessage");
+__name2222222(sendApprovalMessage, "sendApprovalMessage");
 async function sweepExpiredHookWaits(env) {
   const list = await env.PENDING.list({ prefix: "awaiting_short_hook:" });
   for (const key of list.keys) {
@@ -2752,17 +2808,14 @@ __name222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name2222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name22222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 __name222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
-// ---------------------------------------------------------------- /carousel: Instagram carousel drafts
-// (2026-09-15) Slides + caption are built ahead of time and committed to the comic repo
-// (carousel/index.json, carousel/<dir>/1..5.jpg). "/carousel 1" shows them here as an album with
-// Post / Reject; Post dispatches post_carousel.yml. Additive -- /promo is untouched.
+__name2222222(sweepExpiredHookWaits, "sweepExpiredHookWaits");
 async function carouselIndex() {
   const r = await fetch(`${RAW_COMIC}/carousel/index.json?t=${Date.now()}`, { headers: { "User-Agent": "shadow-gasp-bot" } });
   if (!r.ok) throw new Error(`carousel list: HTTP ${r.status}`);
   return await r.json();
 }
+__name(carouselIndex, "carouselIndex");
 async function carouselPosted(slug) {
-  // {ig, fb}: the per-platform posted markers (carousel/<slug>.posted.json), {} when never posted.
   try {
     const r = await fetch(`${RAW_COMIC}/carousel/${slug}.posted.json?t=${Date.now()}`, { headers: { "User-Agent": "shadow-gasp-bot" } });
     if (!r.ok) return {};
@@ -2772,12 +2825,13 @@ async function carouselPosted(slug) {
     return {};
   }
 }
+__name(carouselPosted, "carouselPosted");
 var CAROUSEL_NAMES = { ig: "Instagram", fb: "Facebook", th: "Threads" };
 function carouselButton(slug, plat, done) {
   const posted = !!(done && done[plat]);
-  return { text: posted ? `⚠️ ${CAROUSEL_NAMES[plat]} again` : `✅ Post to ${CAROUSEL_NAMES[plat]}`, callback_data: `carpost:${slug}:${plat}${posted ? "|f" : ""}` };
+  return { text: posted ? `\u26A0\uFE0F ${CAROUSEL_NAMES[plat]} again` : `\u2705 Post to ${CAROUSEL_NAMES[plat]}`, callback_data: `carpost:${slug}:${plat}${posted ? "|f" : ""}` };
 }
-// (2026-09-16) Threads has its own workflow + token, so IG/FB posting (post_carousel.yml) is untouched.
+__name(carouselButton, "carouselButton");
 async function dispatchThreadsCarousel(env, inputs) {
   const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_threads_carousel.yml/dispatches`, {
     method: "POST",
@@ -2786,6 +2840,7 @@ async function dispatchThreadsCarousel(env, inputs) {
   });
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
+__name(dispatchThreadsCarousel, "dispatchThreadsCarousel");
 async function dispatchCarousel(env, inputs) {
   const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/post_carousel.yml/dispatches`, {
     method: "POST",
@@ -2794,9 +2849,8 @@ async function dispatchCarousel(env, inputs) {
   });
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
+__name(dispatchCarousel, "dispatchCarousel");
 async function carouselEntries(env) {
-  // Per-comic listings (carousel/entries/<iii>-<slug>.json), read through the contents API so a carousel
-  // committed a moment ago is visible at once -- raw.githubusercontent can serve a stale copy for minutes.
   const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/carousel/entries?ref=main`, {
     headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "shadow-gasp-bot" }
   });
@@ -2804,9 +2858,12 @@ async function carouselEntries(env) {
   if (!r.ok) throw new Error(`carousel entries: HTTP ${r.status}`);
   const list = await r.json();
   return (Array.isArray(list) ? list : []).filter((f) => /^\d+-.+\.json$/.test(f.name)).map((f) => ({
-    issue: parseInt(f.name, 10), slug: f.name.replace(/^\d+-/, "").replace(/\.json$/, ""), path: f.path
+    issue: parseInt(f.name, 10),
+    slug: f.name.replace(/^\d+-/, "").replace(/\.json$/, ""),
+    path: f.path
   }));
 }
+__name(carouselEntries, "carouselEntries");
 async function carouselEntry(env, path) {
   const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/${path}?ref=main`, {
     headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: "application/vnd.github.raw+json", "User-Agent": "shadow-gasp-bot" }
@@ -2818,6 +2875,7 @@ async function carouselEntry(env, path) {
     return null;
   }
 }
+__name(carouselEntry, "carouselEntry");
 async function dispatchCarouselBuild(env, inputs) {
   const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/build_carousel.yml/dispatches`, {
     method: "POST",
@@ -2826,6 +2884,7 @@ async function dispatchCarouselBuild(env, inputs) {
   });
   if (!r.ok) throw new Error(`GitHub dispatch failed: ${r.status} ${await r.text()}`);
 }
+__name(dispatchCarouselBuild, "dispatchCarouselBuild");
 async function carouselCommand(env, chatId, want) {
   let idx = [], entries = [];
   try {
@@ -2837,14 +2896,13 @@ async function carouselCommand(env, chatId, want) {
   } catch (e) {
   }
   if (!want) {
-    const seen = new Map();
+    const seen = /* @__PURE__ */ new Map();
     for (const e of idx) seen.set(Number(e.issue), `#${e.issue}  ${e.title}`);
     for (const e of entries) if (!seen.has(e.issue)) seen.set(e.issue, `#${e.issue}  ${e.slug}`);
-    const lines = [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([n, t]) => `${t}  → /carousel ${n}`);
+    const lines = [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([n2, t]) => `${t}  \u2192 /carousel ${n2}`);
     await tg(env, "sendMessage", {
       chat_id: chatId,
-      text: (lines.length ? "🎠 CAROUSELS READY\n\n" + lines.join("\n") + "\n\n" : "") +
-        "Any other published issue: /carousel <number> builds its carousel first (about 2 minutes), then shows the draft."
+      text: (lines.length ? "\u{1F3A0} CAROUSELS READY\n\n" + lines.join("\n") + "\n\n" : "") + "Any other published issue: /carousel <number> builds its carousel first (about 2 minutes), then shows the draft."
     });
     return;
   }
@@ -2863,26 +2921,25 @@ async function carouselCommand(env, chatId, want) {
     return;
   }
   if (n === null) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ Use the issue number, e.g. /carousel 7" });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C Use the issue number, e.g. /carousel 7" });
     return;
   }
-  // Not built yet: build it from the comic's storefront pictures, then the draft arrives here.
   let products;
   try {
     products = await gumroadProducts(env);
   } catch (e) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't read the storefront: ${e.message}` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't read the storefront: ${e.message}` });
     return;
   }
   const re = new RegExp(`#0*${n}:`);
   const p = products.find((x) => x.published && re.test(x.name || ""));
   if (!p) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ No published comic is issue #${n}, so there is nothing to build a carousel for.` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C No published comic is issue #${n}, so there is nothing to build a carousel for.` });
     return;
   }
   const lock = `carbuild:${n}`;
   if (await env.PENDING.get(lock)) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `⏳ The carousel for #${n} is already being built — the draft will land here.` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u23F3 The carousel for #${n} is already being built \u2014 the draft will land here.` });
     return;
   }
   let hook = "";
@@ -2902,11 +2959,12 @@ async function carouselCommand(env, chatId, want) {
     await dispatchCarouselBuild(env, { issue: String(n), permalink: p.custom_permalink, hook, chat_id: String(chatId) });
   } catch (e) {
     await env.PENDING.delete(lock);
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ Couldn't start the carousel build: ${e.message}` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C Couldn't start the carousel build: ${e.message}` });
     return;
   }
-  await tg(env, "sendMessage", { chat_id: chatId, text: `🛠 Building the carousel for ${p.name} from its store pictures… about 2 minutes. The draft lands here — nothing is posted until you tap Post.` });
+  await tg(env, "sendMessage", { chat_id: chatId, text: `\u{1F6E0} Building the carousel for ${p.name} from its store pictures\u2026 about 2 minutes. The draft lands here \u2014 nothing is posted until you tap Post.` });
 }
+__name(carouselCommand, "carouselCommand");
 async function sendCarouselDraft(env, chatId, e) {
   const n = parseInt(e.slides || 5, 10);
   await tg(env, "sendMediaGroup", {
@@ -2914,39 +2972,38 @@ async function sendCarouselDraft(env, chatId, e) {
     media: Array.from({ length: n }, (_, i) => ({ type: "photo", media: `${RAW_COMIC}/carousel/${e.dir}/${i + 1}.jpg` }))
   });
   const done = await carouselPosted(e.slug);
-  let warn = ["ig", "fb", "th"].filter((p) => done[p]).map((p) => `\n\n⚠️ Already posted on ${CAROUSEL_NAMES[p]} (${String(done[p].posted_at || "").slice(0, 10)}). Posting there again makes a DUPLICATE.`).join("");
+  let warn = ["ig", "fb", "th"].filter((p) => done[p]).map((p) => `
+
+\u26A0\uFE0F Already posted on ${CAROUSEL_NAMES[p]} (${String(done[p].posted_at || "").slice(0, 10)}). Posting there again makes a DUPLICATE.`).join("");
   try {
     const prod = (await gumroadProducts(env)).find((x) => x.custom_permalink === e.permalink);
-    if (!prod || !prod.published) warn += "\n\n⚠️ This comic is NOT PUBLISHED on Gumroad yet — publish it first, or everyone who comments gets a dead link.";
+    if (!prod || !prod.published) warn += "\n\n\u26A0\uFE0F This comic is NOT PUBLISHED on Gumroad yet \u2014 publish it first, or everyone who comments gets a dead link.";
   } catch (err) {
   }
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: `🎠 CAROUSEL DRAFT — #${e.issue} ${e.title} — nothing is published yet\nInstagram: swipe carousel · Facebook: one multi-photo post · Threads: swipe carousel (its own caption: public reply instead of DM, one tag)\n\n${(e.caption || "").slice(0, 3000)}${warn}`,
+    text: `\u{1F3A0} CAROUSEL DRAFT \u2014 #${e.issue} ${e.title} \u2014 nothing is published yet
+Instagram: swipe carousel \xB7 Facebook: one multi-photo post \xB7 Threads: swipe carousel (its own caption: public reply instead of DM, one tag)
+
+${(e.caption || "").slice(0, 3e3)}${warn}`,
     reply_markup: { inline_keyboard: [
       [carouselButton(e.slug, "ig", done), carouselButton(e.slug, "fb", done)],
       [carouselButton(e.slug, "th", done)],
-      [{ text: "✖ Reject", callback_data: `carno:${e.slug}:` }]
+      [{ text: "\u2716 Reject", callback_data: `carno:${e.slug}:` }]
     ] }
   });
 }
-// ---------------------------------------------------------------- promo: edit the Instagram caption
-//
-// Added 2026-09-13 (user). Instagram captions have no clickable links and the account is small, so
-// the IG caption asks readers to COMMENT for the link (sent by DM), and the user can rewrite the
-// caption before posting. The draft remembers its image + caption (promocap:<token>); "Edit caption"
-// waits for the owner's next plain message, re-sends the draft with it, and Post passes it to
-// post_promo.yml as the `caption` input (posted verbatim). With no edit, Post dispatches exactly the
-// inputs it always did.
+__name(sendCarouselDraft, "sendCarouselDraft");
 function promoDraftKeyboard(token, platform, already) {
-  const plat = platform === "ig" ? "Instagram" : "Facebook";
+  const plat = platform === "ig" ? "Instagram" : platform === "th" ? "Threads" : "Facebook";
   const rows = [[
-    { text: `✅ Post to ${plat}`, callback_data: `promogo:${token}:0|${platform}${already ? "|f" : ""}` },
-    { text: "✖ Reject", callback_data: `promono:${token}:0` }
+    { text: `\u2705 Post to ${plat}`, callback_data: `promogo:${token}:0|${platform}${already ? "|f" : ""}` },
+    { text: "\u2716 Reject", callback_data: `promono:${token}:0` }
   ]];
-  if (platform === "ig") rows.push([{ text: "✏️ Edit caption", callback_data: `promoed:${token}:0` }]);
+  if (platform === "ig") rows.push([{ text: "\u270F\uFE0F Edit caption", callback_data: `promoed:${token}:0` }]);
   return { inline_keyboard: rows };
 }
+__name(promoDraftKeyboard, "promoDraftKeyboard");
 async function promoEditStart(env, cq, chatId, token) {
   if (String(chatId) !== String(env.TELEGRAM_CHAT_ID)) {
     await tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text: "Not allowed." });
@@ -2955,16 +3012,17 @@ async function promoEditStart(env, cq, chatId, token) {
   const raw = await env.PENDING.get(`promocap:${token}`);
   await tg(env, "answerCallbackQuery", { callback_query_id: cq.id });
   if (!raw) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That draft has expired — run /promo again." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That draft has expired \u2014 run /promo again." });
     return;
   }
   await env.PENDING.put(`awaiting_promo_caption:${chatId}`, String(token), { expirationTtl: 3600 });
   const cur = JSON.parse(raw).caption || "";
   await tg(env, "sendMessage", {
     chat_id: chatId,
-    text: "✏️ Send the new Instagram caption as ONE message (up to 2,200 characters).\nTip: end with a reason to comment, e.g. “Comment COMIC and I'll DM you the link.”\n\nCurrent caption:\n\n" + cur.slice(0, 3400)
+    text: "\u270F\uFE0F Send the new Instagram caption as ONE message (up to 2,200 characters).\nTip: end with a reason to comment, e.g. \u201CComment COMIC and I'll DM you the link.\u201D\n\nCurrent caption:\n\n" + cur.slice(0, 3400)
   });
 }
+__name(promoEditStart, "promoEditStart");
 async function promoCaptionReply(env, msg, text) {
   if (!text || text.startsWith("/")) return false;
   const chatId = msg.chat.id;
@@ -2974,11 +3032,11 @@ async function promoCaptionReply(env, msg, text) {
   await env.PENDING.delete(`awaiting_promo_caption:${chatId}`);
   const raw = await env.PENDING.get(`promocap:${token}`);
   if (!raw) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "❌ That draft has expired — run /promo again." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: "\u274C That draft has expired \u2014 run /promo again." });
     return true;
   }
   if (text.length > 2200) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: `❌ That caption is ${text.length} characters — Instagram allows 2,200. Tap ✏️ Edit caption again and send a shorter one.` });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `\u274C That caption is ${text.length} characters \u2014 Instagram allows 2,200. Tap \u270F\uFE0F Edit caption again and send a shorter one.` });
     return true;
   }
   const d = JSON.parse(raw);
@@ -2989,25 +3047,14 @@ async function promoCaptionReply(env, msg, text) {
     chat_id: chatId,
     photo: d.image,
     // Telegram photo captions stop at 1,024 characters; the whole caption is what gets posted.
-    caption: `\u{1F5BC} Instagram DRAFT (edited caption) — nothing is published yet
+    caption: `\u{1F5BC} Instagram DRAFT (edited caption) \u2014 nothing is published yet
 
-${text.slice(0, 800)}${text.length > 800 ? "… (preview trimmed — the full caption will be posted)" : ""}`,
+${text.slice(0, 800)}${text.length > 800 ? "\u2026 (preview trimmed \u2014 the full caption will be posted)" : ""}`,
     reply_markup: promoDraftKeyboard(String(token), d.platform, d.already)
   });
   return true;
 }
-// ---------------------------------------------------------------- Instagram comment -> free issue #1
-//
-// Added 2026-09-13 (user). Someone comments "COMIC" on an Instagram post -> a private-reply DM offers
-// issue #1 free for an honest review -> when they reply, Yes / No buttons -> Yes gets a one-time 100%-off
-// Gumroad code (the SAME free-offer + 50-cap as /gencode), No gets a warm "come back" message; both carry
-// the Gumroad subscribe link (email list). Meta rules: the first DM after a comment is text-only and one
-// per comment; buttons only after the person replies (24 h window).
-//
-// Privacy: the comic repo is PUBLIC and workflow_dispatch inputs are visible there, so the workflow only
-// ever gets an opaque job token and fetches the details from /meta/job (shared secret).
-// Security: every POST is checked against Meta's X-Hub-Signature-256 with META_APP_SECRET; with no secret
-// set, everything is refused. Ordinary DMs are never auto-answered -- only replies from people we asked.
+__name(promoCaptionReply, "promoCaptionReply");
 var META_IG_USER_ID = "17841425663819735";
 var META_FREE_SLUG = "norjak";
 var META_FREE_CAP = 50;
@@ -3023,6 +3070,7 @@ async function metaSigOk(env, raw, header) {
   for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
   return diff === 0;
 }
+__name(metaSigOk, "metaSigOk");
 async function metaQueue(env, job) {
   const tok = crypto.randomUUID().replace(/-/g, "").slice(0, 20);
   await env.PENDING.put(`metajob:${tok}`, JSON.stringify(job), { expirationTtl: 86400 });
@@ -3034,6 +3082,7 @@ async function metaQueue(env, job) {
   if (!r.ok) throw new Error(`meta_dm dispatch failed: ${r.status} ${await r.text()}`);
   return tok;
 }
+__name(metaQueue, "metaQueue");
 async function metaStage(env, sid) {
   try {
     return JSON.parse(await env.PENDING.get(`igu:${sid}`) || "null");
@@ -3041,9 +3090,11 @@ async function metaStage(env, sid) {
     return null;
   }
 }
+__name(metaStage, "metaStage");
 async function metaSetStage(env, sid, stage, username) {
   await env.PENDING.put(`igu:${sid}`, JSON.stringify({ stage, username: username || "", at: Date.now() }), { expirationTtl: 30 * 86400 });
 }
+__name(metaSetStage, "metaSetStage");
 async function metaOnComment(env, v) {
   if (!v || !v.id || !META_KEYWORD.test(v.text || "")) return "skip";
   const from = v.from || {};
@@ -3054,8 +3105,7 @@ async function metaOnComment(env, v) {
   if (sid) {
     if (await env.PENDING.get(`igfree:${sid}`)) return "already-claimed";
     const st = await metaStage(env, sid);
-    // Asked/offered in the last week: don't send the same offer again. A "no" may be asked again.
-    if (st && (st.stage === "asked" || st.stage === "offered") && Date.now() - st.at < 7 * 86400e3) return "recently-asked";
+    if (st && (st.stage === "asked" || st.stage === "offered") && Date.now() - st.at < 7 * 864e5) return "recently-asked";
     await metaSetStage(env, sid, "asked", from.username);
   }
   const routedIg = await postmapRoute(env, "ig", v.media && v.media.id);
@@ -3066,6 +3116,7 @@ async function metaOnComment(env, v) {
   await metaQueue(env, { action: "ask", comment_id: v.id, username: from.username || "" });
   return "asked";
 }
+__name(metaOnComment, "metaOnComment");
 async function metaOnMessage(env, m) {
   if (!m || !m.message || m.message.is_echo) return "skip";
   const sid = m.sender && m.sender.id;
@@ -3079,10 +3130,9 @@ async function metaOnMessage(env, m) {
     }
     const offer = JSON.parse(await env.PENDING.get(`free_offer:${META_FREE_SLUG}`) || "null");
     if (!offer || !offer.product_id) {
-      await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `❌ Instagram: someone tapped Yes for a free #1, but no free offer is registered for "${META_FREE_SLUG}".` });
+      await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `\u274C Instagram: someone tapped Yes for a free #1, but no free offer is registered for "${META_FREE_SLUG}".` });
       return "no-offer";
     }
-    // Lock BEFORE dispatch: a double tap must never mint two codes.
     await env.PENDING.put(`igfree:${sid}`, "pending", { expirationTtl: 365 * 86400 });
     await metaSetStage(env, sid, "claimed", st && st.username);
     await metaQueue(env, { action: "yes", recipient: sid, username: st && st.username || "", slug: META_FREE_SLUG, product_id: offer.product_id, cap: META_FREE_CAP });
@@ -3100,10 +3150,7 @@ async function metaOnMessage(env, m) {
   }
   return "ignored";
 }
-// ---- Facebook side of the same funnel (added 2026-09-14). Instagram code above is unchanged.
-// Differences from Instagram: a Facebook private reply MAY carry quick replies, so the very first
-// Messenger message already has the Yes / No buttons; and the tap arrives with the person's PSID, so
-// no comment->PSID mapping is needed. Keys are separate (fbc:/fbasked:/fbfree:) from Instagram's.
+__name(metaOnMessage, "metaOnMessage");
 var META_FB_PAGE_ID = "1164008466785123";
 async function metaOnFbComment(env, v) {
   if (!v || v.item !== "comment" || v.verb !== "add" || !v.comment_id || !META_KEYWORD.test(v.message || "")) return "skip";
@@ -3124,6 +3171,7 @@ async function metaOnFbComment(env, v) {
   await metaQueue(env, { action: "ask", platform: "fb", comment_id: v.comment_id, name: String(from.name || "").trim().split(/\s+/)[0] || "" });
   return "asked";
 }
+__name(metaOnFbComment, "metaOnFbComment");
 async function metaOnFbMessage(env, m) {
   if (!m || !m.message || m.message.is_echo) return "skip";
   const sid = m.sender && m.sender.id;
@@ -3136,10 +3184,9 @@ async function metaOnFbMessage(env, m) {
     }
     const offer = JSON.parse(await env.PENDING.get(`free_offer:${META_FREE_SLUG}`) || "null");
     if (!offer || !offer.product_id) {
-      await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `❌ Facebook: someone tapped Yes for a free #1, but no free offer is registered for "${META_FREE_SLUG}".` });
+      await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `\u274C Facebook: someone tapped Yes for a free #1, but no free offer is registered for "${META_FREE_SLUG}".` });
       return "no-offer";
     }
-    // Lock BEFORE dispatch: a double tap must never mint two codes.
     await env.PENDING.put(`fbfree:${sid}`, "pending", { expirationTtl: 365 * 86400 });
     await metaQueue(env, { action: "yes", platform: "fb", recipient: sid, slug: META_FREE_SLUG, product_id: offer.product_id, cap: META_FREE_CAP });
     return "yes";
@@ -3150,6 +3197,7 @@ async function metaOnFbMessage(env, m) {
   }
   return "ignored";
 }
+__name(metaOnFbMessage, "metaOnFbMessage");
 async function metaProcessFb(env, body) {
   const out = [];
   for (const entry of body.entry || []) {
@@ -3158,6 +3206,7 @@ async function metaProcessFb(env, body) {
   }
   return out;
 }
+__name(metaProcessFb, "metaProcessFb");
 async function metaProcess(env, body) {
   if (body && body.object === "page") return metaProcessFb(env, body);
   if (!body || body.object !== "instagram") return [];
@@ -3168,6 +3217,7 @@ async function metaProcess(env, body) {
   }
   return out;
 }
+__name(metaProcess, "metaProcess");
 async function metaRoutes(request, env, url, ctx) {
   const p = url.pathname;
   if (p !== "/meta/webhook" && p !== "/meta/job" && p !== "/meta/done") return null;
@@ -3188,7 +3238,6 @@ async function metaRoutes(request, env, url, ctx) {
     } catch {
       return new Response("bad json", { status: 400 });
     }
-    // Answer Meta at once; do the work (KV + a GitHub dispatch) in the background.
     const work = metaProcess(env, body).catch((e) => console.log(`meta webhook: ${e.message}`));
     if (ctx && ctx.waitUntil) ctx.waitUntil(work);
     else await work;
@@ -3203,43 +3252,34 @@ async function metaRoutes(request, env, url, ctx) {
     if (!raw) return new Response("not found", { status: 404 });
     return new Response(raw, { status: 200, headers: { "Content-Type": "application/json" } });
   }
-  // /meta/done -- the workflow reports each step; the owner hears about claims and failures.
   const job = JSON.parse(b.job && await env.PENDING.get(`metajob:${b.job}`) || "{}");
   const who = job.username ? `@${job.username}` : job.name || "someone";
   const where = job.platform === "fb" ? "Facebook" : "Instagram";
   let text = null;
-  // A real Instagram comment event (2026-09-15) did NOT carry from.self_ig_scoped_id, so the "asked"
-  // stage could not be recorded when the comment arrived -- and the person's reply was then ignored.
-  // The private-reply response DOES return the commenter's Instagram-scoped ID (recipient_id), the
-  // same id their reply arrives with as sender.id, so record the stage here instead.
   if ((job.action === "ask" || job.action === "ask_issue") && b.ok && b.recipient_id && job.platform !== "fb" && !await env.PENDING.get(`igfree:${b.recipient_id}`)) {
     await metaSetStage(env, String(b.recipient_id), "asked", job.username);
   }
   if (job.action === "yes" && b.ok && !b.sold_out) text = `\u{1F381} ${who} claimed a free #1 NORJAK on ${where} (${b.count}/${b.cap}).`;
-  else if (job.action === "yes" && b.sold_out) text = `\u{1F614} ${who} tapped Yes, but all ${b.cap} free copies of #1 are claimed — they were told politely.`;
+  else if (job.action === "yes" && b.sold_out) text = `\u{1F614} ${who} tapped Yes, but all ${b.cap} free copies of #1 are claimed \u2014 they were told politely.`;
   else if (job.action === "no" && b.ok) text = `\u{1F645} ${who} said "not right now" to the free #1.`;
-  else if (!b.ok && Number(b.err_code) === 10903) text = `ℹ️ ${where}: couldn't DM ${who} — Meta doesn't allow private replies to a Page, or to someone whose settings block them. Nothing to fix; test from a personal profile.`;
-  else if (!b.ok) text = `❌ ${where} DM (${job.action || "?"}) failed for ${who}: ${b.error || "unknown error"}`;
+  else if (!b.ok && Number(b.err_code) === 10903) text = `\u2139\uFE0F ${where}: couldn't DM ${who} \u2014 Meta doesn't allow private replies to a Page, or to someone whose settings block them. Nothing to fix; test from a personal profile.`;
+  else if (!b.ok) text = `\u274C ${where} DM (${job.action || "?"}) failed for ${who}: ${b.error || "unknown error"}`;
   if (job.action === "yes" && (!b.ok || b.sold_out) && job.recipient) await env.PENDING.delete(`${job.platform === "fb" ? "fbfree" : "igfree"}:${job.recipient}`);
   if (!text && job.action === "ask_issue" && b.ok) text = `\u{1F517} ${who} commented COMIC on the #${job.issue} post (${where}) \u2014 sent them the Issue #${job.issue} link.`;
   if (text) await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
   return new Response("ok", { status: 200 });
 }
-// ---------------------------------------------------------------- post -> issue routing (2026-09-15)
-//
-// When someone comments COMIC, the bot looks up WHICH POST it was: `postmap:<fb|ig>:<id>` (KV shared
-// with the video bot). Promo posts are recorded here via /promo/posted; video posts by the video bot on
-// /batch/crosspost-decided. The comic is resolved at COMMENT time, not post time -- so a video posted
-// before its comic existed starts offering that comic the moment it is published. Anything unmapped,
-// unpublished, or #1 itself falls back to the free-#1 offer, exactly as before.
+__name(metaRoutes, "metaRoutes");
 function postmapKey(platform, id) {
   const s = String(id || "");
   return `postmap:${platform}:${platform === "fb" && s.includes("_") ? s.split("_").pop() : s}`;
 }
+__name(postmapKey, "postmapKey");
 async function postmapRecord(env, platform, id, entry) {
   if (!platform || !id) return;
   await env.PENDING.put(postmapKey(platform, id), JSON.stringify({ ...entry, at: Date.now() }));
 }
+__name(postmapRecord, "postmapRecord");
 async function postmapLookup(env, platform, id) {
   if (!id) return null;
   const keys = [`postmap:${platform}:${id}`, postmapKey(platform, id)];
@@ -3254,6 +3294,7 @@ async function postmapLookup(env, platform, id) {
   }
   return null;
 }
+__name(postmapLookup, "postmapLookup");
 async function postmapResolveIssue(env, entry) {
   if (!entry) return null;
   let permalink = entry.permalink || "";
@@ -3297,6 +3338,7 @@ async function postmapResolveIssue(env, entry) {
   if (issue === 1) return null;
   return { issue, title: p.name || "", url: p.short_url || `https://shadowgasp.gumroad.com/l/${permalink}`, price: Math.round((p.price || 0) / 100) };
 }
+__name(postmapResolveIssue, "postmapResolveIssue");
 async function postmapRoute(env, platform, id) {
   try {
     return await postmapResolveIssue(env, await postmapLookup(env, platform, id));
@@ -3305,44 +3347,40 @@ async function postmapRoute(env, platform, id) {
     return null;
   }
 }
-// ---------------------------------------------------------------- Threads comment replies (2026-09-16)
-//
-// Carousels also go to Threads (post_threads_carousel.yml). Threads has NO DMs, so a COMIC comment on a
-// Threads post gets a PUBLIC reply: that post's issue link (routed by `postmap:th:<post id>`, same as
-// IG/FB) plus the free #1 -- #1 NORJAK is $0+ on Gumroad since 2026-09-16, so a public link is fine.
-// Security: POSTs are checked against X-Hub-Signature-256 with THREADS_APP_SECRET (the Threads app's own
-// secret, not META_APP_SECRET); with no secret set, everything is refused.
+__name(postmapRoute, "postmapRoute");
 var THREADS_USER_ID = "28225004937158580";
 var THREADS_USERNAME = "shadow_gasp";
 var THREADS_FREE_URL = "https://shadowgasp.gumroad.com/l/norjak";
 var THREADS_GRAPH = "https://graph.threads.net/v1.0";
 function threadsReplyEvents(body) {
-  // Tolerant: accept `values` as an object or a list, and entry[].changes[] too.
   const out = [];
-  const push = (v) => {
+  const push = /* @__PURE__ */ __name((v) => {
     if (v && v.field === "replies" && v.value) out.push(v.value);
-  };
+  }, "push");
   const vals = body && body.values;
   (Array.isArray(vals) ? vals : vals ? [vals] : []).forEach(push);
   for (const en of body && body.entry || []) for (const ch of en.changes || []) push(ch);
   return out;
 }
+__name(threadsReplyEvents, "threadsReplyEvents");
 function threadsReplyText(route) {
-  if (!route) return `Your first case is on us 🎁 #1 NORJAK 👉 ${THREADS_FREE_URL}`;
+  if (!route) return `Your first case is on us \u{1F381} #1 NORJAK \u{1F449} ${THREADS_FREE_URL}`;
   const title = String(route.title || "").replace(/^.*?#\s*\d+\s*[:\-–—]?\s*/, "") || route.title;
-  return `Here's #${route.issue} ${title} 👉 ${route.url}\nNew here? Your first case is on us: #1 NORJAK 👉 ${THREADS_FREE_URL}`;
+  return `Here's #${route.issue} ${title} \u{1F449} ${route.url}
+New here? Your first case is on us: #1 NORJAK \u{1F449} ${THREADS_FREE_URL}`;
 }
+__name(threadsReplyText, "threadsReplyText");
 async function threadsApi(env, path, params) {
   const r = await fetch(`${THREADS_GRAPH}/${path}`, { method: "POST", body: new URLSearchParams({ ...params, access_token: env.THREADS_ACCESS_TOKEN || "" }) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(`${path.split("/").pop()}: ${r.status} ${j.error && (j.error.error_user_msg || j.error.message) || ""}`);
   return j;
 }
+__name(threadsApi, "threadsApi");
 async function threadsPublishReply(env, replyToId, text) {
   const c = await threadsApi(env, `${THREADS_USER_ID}/threads`, { media_type: "TEXT", text, reply_to_id: replyToId });
   let last;
   for (let i = 0; i < 4; i++) {
-    // A text container is usually ready at once; give it a few seconds if not.
     try {
       return (await threadsApi(env, `${THREADS_USER_ID}/threads_publish`, { creation_id: c.id })).id;
     } catch (e) {
@@ -3352,6 +3390,7 @@ async function threadsPublishReply(env, replyToId, text) {
   }
   throw last;
 }
+__name(threadsPublishReply, "threadsPublishReply");
 async function threadsAlreadyReplied(env, commentId) {
   try {
     const r = await fetch(`${THREADS_GRAPH}/${commentId}/replies?fields=username&access_token=${encodeURIComponent(env.THREADS_ACCESS_TOKEN || "")}`);
@@ -3361,35 +3400,34 @@ async function threadsAlreadyReplied(env, commentId) {
     return false;
   }
 }
+__name(threadsAlreadyReplied, "threadsAlreadyReplied");
 async function threadsOnReply(env, v) {
   const id = String(v.id || "");
   const who = String(v.username || "");
   if (!id || !META_KEYWORD.test(v.text || "")) return "skip";
   if (who.toLowerCase() === THREADS_USERNAME) return "own";
   if (await env.PENDING.get(`thc:${id}`)) return "dup";
-  // Meta delivers one comment several times AT ONCE (2026-09-16: 6 deliveries, 2 identical replies went
-  // out 3 s apart). KV has no atomic claim, so: claim with a nonce, wait a random moment, keep going only
-  // if our nonce survived, and finally ask Threads whether we already replied to this comment.
   const nonce = crypto.randomUUID();
   await env.PENDING.put(`thc:${id}`, nonce, { expirationTtl: 8 * 86400 });
   await new Promise((res) => setTimeout(res, 1500 + Math.random() * 2500));
   if (await env.PENDING.get(`thc:${id}`) !== nonce) return "dup";
   if (await threadsAlreadyReplied(env, id)) return "dup";
-  const root =String(v.root_post && v.root_post.id || v.replied_to && v.replied_to.id || "");
+  const root = String(v.root_post && v.root_post.id || v.replied_to && v.replied_to.id || "");
   const once = `thu:${root}:${who}`;
   if (who && await env.PENDING.get(once)) return "again";
   const route = await postmapRoute(env, "th", root);
   try {
     await threadsPublishReply(env, id, threadsReplyText(route));
     if (who) await env.PENDING.put(once, "1", { expirationTtl: 86400 });
-    await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `🧵 @${who || "someone"} commented COMIC on Threads${route ? ` (#${route.issue} post)` : ""} — replied with ${route ? `the #${route.issue} link + free #1` : "the free #1"}.` });
+    await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `\u{1F9F5} @${who || "someone"} commented COMIC on Threads${route ? ` (#${route.issue} post)` : ""} \u2014 replied with ${route ? `the #${route.issue} link + free #1` : "the free #1"}.` });
     return "replied";
   } catch (e) {
     await env.PENDING.delete(`thc:${id}`);
-    await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `❌ Threads: couldn't reply to @${who || "someone"}'s COMIC comment: ${e.message}` });
+    await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text: `\u274C Threads: couldn't reply to @${who || "someone"}'s COMIC comment: ${e.message}` });
     return "failed";
   }
 }
+__name(threadsOnReply, "threadsOnReply");
 async function threadsRoutes(request, env, url, ctx) {
   if (url.pathname !== "/threads/webhook") return null;
   if (request.method === "GET") {
@@ -3411,13 +3449,14 @@ async function threadsRoutes(request, env, url, ctx) {
     return new Response("bad json", { status: 400 });
   }
   const events = threadsReplyEvents(body);
-  // Keep the last payload we couldn't read, so an unexpected shape can be inspected instead of guessed.
-  if (!events.length) await env.PENDING.put("threads:last_unhandled", new TextDecoder().decode(raw).slice(0, 4e3), { expirationTtl: 7 * 86400 }).catch(() => {});
+  if (!events.length) await env.PENDING.put("threads:last_unhandled", new TextDecoder().decode(raw).slice(0, 4e3), { expirationTtl: 7 * 86400 }).catch(() => {
+  });
   const work = Promise.all(events.map((v) => threadsOnReply(env, v))).catch((e) => console.log(`threads webhook: ${e.message}`));
   if (ctx && ctx.waitUntil) ctx.waitUntil(work);
   else await work;
   return new Response("EVENT_RECEIVED", { status: 200 });
 }
+__name(threadsRoutes, "threadsRoutes");
 var worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -3841,15 +3880,14 @@ ${p.run_url || ""}`
         });
         return new Response("ok");
       }
-      const plat = p.platform === "ig" ? "Instagram" : "Facebook";
+      const plat = p.platform === "ig" ? "Instagram" : p.platform === "th" ? "Threads" : "Facebook";
       const token = Math.random().toString(36).slice(2, 10);
       await env.PENDING.put(
         `promo:${token}`,
         JSON.stringify([{ n: p.case, u: p.url, c: p.permalink, pr: (p.price || 0) * 100 }]),
         { expirationTtl: 86400 }
       );
-      // Remember the draft so "Edit caption" can re-send it and Post can use an edited caption.
-      await env.PENDING.put(`promocap:${token}`, JSON.stringify({ image: p.image, caption: p.caption || "", platform: p.platform === "ig" ? "ig" : "fb", already: !!p.already }), { expirationTtl: 86400 });
+      await env.PENDING.put(`promocap:${token}`, JSON.stringify({ image: p.image, caption: p.caption || "", platform: p.platform === "ig" ? "ig" : p.platform === "th" ? "th" : "fb", already: !!p.already }), { expirationTtl: 86400 });
       const warn = p.already ? "\n\n\u26A0\uFE0F This comic has ALREADY been posted here. Accepting will publish a SECOND copy \u2014 a duplicate is what cost this page its reach in August." : "";
       await tg(env, "sendPhoto", {
         chat_id: env.TELEGRAM_CHAT_ID,
@@ -3857,7 +3895,7 @@ ${p.run_url || ""}`
         caption: `\u{1F5BC} ${plat} DRAFT \u2014 nothing is published yet
 
 ${(p.caption || "").slice(0, 800)}${warn}`,
-        reply_markup: promoDraftKeyboard(token, p.platform === "ig" ? "ig" : "fb", !!p.already)
+        reply_markup: promoDraftKeyboard(token, p.platform === "ig" ? "ig" : p.platform === "th" ? "th" : "fb", !!p.already)
       });
       return new Response("ok");
     }
@@ -3872,7 +3910,8 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
       if (b.outcome === "success" && b.entry && b.entry.dir) {
         await sendCarouselDraft(env, chat, b.entry);
       } else {
-        await tg(env, "sendMessage", { chat_id: chat, text: `❌ Couldn't build the carousel for #${b.issue}.\n${b.run_url || ""}` });
+        await tg(env, "sendMessage", { chat_id: chat, text: `\u274C Couldn't build the carousel for #${b.issue}.
+${b.run_url || ""}` });
       }
       return new Response("ok");
     }
@@ -3882,7 +3921,6 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
       const plat = b.platform === "fb" ? "fb" : b.platform === "th" ? "th" : "ig";
       const where = plat === "fb" ? "Facebook (multi-photo post)" : plat === "th" ? "Threads" : "Instagram";
       const posted = b.outcome === "success" && b.result === "posted" && !!b.post_id;
-      // post -> issue routing: a COMIC comment on this post is routed like one on a promo post.
       if (posted && b.permalink) {
         try {
           await postmapRecord(env, plat, b.post_id, { kind: "promo", permalink: b.permalink, case: `carousel:${b.slug || ""}` });
@@ -3896,10 +3934,10 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
       } catch (e) {
       }
       const dry = String(b.dry_run) === "true";
-      const text = dry ? `🧪 Carousel DRY RUN for "${b.slug}" on ${CAROUSEL_NAMES[plat]} — ${b.outcome === "success" ? "slides reachable and token valid; nothing posted." : "failed."}\n${b.run_url || ""}`
-        : posted ? `✅ Carousel "${b.slug}" is live on ${where}. ${plat === "th" ? "COMIC comments on it get an automatic public reply with the link." : "COMIC comments on it go to the DM funnel."}`
-        : b.result === "already" ? `ℹ️ Carousel "${b.slug}" was already posted on ${CAROUSEL_NAMES[plat]} — nothing new went out.\n${b.run_url || ""}`
-        : `❌ Carousel "${b.slug}" FAILED to post on ${CAROUSEL_NAMES[plat]}.\n${b.run_url || ""}`;
+      const text = dry ? `\u{1F9EA} Carousel DRY RUN for "${b.slug}" on ${CAROUSEL_NAMES[plat]} \u2014 ${b.outcome === "success" ? "slides reachable and token valid; nothing posted." : "failed."}
+${b.run_url || ""}` : posted ? `\u2705 Carousel "${b.slug}" is live on ${where}. ${plat === "th" ? "COMIC comments on it get an automatic public reply with the link." : "COMIC comments on it go to the DM funnel."}` : b.result === "already" ? `\u2139\uFE0F Carousel "${b.slug}" was already posted on ${CAROUSEL_NAMES[plat]} \u2014 nothing new went out.
+${b.run_url || ""}` : `\u274C Carousel "${b.slug}" FAILED to post on ${CAROUSEL_NAMES[plat]}.
+${b.run_url || ""}`;
       await tg(env, "sendMessage", { chat_id: env.TELEGRAM_CHAT_ID, text });
       return new Response("ok");
     }
@@ -3910,8 +3948,7 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
       }
       const b = await request.json();
       const ok = b.result === "success";
-      // post -> issue routing: remember this promo post so a COMIC comment on it gets THIS issue.
-      if (ok && b.post_id && b.permalink && (b.platform === "fb" || b.platform === "ig")) {
+      if (ok && b.post_id && b.permalink && (b.platform === "fb" || b.platform === "ig" || b.platform === "th")) {
         try {
           await postmapRecord(env, b.platform, b.post_id, { kind: "promo", permalink: b.permalink, case: b.case || "" });
         } catch (e) {
@@ -3922,7 +3959,7 @@ ${(p.caption || "").slice(0, 800)}${warn}`,
       await tg(env, "sendMessage", {
         chat_id: env.TELEGRAM_CHAT_ID,
         text: dry ? `\u{1F9EA} Promo DRY RUN for "${b.case}" \u2014 ${ok ? "token and product check out; nothing posted." : "failed."}
-${b.run_url || ""}` : ok ? `\u2705 Posted "${b.case}" to Facebook.` : `\u274C Facebook post FAILED for "${b.case}".
+${b.run_url || ""}` : ok ? `\u2705 Posted "${b.case}" to ${b.platform === "ig" ? "Instagram" : b.platform === "th" ? "Threads" : "Facebook"}.` : `\u274C ${b.platform === "ig" ? "Instagram" : b.platform === "th" ? "Threads" : "Facebook"} post FAILED for "${b.case}".
 ${b.run_url || ""}`
       });
       return new Response("ok");
