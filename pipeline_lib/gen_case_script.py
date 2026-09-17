@@ -518,6 +518,30 @@ def _dump_parse_failure(raw, err):
 # 2, not 3. Every attempt is a full paid generation of a 50-page book, and all three attempts
 # have failed identically both times this misfired -- a third reroll of the same prompt buys
 # nothing but cost.
+def script_problems(script):
+    """Pages a later step cannot build from. An empty list means the script is usable.
+
+    repair_json can turn a dropped quote into VALID json with a mangled key -- the School of
+    Turin build got a page whose only number lived under the key 'page": 7,
+ title'. It
+    parsed, got cached, and spec_panels died on KeyError: 'page' on every retry after.
+    """
+    problems = []
+    pages = script.get("pages") if isinstance(script, dict) else None
+    if not isinstance(pages, list) or not pages:
+        return ["script has no pages"]
+    for i, pg in enumerate(pages):
+        if not isinstance(pg, dict):
+            problems.append(f"pages[{i}] is not an object")
+            continue
+        if not isinstance(pg.get("page"), int):
+            problems.append(f"pages[{i}] has no page number (keys: {list(pg)})")
+        need = "panel" if pg.get("type") == "splash" else "rows"
+        if need not in pg:
+            problems.append(f"pages[{i}] ({pg.get('type')}) has no '{need}'")
+    return problems
+
+
 def generate(system, user, max_tokens=16000, attempts=2,
              require=("script", "panel_prompts"), provider=None):
     """Call Claude and parse its JSON, retrying on malformed OR missing output.
@@ -542,6 +566,10 @@ def generate(system, user, max_tokens=16000, attempts=2,
             missing = [k for k in require if k not in result]
             if missing:
                 raise ValueError(f"JSON parsed but missing key(s): {missing}")
+            if "script" in result:
+                problems = script_problems(result["script"])
+                if problems:
+                    raise ValueError(f"script parsed but is unusable: {problems[:5]}")
             return result
         except (json.JSONDecodeError, ValueError, RuntimeError) as e:
             last_err = e
@@ -580,6 +608,11 @@ def main():
     _profile_key = layout_profiles.profile_for(args.case_id or args.case, args.profile)
     cache_key = f"{args.case_id or args.case}:{args.issue_no}:{args.target_pages}:{_profile_key}"
     result = cache_get(cache_key)
+    if result and script_problems(result.get("script")):
+        # A bad script cached before script_problems existed would otherwise fail every retry.
+        print(f"WARNING: cached script for '{cache_key}' is unusable "
+              f"({script_problems(result.get('script'))[:3]}) -- generating fresh", flush=True)
+        result = None
     if result:
         print(f"Using cached script for '{cache_key}' -- no Anthropic API call made")
     else:
