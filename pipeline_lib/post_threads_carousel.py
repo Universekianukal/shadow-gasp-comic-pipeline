@@ -5,7 +5,8 @@ own API, token and rules:
   * graph.threads.net: children (is_carousel_item) -> CAROUSEL container -> threads_publish.
   * Threads has NO DMs, so the caption's "check your DMs" line becomes a public-reply call to action
     (the comics bot answers COMIC comments with a public reply: the issue link + the free #1).
-  * Threads turns only ONE hashtag into a tag, so the hashtag line keeps just the first one.
+  * Threads makes only ONE hashtag a clickable topic, but the owner wants every hashtag visible in
+    the text, as on the hand-made #1 post (2026-09-17) -- so the hashtag line is kept whole.
   * Text limit 500 characters.
 
 The posted marker is the same per-platform file carousel/<slug>.posted.json, under key "th".
@@ -45,9 +46,6 @@ def threads_caption(e):
             if not placed:
                 out.append(cta)
                 placed = True
-            continue
-        if s.startswith("#") and all(w.startswith("#") for w in s.split()):
-            out.append(s.split()[0])
             continue
         out.append(ln)
     if not placed:  # no call-to-action line found: put it before the tag (or at the end)
