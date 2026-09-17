@@ -22,7 +22,7 @@ on:
         description: "Case name, Gumroad permalink, or product id"
         required: true
       platform:
-        description: "fb or ig"
+        description: "fb, ig or th (Threads)"
         required: false
         default: "fb"
       mode:
@@ -86,6 +86,9 @@ jobs:
         id: run
         env:
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          # Threads is its own account and token (platform=th)
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
           PROMO_CAPTION: ${{ github.event.inputs.caption }}
         run: |
           export PATH="$PATH:/home/runner/.local/bin"

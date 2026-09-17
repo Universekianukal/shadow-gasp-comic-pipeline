@@ -41,6 +41,13 @@ FB_PAGE_ID = "1164008466785123"
 # FB_PAGE_ACCESS_TOKEN the video pipeline publishes Reels with.
 IG_USER_ID = "17841425663819735"
 GRAPH = "https://graph.facebook.com/v19.0"
+# Threads is its own API, token and account (same as post_threads_carousel.py). It has no DMs,
+# so its call to action asks for a public reply, and its text limit is 500.
+THREADS_GRAPH = "https://graph.threads.net/v1.0"
+THREADS_LIMIT = 500
+THREADS_CTA_FREE = "Curious how it ends? Comment COMIC and we'll reply with your copy."
+THREADS_CTA_ISSUE = ("Curious how it ends? Comment COMIC and we'll reply with the link, "
+                     "plus your first case (#1) on us.")
 
 # The caption carries an emoji, and a Windows console defaults to cp1252 -- printing it there
 # raises UnicodeEncodeError and kills the run *after* the post has already gone out, which
@@ -234,6 +241,68 @@ def build_caption(product, hook=None, platform="fb"):
     return "\n".join(b for b in bits if b is not None).strip()
 
 
+def issue_of(product):
+    m = re.search(r"#\s*0*(\d+)", product.get("name") or "")
+    return int(m.group(1)) if m else 0
+
+
+def threads_caption(caption, issue):
+    """The Instagram caption with the DM ask swapped for the public-reply one, inside 500 chars.
+
+    Hashtags stay (owner, 2026-09-17: Threads posts looked bare without them); if the text is too
+    long they are the first thing dropped, as in post_threads_carousel.py.
+    """
+    cta = THREADS_CTA_FREE if issue == 1 else THREADS_CTA_ISSUE
+    out, placed = [], False
+    for line in caption.split("\n"):
+        low = line.lower()
+        if "comment comic" in low or "dm you the link" in low:
+            if not placed:
+                out.append(cta)
+                placed = True
+            continue
+        out.append(line)
+    if not placed:
+        at = next((i for i in range(len(out) - 1, -1, -1) if out[i].strip().startswith("#")), len(out))
+        out[at:at] = [cta, ""]
+    text = "\n".join(out).strip()
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    if len(text) > THREADS_LIMIT:
+        text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("#")).strip()
+    return text[:THREADS_LIMIT]
+
+
+def threads_call(method, path, params, token):
+    q = urllib.parse.urlencode({**params, "access_token": token})
+    ua = {"User-Agent": "shadow-gasp-comic-pipeline"}
+    req = (urllib.request.Request(f"{THREADS_GRAPH}/{path}?{q}", headers=ua) if method == "GET"
+           else urllib.request.Request(f"{THREADS_GRAPH}/{path}", data=q.encode(), headers=ua))
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as ex:
+        raise SystemExit(f"Threads {path.split('/')[-1]} failed: {ex.code} {ex.read().decode()[:400]}")
+
+
+def post_threads_image(token, user, image_url, caption):
+    """One image post on Threads: container -> wait for FINISHED -> publish. Returns the post id."""
+    import time
+    c = threads_call("POST", f"{user}/threads", {"media_type": "IMAGE", "image_url": image_url,
+                                                 "text": caption}, token)
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        st = threads_call("GET", c["id"], {"fields": "status,error_message"}, token)
+        if st.get("status") == "FINISHED":
+            break
+        if st.get("status") in ("ERROR", "EXPIRED"):
+            raise SystemExit(f"Threads rejected the image: {st.get('status')} {st.get('error_message', '')}")
+        time.sleep(4)
+    else:
+        raise SystemExit("Threads never finished processing the image")
+    return threads_call("POST", f"{user}/threads_publish", {"creation_id": c["id"]}, token).get("id")
+
+
 def post_photo(token, image_url, caption):
     data = urllib.parse.urlencode({
         "url": image_url,
@@ -304,8 +373,8 @@ def post_instagram(token, image_url, caption):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", required=True, help="case name, product id, or permalink")
-    ap.add_argument("--platform", default="fb", choices=["fb", "ig"],
-                    help="fb = Facebook page, ig = Instagram")
+    ap.add_argument("--platform", default="fb", choices=["fb", "ig", "th"],
+                    help="fb = Facebook page, ig = Instagram, th = Threads")
     ap.add_argument("--hook", default=None, help="override the opening line")
     ap.add_argument("--force", action="store_true",
                     help="post again even though this comic was already posted here")
@@ -318,7 +387,9 @@ def main():
     product = find_product(a.case)
     slug = slugify(product.get("custom_permalink") or product.get("name"))
     marker = os.path.join(MARKER_DIR, f"{slug}.json")
-    caption = build_caption(product, a.hook, a.platform)
+    caption = build_caption(product, a.hook, "ig" if a.platform == "th" else a.platform)
+    if a.platform == "th":
+        caption = threads_caption(caption, issue_of(product))
     # A caption rewritten in Telegram (the Instagram draft's "Edit caption" button) arrives
     # through post_promo.yml's `caption` input as PROMO_CAPTION, and is posted exactly as written.
     custom = os.environ.get("PROMO_CAPTION", "").strip()
@@ -365,12 +436,21 @@ def main():
               f"as {already.get('id')} -- skipping. Pass --force to post again.")
         return
 
-    token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
-    if not token:
-        raise SystemExit("FB_PAGE_ACCESS_TOKEN is not set")
+    if a.platform == "th":
+        token = os.environ.get("THREADS_ACCESS_TOKEN", "")
+        th_user = os.environ.get("THREADS_USER_ID", "")
+        if not token or not th_user:
+            raise SystemExit("THREADS_ACCESS_TOKEN / THREADS_USER_ID are not set")
+    else:
+        token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
+        if not token:
+            raise SystemExit("FB_PAGE_ACCESS_TOKEN is not set")
 
     if a.dry_run:
-        target = f"{GRAPH}/{IG_USER_ID}?fields=username,followers_count" if a.platform == "ig"             else f"{GRAPH}/{FB_PAGE_ID}?fields=name,fan_count"
+        if a.platform == "th":
+            target = f"{THREADS_GRAPH}/{th_user}?fields=username"
+        else:
+            target = f"{GRAPH}/{IG_USER_ID}?fields=username,followers_count" if a.platform == "ig"             else f"{GRAPH}/{FB_PAGE_ID}?fields=name,fan_count"
         req = urllib.request.Request(f"{target}&access_token={urllib.parse.quote(token)}",
                                      headers={"User-Agent": "shadow-gasp-comic-pipeline"})
         with urllib.request.urlopen(req, timeout=60) as r:
@@ -379,7 +459,9 @@ def main():
         print(f"DRY RUN -- token valid for {who}. Nothing posted.")
         return
 
-    if a.platform == "ig":
+    if a.platform == "th":
+        post_id = post_threads_image(token, th_user, img, caption)
+    elif a.platform == "ig":
         res = post_instagram(token, img, caption)
         post_id = res.get("id")
     else:
