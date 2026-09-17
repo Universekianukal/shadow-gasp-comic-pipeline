@@ -274,8 +274,10 @@ jobs:
 
       - name: Stop here if dry run
         if: github.event.inputs.dry_run == 'true'
+        env:
+          CASE: ${{ steps.case.outputs.case }}
         run: |
-          echo "DRY RUN — picked case: ${{ steps.case.outputs.case }}"
+          echo "DRY RUN — picked case: $CASE"
           echo "Stopping before generation/publish, as requested."
           exit 0
 
@@ -436,11 +438,16 @@ jobs:
           # the v3 carousel's story model (carousel_panels.pick_panels_llm)
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER || 'fireworks' }}
+          # Via env, never interpolated into the command line. A case title is free text and
+          # may contain a double quote -- Kang Kek Iew / "Comrade Duch" closed the --title
+          # string mid-word, so argparse saw the rest as stray positionals and the whole
+          # 2h53m build died at the last step with "unrecognized arguments".
+          CASE_TITLE: ${{ steps.case.outputs.case }}
         run: |
           python pipeline_lib/stage_and_deliver.py \
             --case-dir cases/${{ env.slug }} \
             --case-id "${{ env.slug }}" \
-            --title "${{ steps.case.outputs.case }}" \
+            --title "$CASE_TITLE" \
             --target-pages "${{ github.event.inputs.target_pages || vars.COMIC_DAILY_PAGES || '25' }}" \
             --video-id "${{ steps.pick.outputs.video_id }}"
 
@@ -499,6 +506,10 @@ jobs:
 
       - name: Commit ONLY the dedup ledger back to repo (never the comic content)
         if: always()
+        env:
+          # Same reason as CASE_TITLE above: a quote in the case name broke out of the -m
+          # string and git read the remainder as a pathspec, so the ledger never committed.
+          CASE_TITLE: ${{ steps.case.outputs.case }}
         run: |
           git config user.name "shadow-gasp-bot"
           git config user.email "bot@shadowgasp.example"
@@ -522,7 +533,7 @@ jobs:
           # ledgers are, and it deliberately never reaches Gumroad: the product page should
           # show the product, not an ad for it.
           git add cases_used.json issues.json promo/ carousel/ pipeline_lib/store_design/candidates/
-          git commit -m "Update case ledger: ${{ steps.case.outputs.case }}" || echo "nothing to commit"
+          git commit -m "Update case ledger: $CASE_TITLE" || echo "nothing to commit"
           # Rebase before pushing: a push from a 3-hour build races anything committed to main
           # while it ran, and losing the ledger to a non-fast-forward is how a case gets built
           # twice.
