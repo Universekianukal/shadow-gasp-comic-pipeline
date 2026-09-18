@@ -5,8 +5,14 @@ name: Token expiry alarm (Facebook Page + Threads)
 # simply stop working, and because nobody is tapping a button nobody finds out --
 # the runs go red in a tab no one opens.
 #
-# Known expiry at the time of writing: FB Page token 2026-11-13, Threads
-# 2026-11-14. Refresh Threads with `node get_token.mjs --refresh` in
+# Measured 2026-09-19, and it did NOT match what was written down. The Facebook
+# PAGE TOKEN ITSELF is long-lived (expires_at = 0); what actually runs out is
+# its DATA ACCESS window, on 2026-12-13. The "FB token expires 2026-11-13" note
+# that was being carried around was wrong -- which is exactly why this reads the
+# live values instead of trusting a date. Threads is a real 60-day token, due
+# 2026-11-14, and it is the one that will lapse first.
+#
+# Refresh Threads with `node get_token.mjs --refresh` in
 # D:\Hyperframe\threads (needs a token >=24h old and not yet expired), then
 # update all THREE places: local token.json, the comics-bot Worker secret
 # THREADS_ACCESS_TOKEN, and this repo's THREADS_ACCESS_TOKEN secret.
@@ -44,7 +50,7 @@ jobs:
           ALWAYS: ${{ github.event.inputs.always_report }}
         run: |
           python3 - <<'PYEOF' >> "$GITHUB_OUTPUT"
-          import json, math, os, time, urllib.parse, urllib.request
+          import json, math, os, sys, time, urllib.parse, urllib.request
 
           # A browser User-Agent throughout: urllib's default is refused at
           # Cloudflare's edge (1010) and is a bad citizen against Graph too.
@@ -79,7 +85,24 @@ jobs:
                       lines.append(f"🔴 Facebook Page token is INVALID — {d.get('error', {}).get('message', 'no reason given')}")
                       worst = 0
                   else:
-                      exp = int(d.get("data_access_expires_at") or d.get("expires_at") or 0)
+                      # These are two DIFFERENT clocks and the earlier one wins:
+                      #   expires_at             -- the token itself dies. 0 = long-lived.
+                      #   data_access_expires_at -- a rolling ~90-day data-access
+                      #                             window; the token may still be
+                      #                             "valid" while access is gone.
+                      # Reading data_access first (as this did) hides a real token
+                      # expiry behind a window that keeps sliding forward.
+                      tok_exp = int(d.get("expires_at") or 0)
+                      dat_exp = int(d.get("data_access_expires_at") or 0)
+                      detail = []
+                      if tok_exp:
+                          detail.append(f"   · token expires {time.strftime('%Y-%m-%d', time.gmtime(tok_exp))}")
+                      else:
+                          detail.append("   · token itself: long-lived (no expiry)")
+                      if dat_exp:
+                          detail.append(f"   · data access expires {time.strftime('%Y-%m-%d', time.gmtime(dat_exp))}")
+                      candidates = [e for e in (tok_exp, dat_exp) if e]
+                      exp = min(candidates) if candidates else 0
                       if exp == 0:
                           lines.append("✅ Facebook Page token: never expires")
                       else:
@@ -94,8 +117,9 @@ jobs:
                           days = math.ceil((exp - time.time()) / 86400)
                           worst = days if worst is None else min(worst, days)
                           mark = "🔴" if days <= FINAL_WARNING_DAYS else ("⚠️" if days <= 21 else "✅")
-                          lines.append(f"{mark} Facebook Page token: {days} day(s) left "
-                                       f"({time.strftime('%Y-%m-%d', time.gmtime(exp))})")
+                          lines.append(f"{mark} Facebook: {days} day(s) left "
+                                       f"({time.strftime('%Y-%m-%d', time.gmtime(exp))}) — whichever clock runs out first")
+                          lines.extend(detail)
               except Exception as e:
                   lines.append(f"🔴 Facebook token check FAILED: {e}")
                   worst = 0
@@ -130,8 +154,12 @@ jobs:
           if alert and (worst is not None and worst <= 21):
               body += "\n\nThe FB/IG/Threads autopilots stop silently when a token lapses."
           print("report=" + json.dumps(body))
+          # To STDERR. This script's stdout is redirected wholesale into
+          # $GITHUB_OUTPUT, and GitHub rejects a "::notice::" line there as an
+          # invalid output format -- which failed the entire step and meant the
+          # alarm could never have reported anything.
           for line in lines:
-              print("::notice::" + line)
+              print(line, file=sys.stderr)
           PYEOF
 
       - name: Tell Telegram
