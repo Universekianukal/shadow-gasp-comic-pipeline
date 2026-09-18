@@ -74,3 +74,28 @@ jobs:
             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
             --data @/tmp/done.json \
             || echo "WARNING: could not report the result"
+
+      # ---- failure alert (added 2026-09-19) ----
+      # The autopilot now dispatches this unattended, so a failure has to
+      # announce itself. "Report the result" above tells the Worker the
+      # outcome; this guarantees a Telegram message regardless of what the
+      # Worker chooses to do with it.
+      #
+      # Purely additive: runs only on failure, so every successful path is
+      # exactly what it was.
+      - name: Tell Telegram this FAILED
+        if: failure()
+        continue-on-error: true
+        env:
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SLUG: ${{ github.event.inputs.slug }}
+          MSG: "🔴 Comic carousel FAILED to post to THREADS for ${{ github.event.inputs.slug }}. Nothing went out and no posted-marker was written, so it stays in the queue and the autopilot will retry it. If this repeats, check whether THREADS_ACCESS_TOKEN has expired."
+        run: |
+          # Built in python so a slug or error text carrying a quote cannot
+          # break the payload, and Telegram's own ok flag is checked -- curl
+          # -sS exits 0 on a 403 too, which would turn a lost alert green.
+          T="$MSG Log: $RUN_URL"             python3 -c 'import json,os;print(json.dumps({"chat_id":os.environ["CHAT"],"text":os.environ["T"]}))' > tgfail.json
+          curl -sS -X POST "https://api.telegram.org/bot$BOT/sendMessage"             -H "Content-Type: application/json" --data @tgfail.json -o tgfail_resp.json             || echo "WARNING: could not reach Telegram"
+          python3 -c 'import json;d=json.load(open("tgfail_resp.json"));print("alert delivered, message_id",d["result"]["message_id"]) if d.get("ok") else print("WARNING: telegram refused the alert:",d)'             2>/dev/null || echo "WARNING: unreadable Telegram response"
