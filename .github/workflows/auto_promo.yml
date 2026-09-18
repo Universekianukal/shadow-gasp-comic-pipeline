@@ -1,0 +1,200 @@
+name: Comic promo autopilot (one comic per evening)
+
+# Posts one comic's promo card to Facebook, Instagram and Threads each evening,
+# working through the catalogue oldest issue first.
+#
+# PURELY ADDITIVE. It dispatches the same post_promo.yml the comics bot's /promo
+# draft Accept buttons dispatch, with mode=post and force=false. The manual
+# /promo route, its preview and its Edit-caption button are untouched.
+#
+# ---------------------------------------------------------------------------
+# READ THIS BEFORE CHANGING THE SELECTION RULE.
+#
+# post_promo.yml's own header says it is deliberately never automatic, and gives
+# the reason: "a comic gets REBUILT -- price change, art regen, re-render -- and
+# a post-per-build would re-post the same book. That is the pattern that took
+# this page's reach from ~700-1,300 to 1 on 2026-08-10."
+#
+# That failure is specifically about RE-posting the same book. This workflow is
+# built so that cannot happen:
+#   * selection is a one-way walk through the catalogue, never triggered by a
+#     build, a push, or a rebuild -- only by the clock;
+#   * a comic is eligible only if promo/<slug>.json has NO entry for that
+#     platform, so each comic is promoted exactly once per platform, ever;
+#   * force is always false, so post_fb_promo.py's own marker check is still the
+#     last word and refuses a second post even if this picker were wrong;
+#   * at most one comic per day.
+# Do not add --force, and do not trigger this from a build event.
+# ---------------------------------------------------------------------------
+#
+# Deliberately NOT in the comics bot Worker -- see auto_carousel.yml's header.
+#
+# PAUSE IT: commit an empty file at AUTOPILOT_OFF in the repo root.
+
+on:
+  schedule:
+    # Early on purpose; the hold step below decides the real time. See
+    # auto_carousel.yml / publish_queue.yml for why a cron time cannot.
+    - cron: '0 12 * * *'    # nominal 12:00 UTC; in practice starts ~13:30-14:00 UTC
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "Force one comic slug instead of the next eligible one (blank = auto-pick)"
+        required: false
+        default: ""
+      skip_hold:
+        description: "'true' = go now instead of holding until the slot (manual tests)"
+        required: false
+        default: ""
+      dry_run:
+        description: "'true' = pick a comic and report it, dispatch nothing"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: auto-promo
+  cancel-in-progress: false
+
+env:
+  # 14:30 UTC = 20:00 IST, plus a 0-90 min per-date jitter -> 20:00-21:30 IST.
+  BASE_AT_UTC: "14:30"
+
+jobs:
+  promo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Hold until the slot (20:00-21:30 IST, jittered by date)
+        if: github.event.inputs.skip_hold != 'true'
+        run: |
+          JITTER=$(( 10#$(date -u +%j) * 71 % 91 ))
+          NOW=$(date -u +%s)
+          TARGET=$(( $(date -u -d "today ${BASE_AT_UTC}" +%s) + JITTER * 60 ))
+          echo "today's slot: $(date -u -d "@$TARGET" +%H:%M) UTC (+${JITTER}m) = $(TZ=Asia/Kolkata date -d "@$TARGET" +%H:%M) IST"
+          WAIT=$(( TARGET - NOW ))
+          if [ "$WAIT" -gt 0 ] && [ "$WAIT" -le 21600 ]; then
+            echo "started $(date -u +%H:%M) UTC -- holding ${WAIT}s"
+            sleep "$WAIT"
+          else
+            echo "started $(date -u +%H:%M) UTC -- at or past the slot, going now"
+          fi
+
+      - name: Refresh the checkout
+        run: |
+          git fetch origin main -q
+          git reset --hard origin/main -q
+
+      - name: Kill switch
+        id: killswitch
+        run: |
+          if [ -f AUTOPILOT_OFF ]; then
+            echo "AUTOPILOT_OFF is present -- standing down."
+            echo "off=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "off=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Gumroad CLI
+        # `curl | bash` reports success when the download fails -- test the binary.
+        if: steps.killswitch.outputs.off != 'true'
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            echo "install attempt $attempt failed, retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || {
+            echo "::error::Gumroad CLI did not install after 5 attempts"; exit 1; }
+
+      - name: List published comics
+        # --all matters: Gumroad returns only the newest 10 without it.
+        if: steps.killswitch.outputs.off != 'true'
+        run: |
+          echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+          ~/.local/bin/gumroad products list --all > /tmp/products.json
+          python3 -c "import json;d=json.load(open('/tmp/products.json'));p=d.get('products',d);print(f'{len(p)} products, {sum(1 for x in p if x.get(\"published\"))} published')"
+
+      - name: Pick the next comic
+        id: pick
+        if: steps.killswitch.outputs.off != 'true'
+        env:
+          FORCE_SLUG: ${{ github.event.inputs.slug }}
+        run: |
+          python3 pipeline_lib/autopilot_pick.py \
+            --kind promo --platforms fb,ig,th \
+            --products /tmp/products.json \
+            --slug "$FORCE_SLUG"
+
+      - name: Post to Facebook
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_fb == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CASE: ${{ steps.pick.outputs.permalink }}
+        run: gh workflow run post_promo.yml -f "case=$CASE" -f "platform=fb" -f "mode=post" -f "force=false"
+
+      - name: Stagger before Instagram
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_ig == 'true' && github.event.inputs.dry_run != 'true'
+        run: sleep 1200
+
+      - name: Post to Instagram
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_ig == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CASE: ${{ steps.pick.outputs.permalink }}
+        run: gh workflow run post_promo.yml -f "case=$CASE" -f "platform=ig" -f "mode=post" -f "force=false"
+
+      - name: Stagger before Threads
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_th == 'true' && github.event.inputs.dry_run != 'true'
+        run: sleep 1200
+
+      - name: Post to Threads
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_th == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CASE: ${{ steps.pick.outputs.permalink }}
+        run: gh workflow run post_promo.yml -f "case=$CASE" -f "platform=th" -f "mode=post" -f "force=false"
+
+      - name: Tell Telegram what the autopilot did
+        if: always()
+        continue-on-error: true
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          # Through the environment, never substituted into the script -- see
+          # auto_carousel.yml for why.
+          OFF: ${{ steps.killswitch.outputs.off }}
+          SLUG: ${{ steps.pick.outputs.slug }}
+          REASON: ${{ steps.pick.outputs.reason }}
+          ISSUE: ${{ steps.pick.outputs.issue }}
+          TITLE: ${{ steps.pick.outputs.title }}
+          NEED: ${{ steps.pick.outputs.need }}
+          REMAINING: ${{ steps.pick.outputs.remaining }}
+          DRY: ${{ github.event.inputs.dry_run }}
+        run: |
+          if [ "$OFF" = "true" ]; then
+            TEXT="📣 Promo autopilot: paused (AUTOPILOT_OFF is committed). Delete it to resume."
+          elif [ -z "$SLUG" ]; then
+            TEXT="📣 Promo autopilot: $REASON"
+          elif [ "$DRY" = "true" ]; then
+            TEXT="📣 Promo autopilot (dry run): would post #$ISSUE $TITLE → $NEED. $REMAINING comic(s) left."
+          else
+            TEXT="📣 Promo autopilot: posting #$ISSUE $TITLE → $NEED. $REMAINING comic(s) left."
+          fi
+          printf '{"text":%s}' "$(printf '%s' "$TEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" > /tmp/n.json
+          curl -sS -X POST "${WORKER_URL%/}/notify-raw" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/n.json || echo "could not reach the bot"
