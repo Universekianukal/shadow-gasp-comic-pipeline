@@ -123,7 +123,7 @@ jobs:
         if: steps.killswitch.outputs.off != 'true'
         run: |
           echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
-          ~/.local/bin/gumroad products list --all > /tmp/products.json
+          ~/.local/bin/gumroad products list --all --json > /tmp/products.json
           python3 -c "import json;d=json.load(open('/tmp/products.json'));p=d.get('products',d);print(f'{len(p)} products, {sum(1 for x in p if x.get(\"published\"))} published')"
 
       - name: Pick the next comic
