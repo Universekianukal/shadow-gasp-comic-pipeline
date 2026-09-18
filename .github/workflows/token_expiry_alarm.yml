@@ -1,0 +1,132 @@
+name: Token expiry alarm (Facebook Page + Threads)
+
+# The autopilots (auto_crosspost, auto_carousel, auto_promo) post without anyone
+# watching. When the Facebook Page token or the Threads token lapses they will
+# simply stop working, and because nobody is tapping a button nobody finds out --
+# the runs go red in a tab no one opens.
+#
+# Known expiry at the time of writing: FB Page token 2026-11-13, Threads
+# 2026-11-14. Refresh Threads with `node get_token.mjs --refresh` in
+# D:\Hyperframe\threads (needs a token >=24h old and not yet expired), then
+# update all THREE places: local token.json, the comics-bot Worker secret
+# THREADS_ACCESS_TOKEN, and this repo's THREADS_ACCESS_TOKEN secret.
+#
+# This workflow reads the REAL expiry from the API rather than trusting those
+# dates, so rotating a token silently corrects the countdown.
+#
+# Read-only: it calls debug_token / me and posts a Telegram message. It never
+# writes to the repo and never posts to a page.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'     # once a day; the exact minute does not matter here
+  workflow_dispatch:
+    inputs:
+      always_report:
+        description: "'true' = report even when both tokens are healthy"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check both tokens
+        id: check
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          ALWAYS: ${{ github.event.inputs.always_report }}
+        run: |
+          python3 - <<'PYEOF' >> "$GITHUB_OUTPUT"
+          import json, os, time, urllib.parse, urllib.request
+
+          # A browser User-Agent throughout: urllib's default is refused at
+          # Cloudflare's edge (1010) and is a bad citizen against Graph too.
+          UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": UA})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+
+          # Alert on the way down, not every day: three weeks out, a fortnight,
+          # then the final week every day.
+          def urgent(days):
+              return days is None or days <= 7 or days in (21, 14)
+
+          lines, worst = [], None
+
+          fb = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
+          if not fb:
+              lines.append("🔴 Facebook: no FB_PAGE_ACCESS_TOKEN secret set")
+              worst = 0
+          else:
+              try:
+                  q = urllib.parse.urlencode({"input_token": fb, "access_token": fb})
+                  d = get(f"https://graph.facebook.com/v19.0/debug_token?{q}").get("data", {})
+                  if not d.get("is_valid"):
+                      lines.append(f"🔴 Facebook Page token is INVALID — {d.get('error', {}).get('message', 'no reason given')}")
+                      worst = 0
+                  else:
+                      exp = int(d.get("data_access_expires_at") or d.get("expires_at") or 0)
+                      if exp == 0:
+                          lines.append("✅ Facebook Page token: never expires")
+                      else:
+                          days = int((exp - time.time()) // 86400)
+                          worst = days if worst is None else min(worst, days)
+                          mark = "🔴" if days <= 7 else ("⚠️" if days <= 21 else "✅")
+                          lines.append(f"{mark} Facebook Page token: {days} day(s) left "
+                                       f"({time.strftime('%Y-%m-%d', time.gmtime(exp))})")
+              except Exception as e:
+                  lines.append(f"🔴 Facebook token check FAILED: {e}")
+                  worst = 0
+
+          th = os.environ.get("THREADS_ACCESS_TOKEN", "")
+          if not th:
+              lines.append("🔴 Threads: no THREADS_ACCESS_TOKEN secret set")
+              worst = 0
+          else:
+              # Threads has no debug_token. /me proves the token still works;
+              # the 60-day lifetime is what the refresh cadence is really for.
+              try:
+                  q = urllib.parse.urlencode({"fields": "id,username", "access_token": th})
+                  me = get(f"https://graph.threads.net/v1.0/me?{q}")
+                  lines.append(f"✅ Threads token valid (@{me.get('username', me.get('id', '?'))}) "
+                               f"— 60-day token, refresh before 2026-11-14")
+              except Exception as e:
+                  lines.append(f"🔴 Threads token is DEAD or refused: {e}")
+                  lines.append("   Refresh: node get_token.mjs --refresh in D:\\Hyperframe\\threads, "
+                               "then update token.json + the comics-bot Worker secret + this repo's secret.")
+                  worst = 0
+
+          alert = (os.environ.get("ALWAYS") == "true") or urgent(worst)
+          print(f"alert={'true' if alert else 'false'}")
+          body = "🔑 Shadow Gasp posting tokens\n" + "\n".join(lines)
+          if alert and (worst is not None and worst <= 21):
+              body += "\n\nThe FB/IG/Threads autopilots stop silently when a token lapses."
+          print("report=" + json.dumps(body))
+          for line in lines:
+              print("::notice::" + line)
+          PYEOF
+
+      - name: Tell Telegram
+        if: steps.check.outputs.alert == 'true'
+        continue-on-error: true
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          REPORT: ${{ steps.check.outputs.report }}
+        run: |
+          python3 -c 'import json,os; print(json.dumps({"text": json.loads(os.environ["REPORT"])}))' > /tmp/n.json
+          curl -sS -X POST "${WORKER_URL%/}/notify-raw" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/n.json || echo "could not reach the bot"
