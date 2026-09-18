@@ -5,12 +5,15 @@ name: Token expiry alarm (Facebook Page + Threads)
 # simply stop working, and because nobody is tapping a button nobody finds out --
 # the runs go red in a tab no one opens.
 #
-# Measured 2026-09-19, and it did NOT match what was written down. The Facebook
-# PAGE TOKEN ITSELF is long-lived (expires_at = 0); what actually runs out is
-# its DATA ACCESS window, on 2026-12-13. The "FB token expires 2026-11-13" note
-# that was being carried around was wrong -- which is exactly why this reads the
-# live values instead of trusting a date. Threads is a real 60-day token, due
-# 2026-11-14, and it is the one that will lapse first.
+# Measured live 2026-09-19:
+#   FB page token expires      2026-11-13  (56 days) <- the binding one
+#   FB data access expires     2026-12-13
+#   Threads token (60-day)     2026-11-14
+#
+# The two Facebook dates are different clocks and only the earlier one matters,
+# so this counts down to whichever runs out first. Reading data_access_expires_at
+# first (as an earlier draft did) reported a comfortable 86 days and hid the real
+# 56-day token expiry behind a window that keeps sliding forward.
 #
 # Refresh Threads with `node get_token.mjs --refresh` in
 # D:\Hyperframe\threads (needs a token >=24h old and not yet expired), then
