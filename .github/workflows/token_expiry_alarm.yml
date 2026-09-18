@@ -44,7 +44,7 @@ jobs:
           ALWAYS: ${{ github.event.inputs.always_report }}
         run: |
           python3 - <<'PYEOF' >> "$GITHUB_OUTPUT"
-          import json, os, time, urllib.parse, urllib.request
+          import json, math, os, time, urllib.parse, urllib.request
 
           # A browser User-Agent throughout: urllib's default is refused at
           # Cloudflare's edge (1010) and is a bad citizen against Graph too.
@@ -56,10 +56,14 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as r:
                   return json.load(r)
 
-          # Alert on the way down, not every day: three weeks out, a fortnight,
-          # then the final week every day.
+          # Alert on the way down, not every day: a month out, three weeks, a
+          # fortnight, ten days -- then EVERY DAY from a week out, so the
+          # 5-days-left reminder always lands, and keeps landing until the
+          # token is actually rotated.
+          FINAL_WARNING_DAYS = 5
+
           def urgent(days):
-              return days is None or days <= 7 or days in (21, 14)
+              return days is None or days <= 7 or days in (30, 21, 14, 10)
 
           lines, worst = [], None
 
@@ -79,9 +83,17 @@ jobs:
                       if exp == 0:
                           lines.append("✅ Facebook Page token: never expires")
                       else:
-                          days = int((exp - time.time()) // 86400)
+                          # CEIL, not floor. Flooring under-reports by a day
+                          # ("5 days left" printed as 4) and, worse, makes the
+                          # exact-match thresholds below unreachable: a token
+                          # exactly 21 days out floors to 20, so `days in
+                          # (30, 21, 14, 10)` would never once fire and only
+                          # the final-week alerts would ever have gone out.
+                          # With ceil each integer holds for a whole day, so
+                          # every threshold is hit by exactly one daily run.
+                          days = math.ceil((exp - time.time()) / 86400)
                           worst = days if worst is None else min(worst, days)
-                          mark = "🔴" if days <= 7 else ("⚠️" if days <= 21 else "✅")
+                          mark = "🔴" if days <= FINAL_WARNING_DAYS else ("⚠️" if days <= 21 else "✅")
                           lines.append(f"{mark} Facebook Page token: {days} day(s) left "
                                        f"({time.strftime('%Y-%m-%d', time.gmtime(exp))})")
               except Exception as e:
@@ -109,6 +121,12 @@ jobs:
           alert = (os.environ.get("ALWAYS") == "true") or urgent(worst)
           print(f"alert={'true' if alert else 'false'}")
           body = "🔑 Shadow Gasp posting tokens\n" + "\n".join(lines)
+          if worst is not None and worst <= FINAL_WARNING_DAYS:
+              # Loud, and repeated every day from here on, because from this
+              # point a lapse is days away and every autopilot dies with it.
+              body = (f"⏰ FINAL WARNING - {worst} day(s) left. Refresh the token now.\n\n" + body +
+                      "\n\nnode get_token.mjs --refresh in D:\\Hyperframe\\threads, then update "
+                      "token.json, the comics-bot Worker secret and the repo secret.")
           if alert and (worst is not None and worst <= 21):
               body += "\n\nThe FB/IG/Threads autopilots stop silently when a token lapses."
           print("report=" + json.dumps(body))
