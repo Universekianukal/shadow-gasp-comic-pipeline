@@ -25,23 +25,54 @@ hand out a dead link.
 import json
 import os
 import pathlib
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    # Reuse the real slug function rather than copying it: a marker only lines up
+    # with the rest of the ledgers if this slug matches pipeline.yml's exactly,
+    # and two copies would drift. post_fb_promo imports only stdlib at module
+    # level (Pillow is optional, inside a try), so this is cheap and safe.
+    from post_fb_promo import slugify
+except Exception:  # pragma: no cover - only if run outside the repo
+    def slugify(name):
+        return re.sub(r"[^a-z0-9-]", "", (name or "").lower().replace(" ", "-"))[:40]
 
 
-def published_permalinks(products):
-    """Permalinks of every PUBLISHED Gumroad product, lowercased.
+def find_product(products, case_or_permalink):
+    """The Gumroad product for this case, published or not.
 
-    `products` is the list from `gumroad products list --all` -- the --all matters,
-    the API returns only the newest 10 without it.
+    Mirrors post_fb_promo.find_product's matching rules deliberately, so the
+    autopilot resolves a comic to exactly the product post_promo.yml would --
+    but against a product list fetched ONCE, instead of shelling out to the
+    Gumroad CLI per candidate.
+
+    Product names are "SHADOW GASP #NN: TITLE" and never the raw case name, so
+    an exact permalink/id hit is tried first and a two-way slug containment
+    check second.
     """
-    out = set()
+    want = slugify(case_or_permalink)
+    best = None
     for p in products or []:
-        if not p.get("published"):
-            continue
-        for key in ("permalink", "custom_permalink"):
-            v = (p.get(key) or "").strip().lower()
-            if v:
-                out.add(v)
-    return out
+        if p.get("custom_permalink") == case_or_permalink or p.get("id") == case_or_permalink:
+            return p
+        name_slug = slugify(p.get("name", ""))
+        if want and (want in name_slug or name_slug in want):
+            best = p
+    return best
+
+
+def is_published(products, case_or_permalink):
+    """True only if a matching product exists AND is published.
+
+    A draft must never be posted: the Gumroad page for a draft serves HTTP 200,
+    so nothing would look broken, but every click and every COMIC-comment DM
+    would land on a dead product.
+    """
+    p = find_product(products, case_or_permalink)
+    return bool(p and p.get("published"))
 
 
 def load_entries(root="."):
@@ -78,7 +109,7 @@ def posted_platforms(kind, slug, root="."):
     return _marker_platforms(root / "promo" / f"{slug}.json")
 
 
-def pick(kind, wanted, published, root=".", force_slug=""):
+def pick(kind, wanted, products, root=".", force_slug=""):
     """The next comic that still needs at least one of `wanted`.
 
     Returns (entry, [platforms it still needs]) or (None, reason).
@@ -96,8 +127,7 @@ def pick(kind, wanted, published, root=".", force_slug=""):
 
     saw_unpublished = 0
     for e in entries:
-        permalink = (e.get("permalink") or e["slug"]).strip().lower()
-        if published is not None and permalink not in published:
+        if products is not None and not _entry_published(e, products):
             saw_unpublished += 1
             continue
         need = [p for p in wanted if p not in posted_platforms(kind, e["slug"], root)]
@@ -112,12 +142,21 @@ def pick(kind, wanted, published, root=".", force_slug=""):
     )
 
 
-def remaining(kind, wanted, published, root="."):
+def _entry_published(entry, products):
+    """A carousel entry is eligible if EITHER its permalink or its title resolves
+    to a published product -- entries carry a short permalink while Gumroad names
+    are "SHADOW GASP #NN: TITLE", and different comics match on different ones."""
+    for key in (entry.get("permalink"), entry.get("slug"), entry.get("title")):
+        if key and is_published(products, key):
+            return True
+    return False
+
+
+def remaining(kind, wanted, products, root="."):
     """How many comics still need at least one platform -- for the Telegram line."""
     n = 0
     for e in load_entries(root):
-        permalink = (e.get("permalink") or e["slug"]).strip().lower()
-        if published is not None and permalink not in published:
+        if products is not None and not _entry_published(e, products):
             continue
         if [p for p in wanted if p not in posted_platforms(kind, e["slug"], root)]:
             n += 1
@@ -139,13 +178,12 @@ def main():
 
     wanted = [p.strip() for p in a.platforms.split(",") if p.strip()]
 
-    published = None
+    products = None
     if a.products:
         raw = json.loads(pathlib.Path(a.products).read_text(encoding="utf-8"))
-        published = published_permalinks(
-            raw.get("products") if isinstance(raw, dict) else raw)
+        products = raw.get("products") if isinstance(raw, dict) else raw
 
-    entry, info = pick(a.kind, wanted, published, a.root, a.slug)
+    entry, info = pick(a.kind, wanted, products, a.root, a.slug)
 
     lines = []
     if entry is None:
@@ -159,7 +197,7 @@ def main():
         lines.append(f"need={','.join(info)}")
         for p in wanted:
             lines.append(f"need_{p}={'true' if p in info else 'false'}")
-        lines.append(f"remaining={remaining(a.kind, wanted, published, a.root)}")
+        lines.append(f"remaining={remaining(a.kind, wanted, products, a.root)}")
 
     out = "\n".join(lines)
     print(out)
