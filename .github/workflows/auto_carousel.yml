@@ -170,7 +170,10 @@ jobs:
         run: gh workflow run post_threads_carousel.yml -f "slug=$SLUG" -f "force=false"
 
       - name: Tell Telegram what the autopilot did
-        if: always()
+        # success() only -- a failed run is announced by the alert step
+        # below instead, which says what broke rather than reporting a
+        # half-empty pick.
+        if: success()
         continue-on-error: true
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
@@ -204,3 +207,25 @@ jobs:
             -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
             --data @/tmp/n.json || echo "could not reach the bot"
+
+      # ---- failure alert (added 2026-09-19) ----
+      # Nobody is watching this run. If the autopilot itself breaks -- the bot
+      # unreachable, the Gumroad CLI down, a dispatch refused -- it has to say
+      # so, or the stream just silently stops and the backlog quietly grows
+      # again. Failures of the actual POST are reported separately by the
+      # workflow that does the posting.
+      - name: Tell Telegram the autopilot FAILED
+        if: failure()
+        continue-on-error: true
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MSG: "🔴 Comic carousel autopilot FAILED before posting. No carousel went out today; nothing was marked posted, so it retries tomorrow."
+        run: |
+          # Built in python so error text carrying a quote cannot break the
+          # payload, and Telegram's own ok flag is checked -- curl -sS exits 0
+          # on a 403 too, which would turn a lost alert into a green step.
+          T="$MSG Log: $RUN_URL"             python3 -c 'import json,os;print(json.dumps({"chat_id":os.environ["CHAT"],"text":os.environ["T"]}))' > tgfail.json
+          curl -sS -X POST "https://api.telegram.org/bot$BOT/sendMessage"             -H "Content-Type: application/json" --data @tgfail.json -o tgfail_resp.json             || echo "WARNING: could not reach Telegram"
+          python3 -c 'import json;d=json.load(open("tgfail_resp.json"));print("alert delivered, message_id",d["result"]["message_id"]) if d.get("ok") else print("WARNING: telegram refused the alert:",d)'             2>/dev/null || echo "WARNING: unreadable Telegram response"
