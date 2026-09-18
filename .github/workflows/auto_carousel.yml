@@ -1,0 +1,206 @@
+name: Comic carousel autopilot (one comic per afternoon)
+
+# Posts one comic's carousel to Instagram, Facebook and Threads each afternoon,
+# working through the catalogue oldest issue first.
+#
+# PURELY ADDITIVE. It dispatches the very same post_carousel.yml and
+# post_threads_carousel.yml that the comics bot's /carousel draft buttons
+# dispatch, with the same inputs and force=false. Nothing here posts anything
+# itself, writes a marker, or builds a slide -- those workflows still own all of
+# it, and the manual /carousel route is untouched and keeps working.
+#
+# Deliberately NOT in the comics bot Worker. Scheduling was shipped there once
+# (2026-09-12) and the owner had it rolled back: shadow_gasp scheduling lives in
+# the video bot, never the comics bot. Running it as a GitHub Action honours that
+# and needs no Worker deploy at all.
+#
+# PAUSE IT: commit an empty file at AUTOPILOT_OFF in the repo root. Delete it to
+# resume. No deploy, no edit here.
+
+on:
+  schedule:
+    # Deliberately EARLY. GitHub fires scheduled workflows 1.5-2h late and the
+    # delay drifts day to day, so the cron cannot decide when a post goes out --
+    # it only decides when we start waiting. The hold step sets the real time.
+    - cron: '0 5 * * *'     # nominal 05:00 UTC; in practice starts ~06:30-07:00 UTC
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "Force one carousel slug instead of the next eligible one (blank = auto-pick)"
+        required: false
+        default: ""
+      skip_hold:
+        description: "'true' = go now instead of holding until the slot (manual tests)"
+        required: false
+        default: ""
+      dry_run:
+        description: "'true' = pick a comic and report it, dispatch nothing"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: auto-carousel
+  cancel-in-progress: false
+
+env:
+  # 08:30 UTC = 14:00 IST, plus a 0-90 min per-date jitter, so the real slot
+  # moves inside 14:00-15:30 IST instead of landing on the same minute daily.
+  # Derived from the date rather than $RANDOM, so a re-run does not move it.
+  BASE_AT_UTC: "08:30"
+
+jobs:
+  carousel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Hold until the slot (14:00-15:30 IST, jittered by date)
+        # Runner minutes are free on this repo, so an idle wait costs nothing and
+        # buys an exact time instead of a drifting one. Bounded: if we start at
+        # or past the target, go now rather than sleeping ~24h.
+        if: github.event.inputs.skip_hold != 'true'
+        run: |
+          JITTER=$(( 10#$(date -u +%j) * 53 % 91 ))
+          NOW=$(date -u +%s)
+          TARGET=$(( $(date -u -d "today ${BASE_AT_UTC}" +%s) + JITTER * 60 ))
+          echo "today's slot: $(date -u -d "@$TARGET" +%H:%M) UTC (+${JITTER}m) = $(TZ=Asia/Kolkata date -d "@$TARGET" +%H:%M) IST"
+          WAIT=$(( TARGET - NOW ))
+          if [ "$WAIT" -gt 0 ] && [ "$WAIT" -le 21600 ]; then
+            echo "started $(date -u +%H:%M) UTC -- holding ${WAIT}s"
+            sleep "$WAIT"
+          else
+            echo "started $(date -u +%H:%M) UTC -- at or past the slot, going now"
+          fi
+
+      - name: Refresh the checkout
+        # The hold can be hours long. Re-read main so the pick sees any marker
+        # committed while we were asleep (a manual /carousel tap, a new build).
+        run: |
+          git fetch origin main -q
+          git reset --hard origin/main -q
+
+      - name: Kill switch
+        id: killswitch
+        run: |
+          if [ -f AUTOPILOT_OFF ]; then
+            echo "AUTOPILOT_OFF is present -- standing down."
+            echo "off=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "off=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Gumroad CLI
+        # Same hardened install as post_promo.yml: `curl | bash` REPORTS SUCCESS
+        # WHEN THE DOWNLOAD FAILS, so the binary is explicitly tested for after.
+        if: steps.killswitch.outputs.off != 'true'
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            echo "install attempt $attempt failed, retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || {
+            echo "::error::Gumroad CLI did not install after 5 attempts"; exit 1; }
+
+      - name: List published comics
+        # A carousel for a DRAFT comic would funnel people at a draft product
+        # page -- which serves HTTP 200, so nothing would look broken -- and the
+        # COMIC-comment DM funnel would hand out a dead link. So only published
+        # comics are eligible.
+        #
+        # --all matters: Gumroad returns only the newest 10 without it.
+        if: steps.killswitch.outputs.off != 'true'
+        run: |
+          echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+          ~/.local/bin/gumroad products list --all > /tmp/products.json
+          python3 -c "import json;d=json.load(open('/tmp/products.json'));p=d.get('products',d);print(f'{len(p)} products, {sum(1 for x in p if x.get(\"published\"))} published')"
+
+      - name: Pick the next comic
+        id: pick
+        if: steps.killswitch.outputs.off != 'true'
+        env:
+          FORCE_SLUG: ${{ github.event.inputs.slug }}
+        run: |
+          python3 pipeline_lib/autopilot_pick.py \
+            --kind carousel --platforms ig,fb,th \
+            --products /tmp/products.json \
+            --slug "$FORCE_SLUG"
+
+      - name: Post to Instagram
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_ig == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ steps.pick.outputs.slug }}
+        run: gh workflow run post_carousel.yml -f "slug=$SLUG" -f "platform=ig" -f "force=false"
+
+      - name: Stagger before Facebook
+        # Three identical posts fired in the same second read as one bot
+        # broadcast. Spacing them also keeps the three runs from racing each
+        # other's commit of the same <slug>.posted.json.
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_fb == 'true' && github.event.inputs.dry_run != 'true'
+        run: sleep 1200
+
+      - name: Post to Facebook
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_fb == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ steps.pick.outputs.slug }}
+        run: gh workflow run post_carousel.yml -f "slug=$SLUG" -f "platform=fb" -f "force=false"
+
+      - name: Stagger before Threads
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_th == 'true' && github.event.inputs.dry_run != 'true'
+        run: sleep 1200
+
+      - name: Post to Threads
+        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_th == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ steps.pick.outputs.slug }}
+        run: gh workflow run post_threads_carousel.yml -f "slug=$SLUG" -f "force=false"
+
+      - name: Tell Telegram what the autopilot did
+        if: always()
+        continue-on-error: true
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          # Through the environment, never substituted into the script: a comic
+          # title is free text (HEAVEN'S GATE already carries an apostrophe) and
+          # a stray quote would otherwise break the step.
+          OFF: ${{ steps.killswitch.outputs.off }}
+          SLUG: ${{ steps.pick.outputs.slug }}
+          REASON: ${{ steps.pick.outputs.reason }}
+          ISSUE: ${{ steps.pick.outputs.issue }}
+          TITLE: ${{ steps.pick.outputs.title }}
+          NEED: ${{ steps.pick.outputs.need }}
+          REMAINING: ${{ steps.pick.outputs.remaining }}
+          DRY: ${{ github.event.inputs.dry_run }}
+        run: |
+          if [ "$OFF" = "true" ]; then
+            TEXT="🎠 Carousel autopilot: paused (AUTOPILOT_OFF is committed). Delete it to resume."
+          elif [ -z "$SLUG" ]; then
+            TEXT="🎠 Carousel autopilot: $REASON"
+          elif [ "$DRY" = "true" ]; then
+            TEXT="🎠 Carousel autopilot (dry run): would post #$ISSUE $TITLE → $NEED. $REMAINING comic(s) left."
+          else
+            TEXT="🎠 Carousel autopilot: posting #$ISSUE $TITLE → $NEED. $REMAINING comic(s) left."
+          fi
+          printf '{"text":%s}' "$(printf '%s' "$TEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" > /tmp/n.json
+          # A browser User-Agent: curl/urllib defaults are refused at Cloudflare's
+          # edge (error 1010), so the Worker never sees the call.
+          curl -sS -X POST "${WORKER_URL%/}/notify-raw" \
+            -H "Content-Type: application/json" \
+            -H "X-Shared-Secret: ${WORKER_SHARED_SECRET}" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --data @/tmp/n.json || echo "could not reach the bot"
