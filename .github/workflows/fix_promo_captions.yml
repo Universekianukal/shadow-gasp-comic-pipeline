@@ -1,0 +1,47 @@
+name: Fix promo captions already live (Facebook)
+
+# One-off repair: rewrite the "A documentary comic · NNpp · instant PDF" line on promo posts
+# that are already published, to match the caption post_fb_promo.py writes now.
+#
+# Reports by default and changes nothing. Set apply=true to write, and `only` to do a single
+# post first -- these are LIVE posts on the Page, and Facebook's edit behaviour on a PHOTO
+# post is worth proving on one before trusting it on the rest.
+#
+# Facebook only. Instagram and Threads have no edit endpoint; changing a caption there means
+# deleting and reposting, which is a decision, not a repair.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = actually edit the posts. false (default) = report only"
+        required: false
+        default: "false"
+      only:
+        description: "Optional: a single permalink to do first, e.g. the-ship-that-never-arrived"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Rewrite the detail line
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          APPLY: ${{ github.event.inputs.apply }}
+          ONLY: ${{ github.event.inputs.only }}
+        run: |
+          ARGS=()
+          [ "$APPLY" = "true" ] && ARGS+=(--apply)
+          [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          python pipeline_lib/retro_promo_caption.py "${ARGS[@]}"
