@@ -140,11 +140,21 @@ def threads_delete(media_id):
     for line in (post.get("text") or "").split("\n"):
         print(f"  | {line}")
 
+    # Meta returns the real reason in the BODY; urllib raises HTTPError and throws the body
+    # away unless it is read off the exception. A bare "HTTP Error 400: Bad Request" says
+    # nothing about whether the id is wrong, the token lacks a scope, or deletes are not
+    # allowed on this object at all.
     req = urllib.request.Request(
         f"{THREADS_GRAPH}/{media_id}?" + urllib.parse.urlencode({"access_token": token}),
         method="DELETE", headers={"User-Agent": "shadow-gasp-promo/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        print("delete response:", r.read().decode("utf-8")[:200])
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            print("delete response:", r.read().decode("utf-8")[:300])
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")
+        print(f"✗ DELETE refused: {e.code}")
+        print(f"  {body[:500]}")
+        raise SystemExit(1)
 
     # Prove it is gone rather than trusting the response.
     try:
