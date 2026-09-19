@@ -542,6 +542,94 @@ def script_problems(script):
     return problems
 
 
+# The page shapes the prompt actually asks for: 4, 5 or 6 panels, in rows of at most three.
+# SCHEMA_SPEC lists them structure by structure and calls them the ONLY ones allowed -- but a
+# stated rule is not an enforced one, which is the same lesson as the panel-density fix above.
+MAX_PANELS_PER_PAGE = 6
+
+# A page below this is thin rather than broken, so it is a preference, not a rule: rows are
+# never split, and some counts (7 = 3+4) simply cannot divide into two pages that both reach it.
+MIN_PANELS_PER_PAGE = 4
+
+
+def normalise_pages(script):
+    """Split any page carrying more panels than the prompt allows. Returns a list of notes.
+
+    SHADOW GASP #76 (Stuxnet) came back with a FIFTEEN-panel page. Nothing rejected it: the
+    audit below only measures the mix and warns, and the page count was the only thing ever
+    enforced. It reached spec_panels, whose planner is exponential in panels-per-page, and the
+    build sat there for 28 minutes until the runner was reclaimed -- no error, no alert, no
+    book. (The planner now clamps itself too; this stops the bad page reaching it at all.)
+
+    Splitting rather than rejecting is deliberate. script_problems() rejection costs a whole
+    paid regeneration of the book and then fails the build outright on the second miss, for
+    what is a deterministic, free repair: rows are already self-contained, so the fix is to
+    deal them onto more pages. Rows are never broken up -- a row is a tier the author composed
+    -- and panel filenames are left exactly as they are, so panel_prompts still maps one-to-one
+    by filename whether it was generated before this ran or came from cache.
+    """
+    notes = []
+    pages = script.get("pages") if isinstance(script, dict) else None
+    if not isinstance(pages, list):
+        return notes
+
+    out = []
+    for pg in pages:
+        rows = pg.get("rows") if isinstance(pg, dict) else None
+        if pg.get("type") == "splash" or not isinstance(rows, list):
+            out.append(pg)
+            continue
+        n = sum(len(r) for r in rows if isinstance(r, list))
+        if n <= MAX_PANELS_PER_PAGE:
+            out.append(pg)
+            continue
+
+        # Deal whole rows onto pages, closing a page when the next row would overflow it.
+        chunks, cur, cur_n = [], [], 0
+        for r in rows:
+            k = len(r) if isinstance(r, list) else 0
+            if cur and cur_n + k > MAX_PANELS_PER_PAGE:
+                chunks.append(cur)
+                cur, cur_n = [], 0
+            cur.append(r)
+            cur_n += k
+        if cur:
+            chunks.append(cur)
+
+        # A thin last page can sometimes be fed from the one before it, but only when that
+        # page can spare a row without going thin itself.
+        if len(chunks) > 1:
+            last_n = sum(len(r) for r in chunks[-1])
+            prev_n = sum(len(r) for r in chunks[-2])
+            moved = len(chunks[-2][-1])
+            if (last_n < MIN_PANELS_PER_PAGE
+                    and prev_n - moved >= MIN_PANELS_PER_PAGE
+                    and last_n + moved <= MAX_PANELS_PER_PAGE):
+                chunks[-1].insert(0, chunks[-2].pop())
+
+        for j, chunk in enumerate(chunks):
+            new = dict(pg)
+            new["rows"] = chunk
+            if j:
+                # Only the first piece keeps the title; repeating it would print the same
+                # page header two or three times running.
+                new.pop("title", None)
+            out.append(new)
+        notes.append("page %s carried %d panels (max %d) -- split into %d pages of %s"
+                     % (pg.get("page"), n, MAX_PANELS_PER_PAGE, len(chunks),
+                        "+".join(str(sum(len(r) for r in c)) for c in chunks)))
+
+    if notes:
+        # Renumber so the folio->script-page map build_comic prints still means something.
+        # The printed folio is a positional counter, not this field, so this is a label fix.
+        start = pages[0].get("page", 1) if isinstance(pages[0], dict) else 1
+        for i, pg in enumerate(out):
+            if isinstance(pg, dict):
+                pg["page"] = start + i
+        script["pages"] = out
+    return notes
+
+
 def generate(system, user, max_tokens=16000, attempts=2,
              require=("script", "panel_prompts"), provider=None):
     """Call Claude and parse its JSON, retrying on malformed OR missing output.
@@ -689,6 +777,13 @@ def main():
         else:
             result = generate(system, user, max_tokens=max_tokens)
         cache_save(cache_key, result)
+
+    # After BOTH paths, and deliberately after cache_save: the cache holds what the model
+    # actually said, and every load repairs it the same way. That also means a script already
+    # cached with an oversized page -- Stuxnet's is -- is fixed on the way out without having
+    # to invalidate the key and pay for the book again.
+    for note in normalise_pages(result.get("script") or {}):
+        print(f"LAYOUT REPAIR: {note}", flush=True)
 
     script_path = os.path.join(args.out_dir, f"script_issue{args.issue_no}.json")
     prompts_path = os.path.join(args.out_dir, "panel_prompts.json")
