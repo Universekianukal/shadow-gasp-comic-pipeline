@@ -26,6 +26,10 @@ on:
         description: "Optional: stop after N comics (lowest issue numbers first)"
         required: false
         default: ""
+      drop_cover:
+        description: "Maintenance: permalink:cover_id[,...] to remove a stranded cover, and nothing else"
+        required: false
+        default: ""
 
 # Never two of these at once: they add and remove covers on live products.
 concurrency:
@@ -66,6 +70,7 @@ jobs:
           APPLY: ${{ github.event.inputs.apply }}
           ONLY: ${{ github.event.inputs.only }}
           LIMIT: ${{ github.event.inputs.limit }}
+          DROP_COVER: ${{ github.event.inputs.drop_cover }}
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           cd pipeline_lib
@@ -73,6 +78,7 @@ jobs:
           [ "$APPLY" = "true" ] && ARGS+=(--apply)
           [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
           [ -n "$LIMIT" ] && ARGS+=(--limit "$LIMIT")
+          [ -n "$DROP_COVER" ] && ARGS=(--drop-cover "$DROP_COVER")
           python refresh_store_hero.py "${ARGS[@]}"
 
       - name: Keep the rebuilt images to look at

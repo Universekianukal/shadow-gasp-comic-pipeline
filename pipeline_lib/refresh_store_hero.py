@@ -70,41 +70,72 @@ def covers_of(product_id):
     return (view.get("product", view) or {}).get("covers") or []
 
 
+def carousel_hook(issue_no):
+    """The ORIGINAL promo_hook, recovered from the comic's carousel entry.
+
+    ⭐ THE LANDING PAGE'S "hook" IS A DIFFERENT FIELD and it is the wrong one. The hero has
+    always printed script["promo_hook"] -- one line, written to land in a breath:
+
+        #21  "A 600-year-old book in an unknown language. Nobody has ever read a single word."
+
+    The landing page carries a longer descriptive paragraph under the same name:
+
+        #21  "A book written in a language no one can read, filled with plants that match no
+              known species and stars in patterns no astronomer recognizes. Carbon dating..."
+
+    Those coincide on some issues -- #66 is one, which is why a single spot-check missed it --
+    and diverge badly on others. Worse, gen_store_hero keeps only the first three wrapped lines
+    with no ellipsis, so the long version is printed CUT MID-SENTENCE.
+
+    carousel/entries/<iii>-<slug>.json opens its caption with the real promo_hook, verbatim,
+    for all 76 books. Take it up to its last full stop, which also drops the trailing emoji.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = os.path.join(os.path.dirname(here), "carousel", "entries")
+    for path in glob.glob(os.path.join(d, "*.json")):
+        try:
+            e = json.loads(open(path, encoding="utf-8").read())
+        except Exception:
+            continue
+        if str(e.get("issue", "")).lstrip("0") != str(issue_no).lstrip("0"):
+            continue
+        line = (e.get("caption") or "").splitlines()[0].strip() if e.get("caption") else ""
+        m = re.search(r"^(.*[.!?])", line)
+        return (m.group(1) if m else line).strip()
+    return ""
+
+
 def meta_for(product):
-    """The text the hero prints, taken from the live product rather than a script JSON.
+    """The text the hero prints, rebuilt from what survives of the book.
 
-    The script that built the book is long gone -- cases/ is wiped after every build -- and the
-    storefront is the authority on what a comic is called anyway.
-
-    ⭐ THE HOOK COMES FROM THE LANDING PAGE, not the description. The original hero printed
-    script["promo_hook"], a line written to land in one breath ("He tried to make orphaned
-    children stutter to prove a theory. It was never published."). The first sentence of the
-    description is a different kind of writing -- accurate, and flat ("In 1939, a University of
-    Iowa researcher used orphaned children as subjects in an experiment that tried to induce
-    stuttering."). Rebuilding 75 heroes off the description would quietly downgrade the copy on
-    every one of them. The landing page still carries the real hook, so take it from there and
-    fall back to the description only when there is no page to read.
+    The script that built it is long gone -- cases/ is wiped after every build -- so the hook
+    is recovered from the carousel entry, which quotes it verbatim. The landing page and the
+    description are fallbacks only, in that order, and both are announced when used because
+    both say something different from what the hero used to say.
     """
     name = product.get("name") or ""
     m = re.search(r"#\s*0*(\d+)", name)
+    issue = m.group(1) if m else ""
     title = name.split(":", 1)[-1].strip() or name
 
-    hook = ""
-    try:
-        from store_design import cases as _cases
-        live = _cases.live_landing(product)
-        if live:
-            hook = (_cases.from_live_page(product, live) or {}).get("hook") or ""
-    except Exception as e:
-        print(f"  (could not read the landing page for its hook: {e})")
+    hook = carousel_hook(issue) if issue else ""
+    if not hook:
+        try:
+            from store_design import cases as _cases
+            live = _cases.live_landing(product)
+            if live:
+                hook = (_cases.from_live_page(product, live) or {}).get("hook") or ""
+            if hook:
+                print("  (no carousel entry -- using the landing page's hook, which is longer)")
+        except Exception as e:
+            print(f"  (could not read the landing page for its hook: {e})")
 
     if not hook:
         desc = " ".join(re.sub(r"<[^>]+>", " ", product.get("description") or "").split())
         hook = re.split(r"(?<=[.!?])\s+", desc)[0][:160] if desc else ""
-        print("  (no hook on the landing page -- using the description's first sentence)")
+        print("  (no hook anywhere -- using the description's first sentence)")
 
-    return {"series": "SHADOW GASP", "title": title,
-            "issue_no": m.group(1) if m else "", "hook": hook}
+    return {"series": "SHADOW GASP", "title": title, "issue_no": issue, "hook": hook}
 
 
 def refresh(product, workdir, apply_it):
@@ -125,6 +156,7 @@ def refresh(product, workdir, apply_it):
     meta = meta_for(product)
     hero = gen_store_hero.build(pdf, os.path.join(workdir, "store_hero.jpg"), meta=meta)
     print(f"  rebuilt hero: Issue {meta['issue_no']} · true crime. told in ink")
+    print(f"    hook: {meta['hook'][:110]}")
 
     if not apply_it:
         print("  (dry run -- nothing uploaded)")
@@ -172,9 +204,32 @@ def main():
     ap.add_argument("--only", default="", help="one custom_permalink")
     ap.add_argument("--limit", type=int, default=0, help="stop after N products")
     ap.add_argument("--outdir", default="", help="keep the rebuilt heroes here, to be looked at")
+    ap.add_argument("--drop-cover", default="",
+                    help="maintenance: permalink:cover_id[,...] to remove and nothing else")
     a = ap.parse_args()
 
     products = gumroad(["products", "list", "--all"]).get("products", [])
+
+    if a.drop_cover:
+        # Clean up a cover stranded by a run that failed between the add and the remove.
+        # Explicit ids only -- there is no way to tell from the outside which of a product's
+        # covers is a leftover, and guessing would delete real artwork off a live page.
+        for pair in a.drop_cover.split(","):
+            slug, _, cover = pair.partition(":")
+            prod = next((x for x in products if x.get("custom_permalink") == slug.strip()), None)
+            if not prod:
+                print(f"✗ no product with permalink {slug!r}")
+                continue
+            have = [c["id"] for c in (prod.get("covers") or [])]
+            if cover.strip() not in have:
+                print(f"· {slug}: {cover.strip()} is not one of its {len(have)} covers -- nothing done")
+                continue
+            gumroad(["products", "covers", "remove", prod["id"], cover.strip(), "--yes"])
+            left = covers_of(prod["id"])
+            print(f"✓ {slug}: removed {cover.strip()}, {len(left)} covers left, "
+                  f"hero={left[0].get('id') if left else None}")
+        return
+
     comics = [p for p in products
               if re.search(r"SHADOW GASP\s*#\s*\d+", p.get("name") or "") and p.get("published")]
     comics.sort(key=lambda p: int(re.search(r"#\s*0*(\d+)", p["name"]).group(1)))
