@@ -21,6 +21,10 @@ on:
         description: "Optional: a single permalink to do first, e.g. the-ship-that-never-arrived"
         required: false
         default: ""
+      threads_delete:
+        description: "Optional: retire one Threads post by id, AFTER its replacement is live"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -41,8 +45,10 @@ jobs:
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
           APPLY: ${{ github.event.inputs.apply }}
           ONLY: ${{ github.event.inputs.only }}
+          THREADS_DELETE: ${{ github.event.inputs.threads_delete }}
         run: |
           ARGS=()
           [ "$APPLY" = "true" ] && ARGS+=(--apply)
           [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          [ -n "$THREADS_DELETE" ] && ARGS=(--threads-delete "$THREADS_DELETE")
           python pipeline_lib/retro_promo_caption.py "${ARGS[@]}"

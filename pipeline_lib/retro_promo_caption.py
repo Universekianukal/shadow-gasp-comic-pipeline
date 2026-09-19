@@ -119,12 +119,56 @@ def threads_report(root="."):
             print(f"  | {line}")
 
 
+def threads_delete(media_id):
+    """Remove one Threads post by id. Used to retire a post that has been REPLACED.
+
+    ⭐ The replacement is published FIRST and checked, then the old one goes. Deleting first
+    would leave a gap if the repost then failed, and a Threads post cannot be un-deleted.
+
+    Takes a bare id rather than a permalink on purpose: by the time this runs, promo/<slug>.json
+    already names the NEW post, so reading the id from the marker would delete the replacement.
+    """
+    token = os.environ.get("THREADS_ACCESS_TOKEN", "")
+    if not token:
+        raise SystemExit("THREADS_ACCESS_TOKEN is not set")
+    q = urllib.parse.urlencode({"fields": "text,permalink", "access_token": token})
+    req = urllib.request.Request(f"{THREADS_GRAPH}/{media_id}?{q}",
+                                 headers={"User-Agent": "shadow-gasp-promo/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        post = json.loads(r.read().decode("utf-8"))
+    print(f"about to delete {media_id}  {post.get('permalink','')}")
+    for line in (post.get("text") or "").split("\n"):
+        print(f"  | {line}")
+
+    req = urllib.request.Request(
+        f"{THREADS_GRAPH}/{media_id}?" + urllib.parse.urlencode({"access_token": token}),
+        method="DELETE", headers={"User-Agent": "shadow-gasp-promo/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        print("delete response:", r.read().decode("utf-8")[:200])
+
+    # Prove it is gone rather than trusting the response.
+    try:
+        req = urllib.request.Request(f"{THREADS_GRAPH}/{media_id}?{q}",
+                                     headers={"User-Agent": "shadow-gasp-promo/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            print("✗ still readable after delete:", r.read().decode("utf-8")[:200])
+            raise SystemExit(1)
+    except urllib.error.HTTPError as e:
+        print(f"✓ gone (reading it now returns {e.code})")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write the change back (default: report only)")
     ap.add_argument("--only", default="", help="limit to one permalink, for testing a single post first")
     ap.add_argument("--root", default=".")
+    ap.add_argument("--threads-delete", default="",
+                    help="retire one Threads post by id, after its replacement is live")
     a = ap.parse_args()
+
+    if a.threads_delete:
+        threads_delete(a.threads_delete)
+        return
 
     token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
     if not token:
