@@ -79,6 +79,46 @@ def markers(root="."):
     return out
 
 
+THREADS_GRAPH = "https://graph.threads.net/v1.0"
+
+
+def threads_report(root="."):
+    """Read-only: what the live Threads promos actually say.
+
+    Threads has no edit endpoint, so the only way to change one is to delete and repost, which
+    forfeits the post's engagement and its permalink. That is a decision someone has to take
+    with the text in front of them -- so this prints it and stops. It never deletes anything.
+    """
+    token = os.environ.get("THREADS_ACCESS_TOKEN", "")
+    if not token:
+        print("THREADS_ACCESS_TOKEN not set -- skipping the Threads report")
+        return
+    for path in sorted(glob.glob(os.path.join(root, "promo", "*.json"))):
+        try:
+            d = json.loads(open(path, encoding="utf-8").read())
+        except Exception:
+            continue
+        mid = (d.get("th") or {}).get("id")
+        if not mid:
+            continue
+        q = urllib.parse.urlencode({"fields": "text,permalink,timestamp", "access_token": token})
+        try:
+            req = urllib.request.Request(f"{THREADS_GRAPH}/{mid}?{q}",
+                                         headers={"User-Agent": "shadow-gasp-promo/1.0"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                post = json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            print(f"✗ threads {d.get('permalink')}: {e.code} {e.read().decode('utf-8','replace')[:160]}")
+            continue
+        text = post.get("text") or ""
+        stray = sorted({w for w in ("PDF", "pdf", "instant", "Instant", "download") if w in text})
+        print(f"\nTHREADS {d.get('permalink')} ({mid})  {post.get('timestamp','')}")
+        print(f"  {post.get('permalink','')}")
+        print(f"  format wording present: {stray if stray else 'NONE'}")
+        for line in text.split("\n"):
+            print(f"  | {line}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write the change back (default: report only)")
@@ -149,6 +189,10 @@ def main():
             failed += 1
 
     print(f"\nchanged {changed}, unchanged {skipped}, failed {failed}")
+
+    print("\n--- Threads (read-only; no edit endpoint exists) ---")
+    threads_report(a.root)
+
     if failed:
         raise SystemExit(1)
 

@@ -38,6 +38,7 @@ jobs:
       - name: Rewrite the detail line
         env:
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
           APPLY: ${{ github.event.inputs.apply }}
           ONLY: ${{ github.event.inputs.only }}
         run: |
