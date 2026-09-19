@@ -60,6 +60,37 @@ WEIGHT_SPREAD = 2.6
 # large and it accepts a genuinely bad rule-up because the script asked for it.
 STRUCTURE_TOL = 0.05
 
+# ⚠️ THE PLANNER'S SEARCH IS EXPONENTIAL. Above this many panels on one page it stops
+# searching tier heights and rules the page up on even tiers instead.
+#
+# plan_page() crosses every row-structure (compositions of n into parts of 1-3 -- tribonacci,
+# so 24 shapes at six panels and 5,768 at fifteen) with every tier-height combination
+# (len(WEIGHTS) ** tiers). The product is fine while pages are pages and ruinous the moment
+# one is not. Measured on this trim, one page:
+#
+#     6 panels   0.05 s        9 panels    7.2 s
+#     7 panels   0.21 s       12 panels  ~50 min
+#     8 panels   1.02 s       15 panels  ~31 HOURS   (22.5 billion lay() calls)
+#
+# SHADOW GASP #76 (Stuxnet) is what this is for. The script authored one 15-panel page --
+# gen_case_script asks for 4, 5 or 6 and nothing enforces it -- and the build sat in this
+# function until the runner was reclaimed 28 minutes later. It never failed, it never logged,
+# and because a killed runner takes the whole job down, the "Report failure to Telegram" step
+# never ran either: the book simply did not appear. Two reruns did the same, the second in one
+# second flat at the script step, because a rerun reuses the cached script and the page count
+# with it.
+#
+# Eight is deliberately above anything a real page uses (the books run to six) so that every
+# page in every book already built takes the identical path it took before, down to the chosen
+# structure. This only ever fires on a page that was never a page.
+SEARCH_MAX_PANELS = 8
+
+# And above THIS, the structures themselves are too many to enumerate -- walk() alone would
+# hang long before the costing did. Past it the page is ruled up on the structure the script
+# authored, which at least carries the author's pacing; 20 panels is ~121k structures, about a
+# second to cost on even tiers, and nothing sane is anywhere near it.
+SHAPE_MAX_PANELS = 20
+
 # Press resolution. Everything below is quoted at this; the art currently in the
 # book is 1280px wide, which lands around 210 DPI at printed size.
 DPI = 300
@@ -126,6 +157,14 @@ def lay(shape, avail_w, avail_h, gutter, weights=None):
     return out
 
 
+def even_tiers(n):
+    """Rows of at most three, as even as they divide. Last-resort structure for a page whose
+    panel count is past anything the planner will search."""
+    rows = -(-n // 3)
+    base, extra = divmod(n, rows)
+    return tuple([base + 1] * extra + [base] * (rows - extra))
+
+
 def plan_page(n, authored, avail_w, avail_h, gutter, have=None, words=None, explain=False):
     """
     Choose the row structure to DRAW to.
@@ -164,7 +203,12 @@ def plan_page(n, authored, avail_w, avail_h, gutter, have=None, words=None, expl
             walk(left - k, acc)
             acc.pop()
 
-    walk(n, [])
+    if n <= SHAPE_MAX_PANELS:
+        walk(n, [])
+    else:
+        # Too many structures to even list. Rule up on what the script asked for, falling back
+        # to tiers of three when it asked for nothing usable.
+        shapes.append(authored if authored else even_tiers(n))
 
     import itertools
     import math
@@ -211,6 +255,12 @@ def plan_page(n, authored, avail_w, avail_h, gutter, have=None, words=None, expl
         """Tier-height patterns worth trying for a k-tier page."""
         if k == 1:
             return [(1.0,)]
+        if n > SEARCH_MAX_PANELS:
+            # Even tiers only. This is the clamp: len(WEIGHTS) ** k is what explodes, and a
+            # page this crowded has no volume to modulate anyway -- every tier is already the
+            # same beat. (1.0,) * k is a member of the full product and passes the spread
+            # filter, so this is a subset of the normal search, never a different rule.
+            return [(1.0,) * k]
         out = []
         for combo in itertools.product(WEIGHTS, repeat=k):
             if max(combo) / min(combo) > WEIGHT_SPREAD:
