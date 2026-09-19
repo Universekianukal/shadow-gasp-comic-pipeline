@@ -214,10 +214,6 @@ def build_caption(product, hook=None, platform="fb"):
     """
     name = product.get("name", "SHADOW GASP")
     url = product.get("short_url") or ""
-    pages = ""
-    fi = product.get("file_info") or {}
-    if fi.get("Length"):
-        pages = fi["Length"].replace(" pages", "pp")
 
     if not hook:
         # The product description's opening paragraph is already written to hook a reader --
@@ -231,7 +227,14 @@ def build_caption(product, hook=None, platform="fb"):
     bits = [hook, "", name]
     # No price in a social post (owner, 2026-09-17): it reads as an ad to people who only came to
     # read, and that costs reach. The price is one tap away on the product page.
-    detail = " · ".join([x for x in ("A documentary comic", pages, "instant PDF") if x])
+    #
+    # And no FORMAT and no PAGE COUNT either (owner, 2026-09-19). This line used to read
+    # "A documentary comic · 34pp · instant PDF", which is a spec sheet: it sells the file a
+    # buyer receives rather than the thing they are about to read, and "PDF" in particular is
+    # the least interesting true fact about the book. The series' own back-cover line does the
+    # job instead -- same voice as the object itself. Delivery and length are both one tap away
+    # on the product page, which is where a reader who cares is already heading.
+    detail = "A documentary comic · true crime. told in ink"
     bits += [detail, ""]
     if platform == "ig":
         bits += ["💬 Want the full comic? Comment COMIC below and I'll DM you the link.", "",
