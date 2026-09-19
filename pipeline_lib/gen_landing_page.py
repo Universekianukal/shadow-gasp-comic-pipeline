@@ -67,7 +67,7 @@ TEMPLATE = """<!DOCTYPE html>
         <svg width="13" height="13" viewBox="0 0 20 20" fill="none" style="opacity:.8">
           <path d="M4 10.5l4 4 8-9" stroke="#8a8680" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        INSTANT PDF DOWNLOAD
+        YOURS THE MOMENT YOU BUY
       </span>
     </div>
   </div>
@@ -117,7 +117,7 @@ TEMPLATE = """<!DOCTYPE html>
     <a data-gumroad-action="buy" class="buy mt-9 inline-flex items-center justify-center rounded-lg px-10 py-5 font-extrabold tracking-wide text-white text-xl">
       Get it now &mdash; <span data-gumroad-field="price" class="ml-2">$29</span>
     </a>
-    <p class="mt-5 text-xs font-bold tracking-widest" style="color:#7d7970">INSTANT PDF &middot; READ ON ANY DEVICE</p>
+    <p class="mt-5 text-xs font-bold tracking-widest" style="color:#7d7970">TRUE CRIME &middot; TOLD IN INK</p>
     <p class="mt-10 text-xs leading-relaxed" style="color:#6e6a63">
       Based on real events and public records. Dialogue is dramatized where no
       verbatim record exists. Interior art was generated with AI image tools

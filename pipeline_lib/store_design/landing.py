@@ -176,7 +176,7 @@ def build_html(case, related):
       <p class="hook rise d2">{e(case["hook"])}</p>
       <div class="buyrow rise d3">
         {buy.format(label="Get the comic", price=price)}
-        <span class="note">Instant PDF download</span>
+        <span class="note">Yours the moment you buy</span>
       </div>
     </div>
     <div class="cover rise d2">
@@ -206,7 +206,7 @@ def build_html(case, related):
     <h2 class="display" style="margin-top:12px">Read the whole case</h2>
     <p class="desc" data-gumroad-field="description">{e(case["subject"])}</p>
     {buy.format(label="Get it now", price=price)}
-    <p class="note" style="margin-top:22px">Instant PDF · read on any device</p>
+    <p class="note" style="margin-top:22px">True crime. Told in ink.</p>
   </section>
 
   <section class="block">

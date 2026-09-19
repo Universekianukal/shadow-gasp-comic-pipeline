@@ -114,7 +114,7 @@ def build(pdf_path, out, meta=None, W=1280, H=720):
     # The PDF's own page count, not the script's story-page count: the buyer downloads 80 pages
     # and the script says 75, and pricing already settled on what the buyer actually receives.
     bits.append(f"{doc.page_count} pages")
-    bits.append("Instant PDF download")
+    bits.append("Yours the moment you buy")
     d.text((tx, y), "  ·  ".join(bits), font=_font("Montserrat-Bold.ttf", 20),
            fill=(196, 196, 196))
     y += 38
