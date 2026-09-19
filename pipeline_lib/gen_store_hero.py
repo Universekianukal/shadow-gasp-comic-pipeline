@@ -111,10 +111,13 @@ def build(pdf_path, out, meta=None, W=1280, H=720):
     bits = []
     if meta.get("issue_no"):
         bits.append(f"Issue {meta['issue_no']}")
-    # The PDF's own page count, not the script's story-page count: the buyer downloads 80 pages
-    # and the script says 75, and pricing already settled on what the buyer actually receives.
-    bits.append(f"{doc.page_count} pages")
-    bits.append("Yours the moment you buy")
+    # Neither the format nor the page count (owner, 2026-09-19). This line used to read
+    # "Issue 66 · 40 pages · Instant PDF download" -- a spec sheet, printed on the most visible
+    # image the storefront has, since the hero is the product's FIRST image and its preview.
+    # The series' own back-cover phrase says more about the book than its file type and length
+    # ever did. The page count lived here because the PDF's own count and the script's disagree;
+    # that distinction stops mattering once neither number is printed.
+    bits.append("true crime. told in ink")
     d.text((tx, y), "  ·  ".join(bits), font=_font("Montserrat-Bold.ttf", 20),
            fill=(196, 196, 196))
     y += 38

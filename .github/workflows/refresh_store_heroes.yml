@@ -1,0 +1,84 @@
+name: Refresh store hero images
+
+# One-off repair: the hero image on every published comic has
+#   Issue NN  ·  NN pages  ·  Instant PDF download
+# baked into its pixels. gen_store_hero.py prints "Issue NN · true crime. told in ink" now,
+# but a code change cannot reach an image uploaded months ago.
+#
+# The hero is a product's FIRST cover, so it is also the storefront thumbnail and the preview
+# image -- the most-seen picture the shop has.
+#
+# Reports and uploads the rebuilt images as an artifact by default, so they can be LOOKED at
+# before anything on the storefront changes. Set apply=true to upload them to Gumroad.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true = replace the hero on Gumroad. false (default) = build and show only"
+        required: false
+        default: "false"
+      only:
+        description: "Optional: a single permalink, e.g. the-label"
+        required: false
+        default: ""
+      limit:
+        description: "Optional: stop after N comics (lowest issue numbers first)"
+        required: false
+        default: ""
+
+# Never two of these at once: they add and remove covers on live products.
+concurrency:
+  group: store-heroes
+  cancel-in-progress: false
+
+jobs:
+  heroes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install Pillow PyMuPDF numpy
+
+      - name: Install Gumroad CLI
+        # Same guard as store_sync.yml: `curl | bash` reports success when the download fails.
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL https://gumroad.com/install-cli.sh | bash && break
+            echo "install attempt $attempt failed, retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          test -x "$HOME/.local/bin/gumroad" || {
+            echo "::error::Gumroad CLI did not install after 5 attempts"; exit 1; }
+
+      - name: Authenticate Gumroad CLI
+        run: echo "${{ secrets.GUMROAD_ACCESS_TOKEN }}" | ~/.local/bin/gumroad auth login --non-interactive
+
+      - name: Rebuild the heroes
+        env:
+          APPLY: ${{ github.event.inputs.apply }}
+          ONLY: ${{ github.event.inputs.only }}
+          LIMIT: ${{ github.event.inputs.limit }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cd pipeline_lib
+          ARGS=(--outdir "$GITHUB_WORKSPACE/heroes_out")
+          [ "$APPLY" = "true" ] && ARGS+=(--apply)
+          [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          [ -n "$LIMIT" ] && ARGS+=(--limit "$LIMIT")
+          python refresh_store_hero.py "${ARGS[@]}"
+
+      - name: Keep the rebuilt images to look at
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-heroes
+          path: heroes_out/**/*.jpg
+          if-no-files-found: warn
