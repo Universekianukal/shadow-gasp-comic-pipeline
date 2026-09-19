@@ -105,7 +105,22 @@ def main():
             continue
 
         if not DETAIL_RE.search(msg or ""):
-            print(f"· {slug}: no detail line to change -- left alone")
+            # ⭐ "No detail line" is not the same as "nothing to fix". A post written with a
+            # custom caption, or by an older version of build_caption, can still say PDF in a
+            # shape this pattern does not know. Say so loudly instead of reporting it clean --
+            # a silent pass here is exactly how the thing being fixed got missed in the first
+            # place. Anything flagged needs a human to look and edit it by hand.
+            stray = [w for w in ("PDF", "pdf", "instant", "Instant", "download", "Download")
+                     if w in (msg or "")]
+            if stray:
+                print(f"! {slug}: no detail line, but the post still mentions {sorted(set(stray))}"
+                      f" -- NEEDS A LOOK BY HAND")
+                print("    ---- live message ----")
+                for line in (msg or "").split("\n"):
+                    print(f"    | {line}")
+                print("    ----------------------")
+            else:
+                print(f"· {slug}: no detail line, and no format wording anywhere -- left alone")
             skipped += 1
             continue
 
