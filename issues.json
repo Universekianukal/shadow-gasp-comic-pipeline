@@ -1,5 +1,6 @@
 {
   "issues": {
+    "1979-sverdlovsk-anthrax-leak-soviet-biow": 79,
     "air-new-zealand-flight-901-mount-erebus-": 77,
     "bath-school-disaster-michigan-1927": 61,
     "bella-in-the-wych-elm-hagley-wood-englan": 30,
@@ -80,6 +81,7 @@
     "wouter-basson--project-coast-south-afric": 73
   },
   "kaggle": {
+    "1979-sverdlovsk-anthrax-leak-soviet-biow": "C",
     "air-new-zealand-flight-901-mount-erebus-": "C",
     "bath-school-disaster-michigan-1927": "-",
     "bella-in-the-wych-elm-hagley-wood-englan": "C",
