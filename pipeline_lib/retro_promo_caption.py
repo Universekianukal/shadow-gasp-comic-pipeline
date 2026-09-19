@@ -119,6 +119,39 @@ def threads_report(root="."):
             print(f"  | {line}")
 
 
+def threads_list(limit=25):
+    """List what is actually ON the account, newest first. Read-only.
+
+    ⭐ A GET on a single id cannot answer "was this deleted?". Meta returns one 400 for all of
+    "does not exist, cannot be loaded due to missing permissions, or does not support this
+    operation", so a missing post and a scope problem look identical. Listing the account's own
+    threads says which posts exist, by id, without guessing.
+    """
+    token = os.environ.get("THREADS_ACCESS_TOKEN", "")
+    if not token:
+        raise SystemExit("THREADS_ACCESS_TOKEN is not set")
+    q = urllib.parse.urlencode({"fields": "id,text,permalink,timestamp,media_type",
+                                "limit": limit, "access_token": token})
+    req = urllib.request.Request(f"{THREADS_GRAPH}/me/threads?{q}",
+                                 headers={"User-Agent": "shadow-gasp-promo/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"could not list: {e.code} {e.read().decode('utf-8','replace')[:300]}")
+        raise SystemExit(1)
+    items = data.get("data") or []
+    print(f"{len(items)} post(s) live on the account, newest first")
+    print("")
+    for t in items:
+        text = t.get("text") or ""
+        first = (text.splitlines()[0][:88] if text else "")
+        print(f"{t.get('id')}  {t.get('timestamp','')[:19]}  {t.get('media_type','')}")
+        print(f"   {t.get('permalink','')}")
+        print(f"   {first}")
+    return items
+
+
 def threads_delete(media_id):
     """Remove one Threads post by id. Used to retire a post that has been REPLACED.
 
@@ -237,9 +270,15 @@ def main():
     ap.add_argument("--root", default=".")
     ap.add_argument("--threads-delete", default="",
                     help="retire one Threads post by id, after its replacement is live")
+    ap.add_argument("--threads-list", action="store_true",
+                    help="read-only: list the posts actually live on the Threads account")
     ap.add_argument("--fb-delete", default="",
                     help="DELETE Facebook promo posts: comma-separated permalinks, or 'all'")
     a = ap.parse_args()
+
+    if a.threads_list:
+        threads_list()
+        return
 
     if a.threads_delete:
         threads_delete(a.threads_delete)

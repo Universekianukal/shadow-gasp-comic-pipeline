@@ -25,6 +25,10 @@ on:
         description: "Optional: retire one Threads post by id, AFTER its replacement is live"
         required: false
         default: ""
+      threads_list:
+        description: "Read-only: list the posts actually live on the Threads account"
+        required: false
+        default: "false"
       fb_delete:
         description: "DELETE Facebook promo posts permanently: comma-separated permalinks, or 'all'"
         required: false
@@ -51,10 +55,12 @@ jobs:
           ONLY: ${{ github.event.inputs.only }}
           THREADS_DELETE: ${{ github.event.inputs.threads_delete }}
           FB_DELETE: ${{ github.event.inputs.fb_delete }}
+          THREADS_LIST: ${{ github.event.inputs.threads_list }}
         run: |
           ARGS=()
           [ "$APPLY" = "true" ] && ARGS+=(--apply)
           [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
           [ -n "$THREADS_DELETE" ] && ARGS=(--threads-delete "$THREADS_DELETE")
           [ -n "$FB_DELETE" ] && ARGS=(--fb-delete "$FB_DELETE")
+          [ "$THREADS_LIST" = "true" ] && ARGS=(--threads-list)
           python pipeline_lib/retro_promo_caption.py "${ARGS[@]}"
