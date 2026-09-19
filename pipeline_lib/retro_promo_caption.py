@@ -157,6 +157,69 @@ def threads_delete(media_id):
         print(f"✓ gone (reading it now returns {e.code})")
 
 
+def fb_delete(which, root="."):
+    """DELETE Facebook promo posts, by permalink or "all".
+
+    ⭐ THIS IS NOT A REPAIR. The captions on these posts were already corrected in place and
+    read correctly; deleting them throws away their likes, comments and shares permanently for
+    no copy gain. It exists because the owner asked for the posts gone (2026-09-19), not
+    because anything is wrong with them.
+
+    ⭐ The promo MARKER is deliberately left alone. promo/<slug>.json is what stops a comic
+    being promoted twice; clearing it here, as a side effect of a delete, would quietly re-arm
+    the autopilot to re-post these books on its next run. That is a separate decision.
+    """
+    token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
+    if not token:
+        raise SystemExit("FB_PAGE_ACCESS_TOKEN is not set")
+
+    wanted = {s.strip() for s in which.split(",")} if which != "all" else None
+    posts = markers(root)
+    if wanted is not None:
+        posts = [p for p in posts if p[0] in wanted]
+        missing = wanted - {p[0] for p in posts}
+        for m in sorted(missing):
+            print(f"✗ {m}: no Facebook promo marker with a real post id")
+    print(f"{len(posts)} Facebook promo post(s) to delete\n")
+
+    gone = failed = 0
+    for slug, pid in posts:
+        try:
+            msg = graph("GET", pid, {"fields": "message,permalink_url"}, token)
+        except urllib.error.HTTPError as e:
+            print(f"✗ {slug}: cannot read {pid} ({e.code}) -- not deleting something I cannot see")
+            failed += 1
+            continue
+        print(f"→ {slug}  {pid}")
+        print(f"    {msg.get('permalink_url','')}")
+        for line in (msg.get("message") or "").split("\n")[:4]:
+            print(f"    | {line}")
+        try:
+            req = urllib.request.Request(
+                f"{GRAPH}/{pid}?" + urllib.parse.urlencode({"access_token": token}),
+                method="DELETE")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                print(f"    delete response: {r.read().decode('utf-8')[:120]}")
+        except urllib.error.HTTPError as e:
+            print(f"    ✗ refused: {e.code} {e.read().decode('utf-8','replace')[:200]}")
+            failed += 1
+            continue
+        # Prove it, rather than trusting {"success": true}.
+        try:
+            graph("GET", pid, {"fields": "id"}, token)
+            print("    ✗ still readable after the delete")
+            failed += 1
+        except urllib.error.HTTPError as e:
+            print(f"    ✓ gone (reading it now returns {e.code})")
+            gone += 1
+
+    print(f"\ndeleted {gone}, failed {failed}")
+    print("NOTE: promo/<slug>.json still records these as posted, so /promo and the autopilot "
+          "will not offer these comics again until those markers are cleared.")
+    if failed:
+        raise SystemExit(1)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write the change back (default: report only)")
@@ -164,10 +227,16 @@ def main():
     ap.add_argument("--root", default=".")
     ap.add_argument("--threads-delete", default="",
                     help="retire one Threads post by id, after its replacement is live")
+    ap.add_argument("--fb-delete", default="",
+                    help="DELETE Facebook promo posts: comma-separated permalinks, or 'all'")
     a = ap.parse_args()
 
     if a.threads_delete:
         threads_delete(a.threads_delete)
+        return
+
+    if a.fb_delete:
+        fb_delete(a.fb_delete, a.root)
         return
 
     token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")

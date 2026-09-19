@@ -25,6 +25,10 @@ on:
         description: "Optional: retire one Threads post by id, AFTER its replacement is live"
         required: false
         default: ""
+      fb_delete:
+        description: "DELETE Facebook promo posts permanently: comma-separated permalinks, or 'all'"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -46,9 +50,11 @@ jobs:
           APPLY: ${{ github.event.inputs.apply }}
           ONLY: ${{ github.event.inputs.only }}
           THREADS_DELETE: ${{ github.event.inputs.threads_delete }}
+          FB_DELETE: ${{ github.event.inputs.fb_delete }}
         run: |
           ARGS=()
           [ "$APPLY" = "true" ] && ARGS+=(--apply)
           [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
           [ -n "$THREADS_DELETE" ] && ARGS=(--threads-delete "$THREADS_DELETE")
+          [ -n "$FB_DELETE" ] && ARGS=(--fb-delete "$FB_DELETE")
           python pipeline_lib/retro_promo_caption.py "${ARGS[@]}"
