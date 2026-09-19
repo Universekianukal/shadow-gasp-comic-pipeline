@@ -29,13 +29,21 @@ on:
         description: "Read-only: list the posts actually live on the Threads account"
         required: false
         default: "false"
+      clear_markers:
+        description: "Drop promo markers whose post no longer exists, so the autopilot offers those comics again"
+        required: false
+        default: "false"
+      include_manual:
+        description: "With clear_markers: also clear markers that cannot be verified (norjak's hand-posted fb)"
+        required: false
+        default: "false"
       fb_delete:
         description: "DELETE Facebook promo posts permanently: comma-separated permalinks, or 'all'"
         required: false
         default: ""
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   fix:
@@ -56,6 +64,8 @@ jobs:
           THREADS_DELETE: ${{ github.event.inputs.threads_delete }}
           FB_DELETE: ${{ github.event.inputs.fb_delete }}
           THREADS_LIST: ${{ github.event.inputs.threads_list }}
+          CLEAR_MARKERS: ${{ github.event.inputs.clear_markers }}
+          INCLUDE_MANUAL: ${{ github.event.inputs.include_manual }}
         run: |
           ARGS=()
           [ "$APPLY" = "true" ] && ARGS+=(--apply)
@@ -63,4 +73,25 @@ jobs:
           [ -n "$THREADS_DELETE" ] && ARGS=(--threads-delete "$THREADS_DELETE")
           [ -n "$FB_DELETE" ] && ARGS=(--fb-delete "$FB_DELETE")
           [ "$THREADS_LIST" = "true" ] && ARGS=(--threads-list)
+          if [ "$CLEAR_MARKERS" = "true" ]; then
+            ARGS=(--clear-markers)
+            [ "$APPLY" = "true" ] && ARGS+=(--apply)
+            [ "$INCLUDE_MANUAL" = "true" ] && ARGS+=(--include-manual)
+          fi
           python pipeline_lib/retro_promo_caption.py "${ARGS[@]}"
+
+      - name: Commit the cleared markers
+        if: github.event.inputs.clear_markers == 'true' && github.event.inputs.apply == 'true'
+        run: |
+          git config user.name "shadow-gasp-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A promo/
+          git diff --cached --quiet && { echo "nothing to commit"; exit 0; }
+          git commit -m "promo: clear markers for posts that were deleted
+
+          The posts are gone, so the markers that record them have to go too --
+          otherwise autopilot_pick skips those comics forever and the autopilot
+          quietly runs out of catalogue. Each one was verified against the
+          platform before being dropped."
+          git pull --rebase --autostash
+          git push

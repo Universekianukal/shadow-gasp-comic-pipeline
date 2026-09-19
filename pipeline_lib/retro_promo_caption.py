@@ -152,6 +152,107 @@ def threads_list(limit=25):
     return items
 
 
+
+def _alive_fb(pid, token):
+    """True / False / None when it cannot be checked at all."""
+    if not pid or pid == "manual":
+        return None
+    try:
+        graph("GET", pid, {"fields": "id"}, token)
+        return True
+    except urllib.error.HTTPError as e:
+        return False if e.code in (400, 404) else None
+
+
+def _alive_meta(mid, base, token):
+    if not mid:
+        return None
+    q = urllib.parse.urlencode({"fields": "id", "access_token": token})
+    try:
+        req = urllib.request.Request(f"{base}/{mid}?{q}",
+                                     headers={"User-Agent": "shadow-gasp-promo/1.0"})
+        urllib.request.urlopen(req, timeout=60).read()
+        return True
+    except urllib.error.HTTPError as e:
+        return False if e.code in (400, 404) else None
+
+
+def clear_markers(root=".", apply_it=False, include_manual=False):
+    """Drop promo markers whose post no longer exists, so the autopilot offers them again.
+
+    promo/<slug>.json is the ONLY thing stopping a comic being promoted twice: autopilot_pick
+    walks the catalogue oldest-issue-first and takes the first comic missing a platform. A post
+    deleted by hand leaves its marker behind, so that comic is skipped forever and the autopilot
+    silently runs out of catalogue.
+
+    ⭐ CHECKED, NOT ASSUMED. Each marker is verified against the platform before it is dropped:
+    clearing a marker whose post is still live would re-post that comic on top of itself, which
+    is the exact failure the markers exist to prevent (day07 was crossposted twice and its reach
+    went from ~1,000 to 1).
+
+    ⭐ A marker that cannot be checked is KEPT unless --include-manual. norjak's fb id is the
+    literal "manual" -- posted by hand before this pipeline, no id to query -- so there is no
+    way to know whether that post is still up, and re-posting is worse than not posting.
+    """
+    fb_token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
+    th_token = os.environ.get("THREADS_ACCESS_TOKEN", "")
+
+    changed = []
+    for path in sorted(glob.glob(os.path.join(root, "promo", "*.json"))):
+        try:
+            d = json.loads(open(path, encoding="utf-8").read())
+        except Exception as e:
+            print(f"! {path}: unreadable ({e})")
+            continue
+        slug = d.get("permalink") or os.path.basename(path)
+        drop = []
+        for plat in ("fb", "ig", "th"):
+            entry = d.get(plat)
+            if not isinstance(entry, dict):
+                continue
+            pid = entry.get("id")
+            if plat == "th":
+                alive = _alive_meta(pid, THREADS_GRAPH, th_token)
+            elif plat == "ig":
+                alive = _alive_meta(pid, GRAPH, fb_token)
+            else:
+                alive = _alive_fb(pid, fb_token)
+
+            if alive is True:
+                print(f"· {slug}/{plat}: post {pid} is STILL LIVE -- marker kept")
+            elif alive is False:
+                print(f"→ {slug}/{plat}: post {pid} is gone -- marker will be cleared")
+                drop.append(plat)
+            else:
+                if include_manual:
+                    print(f"→ {slug}/{plat}: {pid!r} cannot be checked -- clearing anyway (asked for)")
+                    drop.append(plat)
+                else:
+                    print(f"? {slug}/{plat}: {pid!r} cannot be checked -- marker KEPT")
+
+        if not drop:
+            continue
+        for plat in drop:
+            d.pop(plat, None)
+        changed.append((path, slug, drop, not any(k in d for k in ("fb", "ig", "th"))))
+        if apply_it:
+            if not any(k in d for k in ("fb", "ig", "th")):
+                os.remove(path)
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(d, f, indent=2, ensure_ascii=False)
+
+    print("")
+    for path, slug, drop, emptied in changed:
+        print(f"{'cleared' if apply_it else 'would clear'} {slug}: {'+'.join(drop)}"
+              f"{'  (marker file removed)' if emptied else ''}")
+    print("")
+    print(f"{len(changed)} marker(s) {'cleared' if apply_it else 'to clear'}")
+    if not apply_it:
+        print("report only -- nothing written. Pass apply=true to write.")
+    return changed
+
+
 def threads_delete(media_id):
     """Remove one Threads post by id. Used to retire a post that has been REPLACED.
 
@@ -272,12 +373,20 @@ def main():
                     help="retire one Threads post by id, after its replacement is live")
     ap.add_argument("--threads-list", action="store_true",
                     help="read-only: list the posts actually live on the Threads account")
+    ap.add_argument("--clear-markers", action="store_true",
+                    help="drop promo markers whose post no longer exists")
+    ap.add_argument("--include-manual", action="store_true",
+                    help="with --clear-markers, also clear markers that cannot be verified")
     ap.add_argument("--fb-delete", default="",
                     help="DELETE Facebook promo posts: comma-separated permalinks, or 'all'")
     a = ap.parse_args()
 
     if a.threads_list:
         threads_list()
+        return
+
+    if a.clear_markers:
+        clear_markers(a.root, a.apply, a.include_manual)
         return
 
     if a.threads_delete:
