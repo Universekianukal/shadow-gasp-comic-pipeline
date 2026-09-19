@@ -132,8 +132,12 @@ jobs:
         env:
           FORCE_SLUG: ${{ github.event.inputs.slug }}
         run: |
+          # NO INSTAGRAM. A promo never goes to Instagram (owner, 2026-09-19). Dropping "ig"
+          # here is what actually stops it: the picker only reports need_<platform> for the
+          # platforms it is given, so an ig step left behind would simply never fire. It is
+          # removed below as well so there is nothing to switch back on by accident.
           python3 pipeline_lib/autopilot_pick.py \
-            --kind promo --platforms fb,ig,th \
+            --kind promo --platforms fb,th \
             --products /tmp/products.json \
             --slug "$FORCE_SLUG"
 
@@ -144,16 +148,11 @@ jobs:
           CASE: ${{ steps.pick.outputs.permalink }}
         run: gh workflow run post_promo.yml -f "case=$CASE" -f "platform=fb" -f "mode=post" -f "force=false"
 
-      - name: Stagger before Instagram
-        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_ig == 'true' && github.event.inputs.dry_run != 'true'
-        run: sleep 1200
-
-      - name: Post to Instagram
-        if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_ig == 'true' && github.event.inputs.dry_run != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CASE: ${{ steps.pick.outputs.permalink }}
-        run: gh workflow run post_promo.yml -f "case=$CASE" -f "platform=ig" -f "mode=post" -f "force=false"
+      # The Instagram promo steps that stood here are gone (owner, 2026-09-19): a promo never
+      # goes to Instagram. One did -- norjak, 19 Sep -- which is what settled the rule. That
+      # post is being left up deliberately; this only stops any further ones.
+      # post_promo.yml still ACCEPTS platform=ig for a deliberate manual run; nothing
+      # automatic asks it to any more.
 
       - name: Stagger before Threads
         if: steps.killswitch.outputs.off != 'true' && steps.pick.outputs.slug != '' && steps.pick.outputs.need_th == 'true' && github.event.inputs.dry_run != 'true'
