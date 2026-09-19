@@ -36,20 +36,44 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from stage_and_deliver import gumroad  # noqa: E402
+from stage_and_deliver import GUMROAD_BIN, gumroad  # noqa: E402
 
 UA = {"User-Agent": "Mozilla/5.0 (shadow-gasp-hero-refresh)"}
 
 
+def gum(cmd, positionals, flags=()):
+    """Run the Gumroad CLI with positional arguments that may begin with "-".
+
+    ⭐ TWO OF THE 76 PRODUCTS HAVE AN ID STARTING WITH "-":
+
+        -XwgRqYqqfQtSv_rHrKCgA==   #21 THE UNREAD BOOK
+        -QYBnN2BJLXXepm4ZcHiUQ==   #58 DIAMOND VAULT
+
+    The CLI's flag parser eats that leading dash, so the id never reaches the API and the call
+    comes back "The product was not found." with status_code 200. It reads like a flaky server
+    and is nothing of the kind: it is deterministic, it is those two books every time, and it
+    was exactly the two failures in the first full run over the catalogue.
+
+    "--" ends flag parsing, so the id is passed as a value. --json has to go BEFORE it, which
+    is why stage_and_deliver.gumroad() cannot be used here -- it appends --json last, where it
+    would be swallowed as a positional.
+    """
+    argv = [GUMROAD_BIN, *cmd, *flags, "--json", "--", *positionals]
+    result = subprocess.run(argv, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"gumroad CLI failed: {result.stderr or result.stdout}")
+    return json.loads(result.stdout)
+
+
 def buyer_pdf(product_id):
     """(url, name) of the PDF a buyer downloads -- the file embedded in the product content."""
-    view = gumroad(["products", "view", product_id])
+    view = gum(["products", "view"], [product_id])
     files = [f for f in ((view.get("product", view) or {}).get("files") or [])
              if f.get("filetype") == "pdf" and f.get("url")]
     if not files:
         raise RuntimeError("no PDF file on this product")
     embedded = set(re.findall(r'"id":\s*"([^"]+)"',
-                              json.dumps(gumroad(["products", "content", "get", product_id]))))
+                              json.dumps(gum(["products", "content", "get"], [product_id]))))
     pick = [f for f in files if f["id"] in embedded] or files[-1:]
     return pick[0]["url"], pick[0].get("name", "comic.pdf")
 
@@ -66,7 +90,7 @@ def download(url, dest):
 
 
 def covers_of(product_id):
-    view = gumroad(["products", "view", product_id])
+    view = gum(["products", "view"], [product_id])
     return (view.get("product", view) or {}).get("covers") or []
 
 
@@ -163,7 +187,7 @@ def refresh(product, workdir, apply_it):
         return True
 
     # 1. ADD first. The product is never left with fewer images than it started with.
-    gumroad(["products", "covers", "add", pid, "--image", hero])
+    gum(["products", "covers", "add"], [pid], flags=["--image", hero])
     after_add = covers_of(pid)
     new = [c for c in after_add if c.get("id") not in {c2.get("id") for c2 in before}]
     if len(new) != 1:
@@ -181,13 +205,13 @@ def refresh(product, workdir, apply_it):
     # Hence the try: anything that goes wrong from here on takes the cover we just added back
     # out, so a failed product is left exactly as it was found rather than with an orphan.
     try:
-        gumroad(["products", "covers", "remove", pid, old_hero["id"], "--yes"])
+        gum(["products", "covers", "remove"], [pid, old_hero["id"]], flags=["--yes"])
         order = [new_id] + [c["id"] for c in before[1:]]
-        gumroad(["products", "covers", "reorder", pid, *order])
+        gum(["products", "covers", "reorder"], [pid, *order])
     except Exception:
         print(f"  ! failed after adding {new_id} -- removing it again so nothing is stranded")
         try:
-            gumroad(["products", "covers", "remove", pid, new_id, "--yes"])
+            gum(["products", "covers", "remove"], [pid, new_id], flags=["--yes"])
         except Exception as e2:
             print(f"  ! could not undo the add either ({e2}) -- {name} NEEDS A LOOK BY HAND")
         raise
@@ -224,7 +248,7 @@ def main():
             if cover.strip() not in have:
                 print(f"· {slug}: {cover.strip()} is not one of its {len(have)} covers -- nothing done")
                 continue
-            gumroad(["products", "covers", "remove", prod["id"], cover.strip(), "--yes"])
+            gum(["products", "covers", "remove"], [prod["id"], cover.strip()], flags=["--yes"])
             left = covers_of(prod["id"])
             print(f"✓ {slug}: removed {cover.strip()}, {len(left)} covers left, "
                   f"hero={left[0].get('id') if left else None}")
