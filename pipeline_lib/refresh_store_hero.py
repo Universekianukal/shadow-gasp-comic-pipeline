@@ -141,9 +141,24 @@ def refresh(product, workdir, apply_it):
     # 2. Then remove the old hero, and 3. put the new one back at the front. `covers add`
     #    appends, so without the reorder the hero would sit last and the storefront would show
     #    an interior panel as the product's thumbnail.
-    gumroad(["products", "covers", "remove", pid, old_hero["id"]])
-    order = [new_id] + [c["id"] for c in before[1:]]
-    gumroad(["products", "covers", "reorder", pid, *order])
+    #
+    # ⭐ --yes ON THE REMOVE. Without it the CLI answers "confirmation required but stdin is not
+    # interactive" and fails AFTER the add has already gone through, stranding a sixth cover on
+    # a live product. That happened on the first real run against #66.
+    #
+    # Hence the try: anything that goes wrong from here on takes the cover we just added back
+    # out, so a failed product is left exactly as it was found rather than with an orphan.
+    try:
+        gumroad(["products", "covers", "remove", pid, old_hero["id"], "--yes"])
+        order = [new_id] + [c["id"] for c in before[1:]]
+        gumroad(["products", "covers", "reorder", pid, *order])
+    except Exception:
+        print(f"  ! failed after adding {new_id} -- removing it again so nothing is stranded")
+        try:
+            gumroad(["products", "covers", "remove", pid, new_id, "--yes"])
+        except Exception as e2:
+            print(f"  ! could not undo the add either ({e2}) -- {name} NEEDS A LOOK BY HAND")
+        raise
 
     final = covers_of(pid)
     ok = final and final[0].get("id") == new_id and len(final) == len(before)
