@@ -1,6 +1,7 @@
 {
   "issues": {
     "1979-sverdlovsk-anthrax-leak-soviet-biow": 79,
+    "able-archer-83-nato-exercise-nearly-trig": 93,
     "air-new-zealand-flight-901-mount-erebus-": 77,
     "bath-school-disaster-michigan-1927": 61,
     "bella-in-the-wych-elm-hagley-wood-englan": 30,
@@ -95,6 +96,7 @@
   },
   "kaggle": {
     "1979-sverdlovsk-anthrax-leak-soviet-biow": "C",
+    "able-archer-83-nato-exercise-nearly-trig": "B",
     "air-new-zealand-flight-901-mount-erebus-": "C",
     "bath-school-disaster-michigan-1927": "-",
     "bella-in-the-wych-elm-hagley-wood-englan": "C",
