@@ -38,6 +38,7 @@ print(json.dumps(q[0]) if q else '')
           CASE=$(echo "$NEXT" | python3 -c "import json,sys; print(json.load(sys.stdin)['case'])")
           ISSUE=$(echo "$NEXT" | python3 -c "import json,sys; print(json.load(sys.stdin)['issue_no'])")
           PROFILE=$(echo "$NEXT" | python3 -c "import json,sys; print(json.load(sys.stdin)['profile'])")
+          PAGES=$(echo "$NEXT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('target_pages', 25))")
           python3 -c "
 import json
 q = json.load(open('orchestrator/queue.json'))
@@ -53,7 +54,7 @@ json.dump(b, open('orchestrator/budgets.json','w'), indent=2)
           git commit -m "orchestrator: dispatch issue #$ISSUE, decrement slot '$SLOT' budget" || true
           git push || true
           if [ -z "$SLOT" ]; then
-            gh workflow run "Comic Pipeline" -f case="$CASE" -f target_pages=25 -f issue_no="$ISSUE" -f profile="$PROFILE"
+            gh workflow run "Comic Pipeline" -f case="$CASE" -f target_pages="$PAGES" -f issue_no="$ISSUE" -f profile="$PROFILE"
           else
-            gh workflow run "Comic Pipeline" -f case="$CASE" -f target_pages=25 -f issue_no="$ISSUE" -f profile="$PROFILE" -f kaggle_account="$SLOT"
+            gh workflow run "Comic Pipeline" -f case="$CASE" -f target_pages="$PAGES" -f issue_no="$ISSUE" -f profile="$PROFILE" -f kaggle_account="$SLOT"
           fi
