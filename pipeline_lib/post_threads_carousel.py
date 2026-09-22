@@ -5,9 +5,11 @@ own API, token and rules:
   * graph.threads.net: children (is_carousel_item) -> CAROUSEL container -> threads_publish.
   * Threads has NO DMs, so the caption's "check your DMs" line becomes a public-reply call to action
     (the comics bot answers COMIC comments with a public reply: the issue link + the free #1).
-  * Threads makes only ONE hashtag a clickable topic, but the owner wants every hashtag visible in
-    the text, as on the hand-made #1 post (2026-09-17) -- so the hashtag line is kept whole.
   * Text limit 500 characters.
+  * Threads silently drops the "#" off the FIRST tag whenever the hashtag line has 5+ tags (seen on
+    #truecrime specifically, on posts made by this same script -- not a per-tag thing, a per-post
+    cap). Capping the line to 4 tags is the fix: everything else about the caption, including which
+    tag comes first, is untouched.
 
 The posted marker is the same per-platform file carousel/<slug>.posted.json, under key "th".
 """
@@ -36,6 +38,10 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 
+MAX_HASHTAGS = 4  # a 5th tag is what makes Threads strip the "#" off the first one
+DROP_TAG_FIRST = "#documentarycomic"  # least useful tag -- drop this one before shortening by position
+
+
 def threads_caption(e):
     """The IG caption, with the DM call to action swapped for the public-reply one and a single tag."""
     cta = CTA_FREE if int(e.get("issue") or 0) == 1 else CTA_ISSUE
@@ -47,6 +53,12 @@ def threads_caption(e):
                 out.append(cta)
                 placed = True
             continue
+        if s.startswith("#"):
+            tags = s.split()
+            if len(tags) > MAX_HASHTAGS:
+                tags = [t for t in tags if t.lower() != DROP_TAG_FIRST] or tags
+                tags = tags[:MAX_HASHTAGS]
+                ln = " ".join(tags)
         out.append(ln)
     if not placed:  # no call-to-action line found: put it before the tag (or at the end)
         at = next((i for i in range(len(out) - 1, -1, -1) if out[i].strip().startswith("#")), len(out))
