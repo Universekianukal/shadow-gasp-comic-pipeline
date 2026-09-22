@@ -1,0 +1,59 @@
+name: Comic Orchestrator
+on:
+  workflow_run:
+    workflows: ["Comic Pipeline"]
+    types: [completed]
+permissions:
+  contents: write
+  actions: write
+jobs:
+  dispatch-next:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Determine completed slot and dispatch next queued case
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          SLOT=$(gh run view "$RUN_ID" --log 2>/dev/null | grep -o "Kaggle account: slot [^=]* =" | head -1 | sed 's/Kaggle account: slot //; s/ =//')
+          SLOT=$(echo "$SLOT" | xargs)
+          if [ "$SLOT" = "(blank)" ] || [ -z "$SLOT" ]; then SLOT=""; fi
+          echo "Completed run used slot: '$SLOT'"
+          REMAINING=$(python3 -c "import json; d=json.load(open('orchestrator/budgets.json')); print(d.get('$SLOT', 0))")
+          echo "Remaining budget for slot '$SLOT': $REMAINING"
+          if [ "$REMAINING" -le 0 ]; then
+            echo "No budget left for this slot -- not dispatching."
+            exit 0
+          fi
+          NEXT=$(python3 -c "
+import json
+q = json.load(open('orchestrator/queue.json'))
+print(json.dumps(q[0]) if q else '')
+")
+          if [ -z "$NEXT" ]; then
+            echo "Queue empty -- nothing to dispatch."
+            exit 0
+          fi
+          CASE=$(echo "$NEXT" | python3 -c "import json,sys; print(json.load(sys.stdin)['case'])")
+          ISSUE=$(echo "$NEXT" | python3 -c "import json,sys; print(json.load(sys.stdin)['issue_no'])")
+          PROFILE=$(echo "$NEXT" | python3 -c "import json,sys; print(json.load(sys.stdin)['profile'])")
+          python3 -c "
+import json
+q = json.load(open('orchestrator/queue.json'))
+q = q[1:]
+json.dump(q, open('orchestrator/queue.json','w'), indent=2)
+b = json.load(open('orchestrator/budgets.json'))
+b['$SLOT'] = b.get('$SLOT', 0) - 1
+json.dump(b, open('orchestrator/budgets.json','w'), indent=2)
+"
+          git config user.name "comic-orchestrator"
+          git config user.email "orchestrator@shadow-gasp"
+          git add orchestrator/queue.json orchestrator/budgets.json
+          git commit -m "orchestrator: dispatch issue #$ISSUE, decrement slot '$SLOT' budget" || true
+          git push || true
+          if [ -z "$SLOT" ]; then
+            gh workflow run "Comic Pipeline" -f case="$CASE" -f target_pages=25 -f issue_no="$ISSUE" -f profile="$PROFILE"
+          else
+            gh workflow run "Comic Pipeline" -f case="$CASE" -f target_pages=25 -f issue_no="$ISSUE" -f profile="$PROFILE" -f kaggle_account="$SLOT"
+          fi
