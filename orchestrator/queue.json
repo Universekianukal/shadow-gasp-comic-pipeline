@@ -1,14 +1,9 @@
 [
-  {
-    "case": "The Tarrare Case (France, 1772-1798)",
-    "issue_no": 104,
-    "profile": "mosaic",
-    "target_pages": 40
-  },
-  {
-    "case": "Disappearance of Benjamin Bathurst (Perleberg, Prussia, 1809)",
-    "issue_no": 105,
-    "profile": "staccato",
-    "target_pages": 40
-  }
+  {"case": "Edgewood Arsenal Experiments", "issue_no": 106, "profile": "staccato", "target_pages": 25},
+  {"case": "Robert Hanssen FBI Spy", "issue_no": 107, "profile": "mosaic", "target_pages": 25},
+  {"case": "Harold Shipman Britains Trusted Doctor Killer", "issue_no": 108, "profile": "staccato", "target_pages": 25},
+  {"case": "Stanislav Petrov 1983 Soviet Nuclear False Alarm", "issue_no": 109, "profile": "staccato", "target_pages": 25},
+  {"case": "Operation Ivy Bells", "issue_no": 110, "profile": "staccato", "target_pages": 25},
+  {"case": "Demon Core Plutonium Sphere Harry Daghlian", "issue_no": 111, "profile": "classic", "target_pages": 25},
+  {"case": "Paul Schaefer Colonia Dignidad Chile Cult", "issue_no": 112, "profile": "chamber", "target_pages": 25}
 ]
