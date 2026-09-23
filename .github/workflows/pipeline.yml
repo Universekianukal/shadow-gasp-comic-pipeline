@@ -122,6 +122,16 @@ on:
         description: "Optional: new book title, replacing the one in the (cached) script"
         required: false
         default: ""
+      # One-off recovery mode: skip Kaggle entirely and copy already-rendered panels from
+      # recovered_art/<slug>/ (committed on this scratch branch) into cases/<slug>/panels/
+      # instead. Added 2026-09-23 to recover issue #101 (Boeing 727) art that finished on
+      # Kaggle after gen_flux_kaggle.py's client-side 200-min poll had already given up and
+      # cases/ was gone by the time it was noticed -- rather than spend another ~2h GPU run
+      # regenerating art that already exists, this pulls the already-downloaded output back in.
+      use_recovered_art:
+        description: "Recovery mode: skip Kaggle, copy panels from recovered_art/<slug>/ instead"
+        required: false
+        default: "false"
 
 jobs:
   build:
@@ -359,9 +369,22 @@ jobs:
             --prompts cases/${{ env.slug }}/panel_prompts.json \
             --sheet cases/${{ env.slug }}/spec_panels.md
 
+      - name: Recover already-rendered art from this branch (skip Kaggle)
+        id: recover_art
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.use_recovered_art == 'true'
+        run: |
+          SRC="recovered_art/${{ env.slug }}"
+          if [ ! -d "$SRC" ]; then
+            echo "::error::use_recovered_art=true but $SRC does not exist on this branch."
+            exit 1
+          fi
+          mkdir -p "cases/${{ env.slug }}/panels"
+          cp "$SRC"/*.jpg "cases/${{ env.slug }}/panels/"
+          echo "recovered $(ls "$SRC"/*.jpg | wc -l) images from $SRC"
+
       - name: Generate FLUX art on Kaggle
         id: flux
-        if: github.event.inputs.dry_run != 'true'
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.use_recovered_art != 'true'
         env:
           # KAGGLE_USERNAME / KAGGLE_API_TOKEN come from the JOB-level env above, which honours
           # the kaggle_account input. Re-declaring them here would shadow that and pin every
@@ -379,7 +402,7 @@ jobs:
         id: ocr
         # Skipped in store_assets_only mode: re-rolling panels would change the art AFTER the
         # book is on sale, so the repair would ship a cover the buyer's PDF does not have.
-        if: github.event.inputs.dry_run != 'true' && github.event.inputs.store_assets_only != 'true'
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.store_assets_only != 'true' && github.event.inputs.use_recovered_art != 'true'
         # NEVER fatal. This step is optional polish that re-rolls flagged panels on a second
         # Kaggle kernel, and it is blind to the garbled text it exists to catch anyway -- the
         # human reading the Telegram draft is the real gate. On 2026-09-01 that second kernel
