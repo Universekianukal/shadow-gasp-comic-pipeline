@@ -384,7 +384,12 @@ jobs:
 
       - name: Generate FLUX art on Kaggle
         id: flux
-        if: github.event.inputs.dry_run != 'true' && github.event.inputs.use_recovered_art != 'true'
+        # Runs even with use_recovered_art=true: gen_flux_kaggle.py only ever renders panels
+        # that are still missing from cases/<slug>/panels/ after the recovery-art copy step
+        # above, so pre-seeding that directory turns this into a targeted fill of the real gap
+        # (page 40's 5 panels, cut off by the client-side 200-min timeout) instead of a full
+        # 200-panel rebuild.
+        if: github.event.inputs.dry_run != 'true'
         env:
           # KAGGLE_USERNAME / KAGGLE_API_TOKEN come from the JOB-level env above, which honours
           # the kaggle_account input. Re-declaring them here would shadow that and pin every
