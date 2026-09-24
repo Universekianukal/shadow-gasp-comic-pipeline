@@ -1,0 +1,21 @@
+name: One-shot build 113
+on:
+  schedule:
+    - cron: "30 6 25 9 *"
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch #113 once (2026 only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date -u +%Y)" != "2026" ]; then echo "not 2026, skipping"; exit 0; fi
+          gh workflow run pipeline.yml --repo "$GITHUB_REPOSITORY" \
+            -f case='Execution Of The Romanov Family Russias Last Tsar' \
+            -f target_pages=25 -f profile=chamber -f issue_no=113 \
+            -f kaggle_account=C -f case_source=new
