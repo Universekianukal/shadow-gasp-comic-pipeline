@@ -18,7 +18,7 @@ jobs:
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           echo "Completed run $RUN_ID conclusion=$RUN_CONCLUSION"
-          SLOT=$(gh run view "$RUN_ID" --log 2>/dev/null | grep -o "Kaggle account: slot [^=]* =" | head -1 | sed 's/Kaggle account: slot //; s/ =//' | xargs || true)
+          SLOT=$(gh run view "$RUN_ID" --log 2>/dev/null | grep -o "Kaggle account: slot [A-Za-z0-9()]* =" | head -1 | sed 's/Kaggle account: slot //; s/ =//' | xargs || true)
           if [ "$SLOT" = "(blank)" ]; then SLOT=""; fi
           echo "Completed run used slot: '$SLOT'"
           NEXT=$(python3 orchestrator/pop.py "$SLOT")
