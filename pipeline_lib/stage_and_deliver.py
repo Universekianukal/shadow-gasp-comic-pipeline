@@ -569,6 +569,20 @@ def main():
                         if n >= 20 and ck[:n] == wk[:n]:
                             hits.append(c)
                     how = "slug"
+            if not hits:
+                # Last resort: the LEADING TWO WORDS. A rewritten comic title can drop or add a
+                # word the ledger's descriptive name has ("Edgewood Arsenal Experiments" vs
+                # "Edgewood Arsenal human experiments (...)", "Robert Hanssen FBI Spy" vs
+                # "Robert Hanssen (FBI agent who spied ...)"), and none of the three checks above
+                # sees that -- #106 and #107 shipped with no funnel button. Only accepted when
+                # exactly ONE distinct case head starts with those two words, so it can never pick
+                # between two different stories.
+                lead = _case_head(want).split()[:2]
+                if len(lead) == 2:
+                    cand = [c for c in entries if _case_head(c.get("case", "")).split()[:2] == lead]
+                    if len({_case_head(c.get("case", "")) for c in cand}) == 1:
+                        hits = cand
+                        how = "leading words"
             if hits:
                 pick = max(hits, key=lambda c: c.get("publishedAt", ""))
                 args.video_id = pick["videoId"]
