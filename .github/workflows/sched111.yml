@@ -1,0 +1,22 @@
+name: One-shot rebuild 111
+on:
+  schedule:
+    - cron: "20 0 25 9 *"
+    - cron: "0 12 25 9 *"
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch #111 (2026 only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date -u +%Y)" != "2026" ]; then echo "not 2026, skipping"; exit 0; fi
+          gh workflow run pipeline.yml --repo "$GITHUB_REPOSITORY" \
+            -f case='Demon Core Plutonium Sphere Harry Daghlian' \
+            -f target_pages=40 -f profile=classic -f issue_no=111 \
+            -f kaggle_account=B -f case_source=new
