@@ -6,9 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install requests
-      - name: scaletest2
+      - name: dslist
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
         run: |
           cd pipeline_lib
-          python _scale_temp2.py
+          python llm.py list-models featherless | grep -iE "deepseek-v3|deepseek-ai/DeepSeek-V3"
