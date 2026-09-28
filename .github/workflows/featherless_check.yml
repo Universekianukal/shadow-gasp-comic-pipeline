@@ -1,0 +1,13 @@
+name: Featherless key check (temporary)
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests
+      - env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+        run: |
+          cd pipeline_lib
+          python llm.py list-models featherless | head -50
