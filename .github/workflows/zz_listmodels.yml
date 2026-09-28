@@ -1,0 +1,16 @@
+name: Model bakeoff (temporary)
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests
+      - name: listmodels
+        env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+        run: |
+          cd pipeline_lib
+          python llm.py list-models featherless > /tmp/models.txt
+          echo "total: $(wc -l < /tmp/models.txt)"
+          grep -iE "deepseek-v3|deepseek-r1|qwen2.5-72b|qwen2.5-32b|mixtral-8x22|llama-3.1-405b|command-r-plus|qwen3-32b|qwen3-72b" /tmp/models.txt | grep -v Gensyn | head -40
