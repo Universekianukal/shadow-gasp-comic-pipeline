@@ -1276,7 +1276,14 @@ def main():
             result = {"script": script_only["script"], "panel_prompts": prompts}
         else:
             result = generate(system, user, max_tokens=max_tokens)
-        cache_save(cache_key, result)
+        # A script well short of the requested length is a truncated reply, not a thin case.
+        # Caching it made the rebuild of #136 reload the same 24-of-40-page script in a minute.
+        _got = len((result.get("script") or {}).get("pages") or [])
+        if _got < 0.8 * args.target_pages:
+            print(f"NOT CACHED: {_got} of {args.target_pages} pages -- a rerun writes it afresh",
+                  flush=True)
+        else:
+            cache_save(cache_key, result)
         if chunked:
             _retire_partial(cache_key)
 
