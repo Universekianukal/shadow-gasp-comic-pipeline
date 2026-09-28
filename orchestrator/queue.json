@@ -1,21 +1,122 @@
 [
-  {"case": "Hinterkaifeck murders (1922, Germany)", "issue_no": "135", "profile": "staccato", "target_pages": 35},
-  {"case": "Issei Sagawa (\"Kobe cannibal,\" murder of Renee Hartevelt, Paris 1981)", "issue_no": "136", "profile": "classic", "target_pages": 35},
-  {"case": "Kursk submarine disaster (2000)", "issue_no": "137", "profile": "classic", "target_pages": 35},
-  {"case": "Lake Karachay (radioactive lake, USSR)", "issue_no": "114", "profile": "staccato", "target_pages": 35},
-  {"case": "Unit 731 (Japan, WW2)", "issue_no": "115", "profile": "documentary", "target_pages": 35},
-  {"case": "Franklin's lost Arctic expedition (129 sailors)", "issue_no": "116", "profile": "mosaic", "target_pages": 35},
-  {"case": "Idi Amin's reign in Uganda", "issue_no": "117", "profile": "mosaic", "target_pages": 35},
-  {"case": "David Koresh / Waco / Branch Davidians (siege overview)", "issue_no": "118", "profile": "cinematic", "target_pages": 35},
-  {"case": "Castle Bravo nuclear test (1954, US lied about yield, Marshall Islands/Lucky Dragon fallout)", "issue_no": "119", "profile": "mosaic", "target_pages": 35},
-  {"case": "Tuskegee Syphilis Study", "issue_no": "120", "profile": "staccato", "target_pages": 35},
-  {"case": "Soviet punitive psychiatry (dissidents declared insane)", "issue_no": "121", "profile": "chamber", "target_pages": 35},
-  {"case": "Operation Paperclip (Nazi scientists & US space program)", "issue_no": "122", "profile": "cinematic", "target_pages": 35},
-  {"case": "Radium Girls", "issue_no": "123", "profile": "mosaic", "target_pages": 35},
-  {"case": "Charles Whitman (UT Austin tower shooter, brain tumor)", "issue_no": "124", "profile": "classic", "target_pages": 35},
-  {"case": "Carlos the Jackal (Ilich Ramirez Sanchez, OPEC HQ siege 1975)", "issue_no": "125", "profile": "chamber", "target_pages": 35},
-  {"case": "Korean War POW \"brainwashing\" (Chinese re-education of American prisoners, 1950s)", "issue_no": "126", "profile": "documentary", "target_pages": 35},
-  {"case": "Guatemala syphilis experiments (1946-1948, US doctors)", "issue_no": "127", "profile": "cinematic", "target_pages": 35},
-  {"case": "Aum Shinrikyo Tokyo subway sarin attack", "issue_no": "128", "profile": "chamber", "target_pages": 35},
-  {"case": "Robert Hansen (\"Butcher Baker,\" Alaska)", "issue_no": "129", "profile": "chamber", "target_pages": 35}
+  {
+    "case": "Andrei Chikatilo (Soviet serial killer)",
+    "issue_no": "132",
+    "profile": "cinematic",
+    "target_pages": 35
+  },
+  {
+    "case": "Hinterkaifeck murders (1922, Germany)",
+    "issue_no": "135",
+    "profile": "staccato",
+    "target_pages": 35
+  },
+  {
+    "case": "Issei Sagawa (\"Kobe cannibal,\" murder of Renee Hartevelt, Paris 1981)",
+    "issue_no": "136",
+    "profile": "classic",
+    "target_pages": 35
+  },
+  {
+    "case": "Kursk submarine disaster (2000)",
+    "issue_no": "137",
+    "profile": "classic",
+    "target_pages": 35
+  },
+  {
+    "case": "Lake Karachay (radioactive lake, USSR)",
+    "issue_no": "114",
+    "profile": "staccato",
+    "target_pages": 35
+  },
+  {
+    "case": "Unit 731 (Japan, WW2)",
+    "issue_no": "115",
+    "profile": "documentary",
+    "target_pages": 35
+  },
+  {
+    "case": "Franklin's lost Arctic expedition (129 sailors)",
+    "issue_no": "116",
+    "profile": "mosaic",
+    "target_pages": 35
+  },
+  {
+    "case": "Idi Amin's reign in Uganda",
+    "issue_no": "117",
+    "profile": "mosaic",
+    "target_pages": 35
+  },
+  {
+    "case": "David Koresh / Waco / Branch Davidians (siege overview)",
+    "issue_no": "118",
+    "profile": "cinematic",
+    "target_pages": 35
+  },
+  {
+    "case": "Castle Bravo nuclear test (1954, US lied about yield, Marshall Islands/Lucky Dragon fallout)",
+    "issue_no": "119",
+    "profile": "mosaic",
+    "target_pages": 35
+  },
+  {
+    "case": "Tuskegee Syphilis Study",
+    "issue_no": "120",
+    "profile": "staccato",
+    "target_pages": 35
+  },
+  {
+    "case": "Soviet punitive psychiatry (dissidents declared insane)",
+    "issue_no": "121",
+    "profile": "chamber",
+    "target_pages": 35
+  },
+  {
+    "case": "Operation Paperclip (Nazi scientists & US space program)",
+    "issue_no": "122",
+    "profile": "cinematic",
+    "target_pages": 35
+  },
+  {
+    "case": "Radium Girls",
+    "issue_no": "123",
+    "profile": "mosaic",
+    "target_pages": 35
+  },
+  {
+    "case": "Charles Whitman (UT Austin tower shooter, brain tumor)",
+    "issue_no": "124",
+    "profile": "classic",
+    "target_pages": 35
+  },
+  {
+    "case": "Carlos the Jackal (Ilich Ramirez Sanchez, OPEC HQ siege 1975)",
+    "issue_no": "125",
+    "profile": "chamber",
+    "target_pages": 35
+  },
+  {
+    "case": "Korean War POW \"brainwashing\" (Chinese re-education of American prisoners, 1950s)",
+    "issue_no": "126",
+    "profile": "documentary",
+    "target_pages": 35
+  },
+  {
+    "case": "Guatemala syphilis experiments (1946-1948, US doctors)",
+    "issue_no": "127",
+    "profile": "cinematic",
+    "target_pages": 35
+  },
+  {
+    "case": "Aum Shinrikyo Tokyo subway sarin attack",
+    "issue_no": "128",
+    "profile": "chamber",
+    "target_pages": 35
+  },
+  {
+    "case": "Robert Hansen (\"Butcher Baker,\" Alaska)",
+    "issue_no": "129",
+    "profile": "chamber",
+    "target_pages": 35
+  }
 ]
