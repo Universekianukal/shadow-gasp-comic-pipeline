@@ -45,6 +45,11 @@ OPENAI_COMPATIBLE = {
     # `python -m maker.llm list-models fireworks` before switching.
     "fireworks": ("https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY",
                   "accounts/fireworks/models/glm-5p2"),
+    # Added 2026-09-28 as a second fallback after Fireworks' account was suspended
+    # (billing) mid-pipeline and stalled every unattended /make build. OpenAI-compatible,
+    # same transport as fireworks.
+    "featherless": ("https://api.featherless.ai/v1", "FEATHERLESS_API_KEY",
+                     "FEATHERLESS_DEFAULT_MODEL_PLACEHOLDER"),
 }
 
 DEFAULT_MODELS = {
