@@ -792,6 +792,61 @@ def _normalise_outline(outline):
     return out, notes
 
 
+def _type_quota(profile, n_pages):
+    """Exact page count per panel count ({1: splash, 4, 5, 6}) for this profile's density.
+
+    The plan used to get the profile only as percentages and was trusted to hit them; a 50pp
+    mosaic plan came back with 7 splashes where the profile allows 5. Largest remainder, so
+    the counts always sum to n_pages.
+    """
+    density = layout_profiles.PROFILES[profile]["density"]
+    raw = {n: w * n_pages for n, w in density.items()}
+    quota = {n: int(v) for n, v in raw.items()}
+    for n in sorted(raw, key=lambda n: raw[n] - quota[n], reverse=True)[:n_pages - sum(quota.values())]:
+        quota[n] += 1
+    return quota
+
+
+def _quota_line(quota):
+    names = {1: "single-panel splash", 4: "4-panel", 5: "5-panel", 6: "6-panel"}
+    parts = [f"{quota[n]} {names[n]}" for n in sorted(quota) if quota.get(n)]
+    return (f"exactly {', '.join(parts)} pages "
+            f"(= {sum(n * c for n, c in quota.items())} panels)")
+
+
+def _enforce_quota(outline, quota):
+    """Rebalance the plan's page types onto the exact quota. -> notes
+
+    Keeps every page whose panel count is still within quota (the model's own choice, where
+    it placed splashes and dense pages); only the overflow is reassigned, in reading order,
+    to the counts still owed, never repeating the previous page's structure.
+    """
+    left, excess = dict(quota), []
+    for e in outline:
+        n = sum(e["structure"])
+        if left.get(n, 0) > 0:
+            left[n] -= 1
+        else:
+            excess.append(e)
+    owed = [n for n in sorted(left, reverse=True) for _ in range(left[n])]
+    notes, turn = [], {n: 0 for n in LEGAL_STRUCTURES}
+    for e, n in zip(excess, owed):
+        before = e["structure"]
+        if n == 1:
+            e["type"], e["structure"] = "splash", [1]
+        else:
+            prev = next((p["structure"] for p in reversed(outline[:outline.index(e)])), None)
+            opts = LEGAL_STRUCTURES[n]
+            pick = opts[turn[n] % len(opts)]
+            if pick == prev:
+                turn[n] += 1
+                pick = opts[turn[n] % len(opts)]
+            turn[n] += 1
+            e["type"], e["structure"] = "grid", pick
+        notes.append(f"page {e['page']}: {before} -> {e['structure']}")
+    return notes
+
+
 def _finalise_meta(meta, issue_no):
     meta = {k: v for k, v in meta.items() if k != "pages"}
     meta["series"] = meta.get("series") or "SHADOW GASP"
@@ -920,7 +975,9 @@ def _load_partial(cache_key):
     return None
 
 
-def _plan_user(case, issue_no, target_pages, target_panels, layout_block):
+def _plan_user(case, issue_no, target_pages, target_panels, layout_block, quota=None):
+    mix = (f"- Page types, counted: {_quota_line(quota)}. Place the splashes on the biggest "
+           "beats.\n" if quota else f"- About {target_panels} panels in total across all pages.\n")
     return (
         f"Case: {case}\nIssue number: {issue_no}\n\n"
         f"This issue is long -- {target_pages} story pages -- so it is written in stages. THIS "
@@ -952,7 +1009,7 @@ def _plan_user(case, issue_no, target_pages, target_panels, layout_block):
         "repeating itself.\n"
         "- Page types and row structures follow the LAYOUT PROFILE above: its splash share, "
         "and ONLY its listed 4/5/6-panel structures, varied page to page.\n"
-        f"- About {target_panels} panels in total across all pages.\n\n"
+        f"{mix}\n"
         f"{JSON_RULES}")
 
 
@@ -997,8 +1054,9 @@ def _part_user(case, issue_no, layout_block, meta, bible, outline, entries, seam
 
 
 def generate_script_chunked(case, issue_no, target_pages, target_panels, layout_block,
-                            system, provider, cache_key):
+                            system, provider, cache_key, profile=None):
     """Plan the whole book once, write its pages in parts, stitch. Returns the script."""
+    quota = _type_quota(profile, target_pages) if profile else None
     state = _load_partial(cache_key)
     if state and state.get("stitched"):
         print("RESUMING: stitched script found in the partial cache", flush=True)
@@ -1022,20 +1080,26 @@ def generate_script_chunked(case, issue_no, target_pages, target_panels, layout_
                                  f"{target_pages}-page book")
             for note in notes:
                 print(f"  PLAN REPAIR: {note}", flush=True)
+            if quota and len(outline) == target_pages:
+                for note in _enforce_quota(outline, quota):
+                    print(f"  PAGE MIX: {note}", flush=True)
             bible = res.get("bible") if isinstance(res.get("bible"), dict) else {}
             return _finalise_meta(meta, issue_no), bible, outline
 
         print(f"[plan] outlining all {target_pages} pages in one call", flush=True)
         meta, bible, outline = _ask_json(
-            "plan", system, _plan_user(case, issue_no, target_pages, target_panels, layout_block),
+            "plan", system,
+            _plan_user(case, issue_no, target_pages, target_panels, layout_block, quota),
             max(12000, target_pages * 180 + 6000), check_plan, provider)
         done = {}
         _save_partial(cache_key, meta=meta, bible=bible, outline=outline, parts=done)
 
     n_splash = sum(e["type"] == "splash" for e in outline)
     n_panels = sum(sum(e["structure"]) for e in outline)
+    goal = (f"profile density {sum(n * c for n, c in quota.items())}" if quota
+            else f"target ~{target_panels}")
     print(f"  plan: {len(outline)} pages ({n_splash} splash), {n_panels} panels planned "
-          f"(target ~{target_panels}); bible: "
+          f"({goal}); bible: "
           f"{sum(len(bible.get(g) or []) for g in ('people', 'places', 'objects'))} entries",
           flush=True)
 
@@ -1169,7 +1233,7 @@ def main():
                   f"{script_provider or 'default'})", flush=True)
             script = generate_script_chunked(
                 args.case, args.issue_no, args.target_pages, target_panels, layout_block,
-                system, script_provider, cache_key)
+                system, script_provider, cache_key, profile=_profile_key)
             print(f"[prompts] (provider: {prompts_provider or 'default'})", flush=True)
             result = {"script": script,
                       "panel_prompts": generate_prompts(script, prompts_provider)}
