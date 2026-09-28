@@ -6,10 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install requests
-      - name: listmodels2
+      - name: scaletest2
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
         run: |
           cd pipeline_lib
-          python llm.py list-models featherless > /tmp/models.txt
-          grep -E "^deepseek-ai/|^meta-llama/|^Qwen/Qwen3-|^mistralai/Mixtral|^CohereForAI/" /tmp/models.txt | head -40
+          python _scale_temp2.py
