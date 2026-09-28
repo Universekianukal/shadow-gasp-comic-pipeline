@@ -45,18 +45,23 @@ OPENAI_COMPATIBLE = {
     # `python -m maker.llm list-models fireworks` before switching.
     "fireworks": ("https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY",
                   "accounts/fireworks/models/glm-5p2"),
-    # Added 2026-09-28 as a second fallback after Fireworks' account was suspended
-    # (billing) mid-pipeline and stalled every unattended /make build. OpenAI-compatible,
-    # same transport as fireworks.
-    # Model id confirmed live against the account's own /v1/models listing 2026-09-28
-    # (`python llm.py list-models featherless`). meta-llama/Llama-3.3-70B-Instruct was
-    # tried first but is GATED behind a HuggingFace org verification Featherless requires
-    # separately (HTTP 403 model_gated_needs_oauth) -- broke the Sagawa build outright.
-    # Switched to Qwen2.5-72B-Instruct, not gated. Not a reasoning model, so it doesn't
-    # hit the reasoning-budget trap glm-5p2 needed a workaround for.
+    # Fallback after Fireworks was suspended for billing. Chosen 2026-09-28 by a bake-off on
+    # a real caption + FLUX prompt + fact brief: DeepSeek-V3.2 copied the mandatory prompt
+    # prefix/suffix verbatim and recalled the real case correctly, while Qwen2.5-72B and
+    # Mistral-Small both invented a victim's name. Llama-3.x is gated (HTTP 403
+    # model_gated_needs_oauth); Qwen3 sat silent for 10+ minutes on a trivial prompt.
     "featherless": ("https://api.featherless.ai/v1", "FEATHERLESS_API_KEY",
-                     "Qwen/Qwen2.5-72B-Instruct"),
+                     "deepseek-ai/DeepSeek-V3.2"),
 }
+
+# ⭐⭐ Hard output ceiling per provider. Featherless answers any request whose max_tokens is
+# above its limit with EMPTY content and finish_reason=None -- no error, no status code --
+# so an over-large request looks exactly like a model that refused to write. Measured
+# 2026-09-28 on five different models (Qwen2.5-72B, Qwen3-32B, DeepSeek-V3.2, GLM-5.2):
+# 32,000 always worked, 48,000 always came back empty in under half a second. It is a
+# platform cap, not a model property -- the same GLM-5.2 takes 64k on Fireworks.
+# The comic script step asks for up to 64,000, which is why every Featherless build died.
+PROVIDER_MAX_OUTPUT = {"featherless": 30000}
 
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-5",
@@ -161,6 +166,15 @@ class LLM:
     # Absolute ceiling for the automatic budget escalation below.
     MAX_OUTPUT_TOKENS = 64000
 
+    def output_cap(self) -> int:
+        """Largest max_tokens the CURRENT provider will honour.
+
+        Read live, because a billing fallback can switch provider mid-call and the new one
+        may have a lower ceiling than the one the caller sized its request for.
+        """
+        return min(self.MAX_OUTPUT_TOKENS,
+                   PROVIDER_MAX_OUTPUT.get(self.provider, self.MAX_OUTPUT_TOKENS))
+
     # Max seconds between two streamed chunks before the server is treated as gone. This
     # is an IDLE gap, not a total-duration cap, so a legitimately long generation is never
     # cut short -- only a silent one is.
@@ -254,14 +268,15 @@ class LLM:
         return "".join(content), "".join(reasoning), finish
 
     def _text_once(self, prompt: str, system: str, max_tokens: int) -> str:
-        budget = max_tokens
+        cap = self.output_cap()
+        budget = min(max_tokens, cap)
         for attempt in range(3):
             try:
                 return self._retry(lambda: self._call(prompt, system, budget))
             except Truncated:
-                if budget >= self.MAX_OUTPUT_TOKENS or attempt == 2:
+                if budget >= cap or attempt == 2:
                     raise
-                budget = min(budget * 2, self.MAX_OUTPUT_TOKENS)
+                budget = min(budget * 2, cap)
                 print(f"  . output truncated, retrying with max_tokens={budget:,}",
                       flush=True)
         raise Truncated("exhausted budget escalation")
@@ -342,6 +357,7 @@ class LLM:
         key = _require_key(key_env)
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
+        max_tokens = min(max_tokens, self.output_cap())
         payload = {"model": self.model, "max_tokens": max_tokens, "messages": msgs}
         # reasoning_effort is a Fireworks-specific param for reasoning models (glm-5p2).
         # Sending it to Featherless -- a plain instruct model, not a reasoning one -- was
