@@ -1225,10 +1225,22 @@ def main():
 
         split = (os.environ.get("COMIC_SPLIT_GENERATION", "true").lower() != "false")
         chunked = args.target_pages > CHUNK_ABOVE
+        # The single call needs `max_tokens` of output in ONE reply. Featherless cuts every
+        # reply at ~30K: a 40pp cinematic issue (#136) came back as 24 pages of 3-panel grids
+        # -- the model squeezed the book to fit. So a provider whose ceiling is below what the
+        # single call needs gets the chunked path at any length.
+        _prov = (os.environ.get("COMIC_SCRIPT_PROVIDER") or os.environ.get("COMIC_LLM_PROVIDER")
+                 or "").strip().lower()
+        import llm as _LLM
+        _ceiling = _LLM.PROVIDER_MAX_OUTPUT.get(_prov)
+        if not chunked and _ceiling and _ceiling < max_tokens:
+            print(f"{_prov} caps a reply at {_ceiling:,} tokens; a {args.target_pages}pp script "
+                  f"needs ~{max_tokens:,} in one call", flush=True)
+            chunked = True
         if chunked:
             script_provider = os.environ.get("COMIC_SCRIPT_PROVIDER") or None
             prompts_provider = os.environ.get("COMIC_PROMPTS_PROVIDER") or None
-            print(f"CHUNKED SCRIPT: {args.target_pages} pages > {CHUNK_ABOVE} -- plan once, "
+            print(f"CHUNKED SCRIPT: {args.target_pages} pages -- plan once, "
                   f"then write in parts of ~{CHUNK_PAGES} (provider: "
                   f"{script_provider or 'default'})", flush=True)
             script = generate_script_chunked(
