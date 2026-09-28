@@ -49,11 +49,13 @@ OPENAI_COMPATIBLE = {
     # (billing) mid-pipeline and stalled every unattended /make build. OpenAI-compatible,
     # same transport as fireworks.
     # Model id confirmed live against the account's own /v1/models listing 2026-09-28
-    # (`python llm.py list-models featherless`): meta-llama/Llama-3.3-70B-Instruct and
-    # Qwen/Qwen2.5-72B-Instruct both present. Picked the Llama one -- not a reasoning
-    # model, so it doesn't hit the reasoning-budget trap glm-5p2 needed a workaround for.
+    # (`python llm.py list-models featherless`). meta-llama/Llama-3.3-70B-Instruct was
+    # tried first but is GATED behind a HuggingFace org verification Featherless requires
+    # separately (HTTP 403 model_gated_needs_oauth) -- broke the Sagawa build outright.
+    # Switched to Qwen2.5-72B-Instruct, not gated. Not a reasoning model, so it doesn't
+    # hit the reasoning-budget trap glm-5p2 needed a workaround for.
     "featherless": ("https://api.featherless.ai/v1", "FEATHERLESS_API_KEY",
-                     "meta-llama/Llama-3.3-70B-Instruct"),
+                     "Qwen/Qwen2.5-72B-Instruct"),
 }
 
 DEFAULT_MODELS = {
