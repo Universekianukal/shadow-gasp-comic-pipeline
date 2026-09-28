@@ -48,8 +48,12 @@ OPENAI_COMPATIBLE = {
     # Added 2026-09-28 as a second fallback after Fireworks' account was suspended
     # (billing) mid-pipeline and stalled every unattended /make build. OpenAI-compatible,
     # same transport as fireworks.
+    # Model id confirmed live against the account's own /v1/models listing 2026-09-28
+    # (`python llm.py list-models featherless`): meta-llama/Llama-3.3-70B-Instruct and
+    # Qwen/Qwen2.5-72B-Instruct both present. Picked the Llama one -- not a reasoning
+    # model, so it doesn't hit the reasoning-budget trap glm-5p2 needed a workaround for.
     "featherless": ("https://api.featherless.ai/v1", "FEATHERLESS_API_KEY",
-                     "FEATHERLESS_DEFAULT_MODEL_PLACEHOLDER"),
+                     "meta-llama/Llama-3.3-70B-Instruct"),
 }
 
 DEFAULT_MODELS = {
@@ -60,7 +64,7 @@ DEFAULT_MODELS = {
 PROVIDERS = ("anthropic", "mock", *OPENAI_COMPATIBLE)
 
 # Order matters: the most capable key wins when several are present.
-AUTO_ORDER = ("anthropic", "fireworks", "openai")
+AUTO_ORDER = ("anthropic", "fireworks", "featherless", "openai")
 
 
 class LLMError(RuntimeError):
@@ -86,8 +90,14 @@ _BILLING_MARKERS = (
     "exceeded your current quota",
     "plans & billing",
     "payment required",
+    # fireworks reports a suspended account (spending limit / unpaid invoice) as a
+    # plain 412, not 402 -- added 2026-09-28 after this exact refusal (HTTP 412,
+    # "Account ... is suspended ... spending limit or failure to pay") reached the
+    # comic pipeline as an uncaught LLMError instead of triggering the featherless
+    # fallback, killing every unattended /make build until it was fixed by hand.
+    "is suspended",
 )
-_BILLING_STATUSES = (400, 402, 429)
+_BILLING_STATUSES = (400, 402, 412, 429)
 
 
 def _is_billing_refusal(status: int, detail: str) -> bool:
