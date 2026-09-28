@@ -7,6 +7,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: pip install requests
       - env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
         run: |
           cd pipeline_lib
@@ -14,7 +15,9 @@ jobs:
 import sys
 sys.path.insert(0, ".")
 import llm as LLM
-c = LLM.LLM(provider="featherless", model="meta-llama/Llama-3.3-70B-Instruct")
-print(f"provider={c.provider} model={c.model}")
-print(c.text("Name three components in a simple LED torch circuit. No preamble.", max_tokens=300).strip()[:500])
+c = LLM.LLM(provider="fireworks")
+print(f"starting provider={c.provider} model={c.model}")
+out = c.text("Name three components in a simple LED torch circuit. No preamble.", max_tokens=300)
+print(f"ended on provider={c.provider} model={c.model}")
+print(out.strip()[:500])
 PYEOF
