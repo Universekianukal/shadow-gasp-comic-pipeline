@@ -1,0 +1,14 @@
+name: Model bakeoff (temporary)
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests
+      - name: scaletest
+        env:
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+        run: |
+          cd pipeline_lib
+          python _scale_temp.py
