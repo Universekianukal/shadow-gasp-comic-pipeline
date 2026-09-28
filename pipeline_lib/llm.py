@@ -343,7 +343,10 @@ class LLM:
         msgs = ([{"role": "system", "content": system}] if system else []) + \
                [{"role": "user", "content": prompt}]
         payload = {"model": self.model, "max_tokens": max_tokens, "messages": msgs}
-        if self.reasoning_effort:
+        # reasoning_effort is a Fireworks-specific param for reasoning models (glm-5p2).
+        # Sending it to Featherless -- a plain instruct model, not a reasoning one -- was
+        # returning empty content (finish_reason=None) on every call, added 2026-09-28.
+        if self.reasoning_effort and self.provider == "fireworks":
             payload["reasoning_effort"] = self.reasoning_effort
 
         # ⭐⭐ STREAM. A non-streaming request sends NOTHING until the whole answer is
