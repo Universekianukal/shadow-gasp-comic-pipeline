@@ -252,6 +252,7 @@ jobs:
           COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER_PICK || 'auto' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
         run: python pipeline_lib/pick_case.py --source "${{ github.event.inputs.case_source || vars.COMIC_DAILY_SOURCE || 'published' }}" --lead "${{ github.event.inputs.lead || '0' }}"
 
       - name: Set case variable
@@ -298,6 +299,7 @@ jobs:
           COMIC_SPLIT_GENERATION: ${{ vars.COMIC_SPLIT_GENERATION || 'true' }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           CASE: ${{ steps.case.outputs.case }}
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
@@ -437,6 +439,7 @@ jobs:
           KAGGLE_ACCOUNT_SLOT: ${{ github.event.inputs.kaggle_account }}
           # the v3 carousel's story model (carousel_panels.pick_panels_llm)
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER || 'fireworks' }}
           # Via env, never interpolated into the command line. A case title is free text and
           # may contain a double quote -- Kang Kek Iew / "Comrade Duch" closed the --title
