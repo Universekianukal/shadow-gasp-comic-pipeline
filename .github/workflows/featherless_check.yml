@@ -10,8 +10,11 @@ jobs:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
         run: |
           cd pipeline_lib
-          python llm.py list-models featherless > /tmp/models.txt
-          echo "total: $(wc -l < /tmp/models.txt)"
-          grep -iE "^(meta-llama/(Meta-)?Llama-3\.[13]-70B-Instruct|Qwen/Qwen2\.5-72B-Instruct|mistralai/Mistral-(Small|Large)-Instruct|deepseek-ai/DeepSeek-V3|Qwen/Qwen2\.5-32B-Instruct)$" /tmp/models.txt || echo "none of the preferred exact ids matched"
-          echo "---close matches---"
-          grep -iE "llama-3\.[13]-70b-instruct$|qwen2\.5-72b-instruct$|mistral-small.*instruct" /tmp/models.txt | grep -v Gensyn | head -30
+          python - <<'PYEOF'
+import sys
+sys.path.insert(0, ".")
+import llm as LLM
+c = LLM.LLM(provider="featherless", model="meta-llama/Llama-3.3-70B-Instruct")
+print(f"provider={c.provider} model={c.model}")
+print(c.text("Name three components in a simple LED torch circuit. No preamble.", max_tokens=300).strip()[:500])
+PYEOF
