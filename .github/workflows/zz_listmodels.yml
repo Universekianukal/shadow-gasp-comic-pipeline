@@ -6,9 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install requests
-      - name: dstest
+      - name: glmlist
         env:
           FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
         run: |
           cd pipeline_lib
-          python _ds_temp.py
+          python llm.py list-models featherless | grep -iE "glm-5|glm5|zhipu|GLM-4\.5|GLM-4\.6"
