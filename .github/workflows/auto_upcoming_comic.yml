@@ -1,0 +1,62 @@
+name: Comic autopilot (40pp comic for each upcoming short)
+
+# Added 2026-09-29 at the owner's request, once the back catalogue was built: every short gets a
+# 40-page comic BEFORE it goes out, so the upload-time funnel (/batch/uploaded ->
+# autoFunnelForCase -> funnel_comic_link.yml) finds a PUBLISHED product and links it at launch.
+#
+# Each tick (pipeline_lib/upcoming_autopilot.py):
+#   * orders upcoming shorts exactly like render_queue.yml's auto-advance,
+#   * keeps the next 2 covered -- dispatches at most ONE Comic Pipeline build, never while one runs,
+#   * auto-publishes a draft nobody tapped once 17:40 UTC arrives on the eve of its short
+#     (~6h before publish_queue's ~23:40 UTC upload). Reject in Telegram = never rebuilt.
+#
+# This is additive: pipeline.yml stays workflow_dispatch-only and /make, /topics are untouched.
+# To pause the autopilot, disable this workflow in the Actions tab.
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  schedule:
+    - cron: "15 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = only log what it would build/publish"
+        required: false
+        default: "true"
+
+concurrency:
+  group: comic-autopilot
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Tick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GUMROAD_ACCESS_TOKEN: ${{ secrets.GUMROAD_ACCESS_TOKEN }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          KAGGLE_B_API_TOKEN: ${{ secrets.KAGGLE_B_API_TOKEN }}
+          KAGGLE_C_API_TOKEN: ${{ secrets.KAGGLE_C_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # A scheduled run has no inputs -> live. A manual run defaults to dry.
+          DRY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run || 'false' }}
+        run: |
+          git config user.name "comic-autopilot"
+          git config user.email "comic-autopilot@users.noreply.github.com"
+          if [ "$DRY" = "true" ]; then
+            python pipeline_lib/upcoming_autopilot.py --dry-run
+          else
+            python pipeline_lib/upcoming_autopilot.py
+          fi

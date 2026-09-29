@@ -92,6 +92,9 @@ jobs:
           COMIC_LLM_PROVIDER: ${{ vars.COMIC_LLM_PROVIDER_PROMO || 'auto' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          # 2026-09-29: Fireworks suspended + Anthropic out of credit -> llm.py's auto order falls
+          # through to featherless, which died on a missing key, failing every promo after publish.
+          FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # ⭐⭐ Everything below MUST come in through env:, never interpolated straight into
