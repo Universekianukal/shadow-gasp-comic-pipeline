@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 
 # The workflow invokes this as `python pipeline_lib/gen_case_script.py` from the repo root, so
@@ -436,13 +437,17 @@ def generate_prompts(script, provider, chunk_size=80, attempts=2):
     panels = panels_from_script(script)
     style = STYLE_RULES.replace("__TITLE__", script.get("title", ""))
     collected, missing = {}, list(panels)
+    # Only chunk-written books carry a bible. Every 80-panel batch below is a separate call
+    # that cannot see the others, so without a shared canon the same car, house or coat can
+    # be drawn three different ways across one book.
+    canon = _bible_block(script.get("story_bible"))
 
     for start in range(0, len(panels), chunk_size):
         batch = panels[start:start + chunk_size]
         listing = "\n".join(
             f'{i + 1}. file="{p["file"]}" shape={p["shape"]} :: {p["context"][:220]}'
             for i, p in enumerate(batch))
-        user = (f"{style}\n\nWrite one FLUX image prompt for each of these {len(batch)} panels "
+        user = (f"{style}\n\n{canon}Write one FLUX image prompt for each of these {len(batch)} panels "
                 f"from the comic \"{script.get('title','')}\".\n\n{listing}\n\n"
                 'Return ONLY: {"panel_prompts": [{"file": "...", "shape": "...", '
                 '"prompt": "..."}]} with exactly one entry per numbered item above, in the same '
@@ -665,6 +670,476 @@ def generate(system, user, max_tokens=16000, attempts=2,
     raise RuntimeError(f"Claude never returned a usable script after {attempts} attempts: {last_err}")
 
 
+# ============================================================================================
+# CHUNKED SCRIPT GENERATION -- books too long to write in one call
+# ============================================================================================
+#
+# Fireworks took a whole 50-page script (~64,000 output tokens) in one call. Featherless caps
+# every model at ~30,000 (llm.PROVIDER_MAX_OUTPUT), so a 50/75/100-page book cannot be written
+# in one response there.
+#
+# A story does not split like a render: each call knows only what it is told, so naive
+# page-range chunks repeat facts, re-introduce people, and change how things look at every
+# seam. What keeps the book one book:
+#
+#   1. PLAN once, for the whole book: every non-page field, a story bible (recurring people,
+#      places, objects and how they are drawn), and a page-by-page outline -- type, row
+#      structure, title, beat, and the facts that page states. Each fact goes to exactly ONE
+#      page; a part writer is told which facts are its own, which is what stops repetition.
+#      Rhythm (splash share, row structures) is decided here, globally, so it cannot drift
+#      part by part.
+#   2. WRITE the pages in parts of ~CHUNK_PAGES, strictly in order. Every part sees the whole
+#      outline (the arc, and what is still to come), the bible, its own pages' plan, and the
+#      real captions of the last pages written before it, so the voice runs across the seam.
+#   3. STITCH: concatenate, rename panel files deterministically (unique whatever each part
+#      invented), then the normal prompts pass -- which also gets the bible, so the art stays
+#      consistent across its separate 80-panel batches.
+#
+# Progress is cached after the plan and after every part, so a failure in part 3 of 4 resumes
+# at part 3 instead of paying for the plan and parts 1-2 again.
+
+# Books above this many pages are written in parts; the standard 35-40 page issue keeps the
+# proven single-call path. Raise the repo variable to switch chunking off.
+CHUNK_ABOVE = int(os.environ.get("COMIC_SCRIPT_CHUNK_ABOVE") or 40)
+# ~25 pages of script is ~10k output tokens: a third of Featherless's ceiling, and small
+# enough that one bad character costs a part, not the book.
+CHUNK_PAGES = int(os.environ.get("COMIC_SCRIPT_CHUNK_PAGES") or 25)
+# Already-written pages each part reads verbatim, for continuity across the seam.
+SEAM_PAGES = 3
+
+# Must match the list layout_profiles.prompt_block prints: the only structures the page
+# planner can lay out on this trim.
+LEGAL_STRUCTURES = {
+    6: [[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]],
+    5: [[1, 1, 3], [1, 2, 2], [1, 3, 1], [2, 1, 2], [2, 2, 1], [3, 1, 1]],
+    4: [[1, 1, 2], [1, 2, 1], [2, 1, 1]],
+}
+
+META_REQUIRED = ("title", "cover", "title_page", "back_matter", "back_cover")
+
+
+def _section(text, start, end):
+    i = text.index(start)
+    return text[i:text.index(end, i)]
+
+
+# Sliced from the one schema, like STYLE_RULES, so the parts can never drift from it.
+SCRIPT_SCHEMA = _section(SCHEMA_SPEC_TEMPLATE, '"script" must match this schema',
+                         'REQUIREMENTS for "pages":')
+PAGE_SCHEMA = _section(SCHEMA_SPEC_TEMPLATE, '"pages": [', '"back_matter"')
+JSON_RULES = _section(SCHEMA_SPEC_TEMPLATE, "JSON VALIDITY", "REQUIREMENTS for every prompt:")
+
+
+def _bible_block(bible):
+    """The story bible as prompt text, or '' when there is none."""
+    if not isinstance(bible, dict):
+        return ""
+    lines = []
+    if bible.get("tone"):
+        lines.append(f"Tone: {bible['tone']}")
+    for group in ("people", "places", "objects"):
+        for item in bible.get(group) or []:
+            if isinstance(item, dict) and item.get("name"):
+                lines.append(f"- {item['name']}"
+                             + (f" ({item['role']})" if item.get("role") else "")
+                             + (f": {item['look']}" if item.get("look") else ""))
+    if not lines:
+        return ""
+    return ("VISUAL CANON -- recurring people, places and objects. Describe and draw them the "
+            "same way every time they appear:\n" + "\n".join(lines) + "\n\n")
+
+
+def _plan_parts(n_pages, per_part=None):
+    """Near-equal (start, end) index ranges, none longer than per_part."""
+    per_part = per_part or CHUNK_PAGES
+    k = max(1, -(-n_pages // per_part))
+    size = -(-n_pages // k)
+    return [(i, min(i + size, n_pages)) for i in range(0, n_pages, size)]
+
+
+def _as_structure(st):
+    try:
+        return [int(x) for x in st] if isinstance(st, (list, tuple)) else []
+    except (TypeError, ValueError):
+        return []
+
+
+def _normalise_outline(outline):
+    """Make the plan buildable: sequential pages from 3, legal structures. -> (outline, notes)"""
+    notes, out, turn = [], [], {n: 0 for n in LEGAL_STRUCTURES}
+    for e in outline if isinstance(outline, list) else []:
+        if not isinstance(e, dict):
+            continue
+        e = dict(e)
+        e["page"] = 3 + len(out)
+        st = _as_structure(e.get("structure"))
+        if str(e.get("type", "")).lower() == "splash" or st == [1]:
+            e["type"], e["structure"] = "splash", [1]
+        else:
+            e["type"] = "grid"
+            n = sum(st)
+            if st not in LEGAL_STRUCTURES.get(n, []):
+                n2 = n if n in LEGAL_STRUCTURES else (6 if n > 6 else 5 if n == 0 else 4)
+                pick = LEGAL_STRUCTURES[n2][turn[n2] % len(LEGAL_STRUCTURES[n2])]
+                turn[n2] += 1
+                notes.append(f"page {e['page']}: structure {st} is not buildable -> {pick}")
+                st = pick
+            e["structure"] = st
+        e["title"] = str(e.get("title") or "").strip()
+        e["beat"] = str(e.get("beat") or "").strip()
+        e["facts"] = [str(f).strip() for f in e.get("facts") or [] if str(f).strip()]
+        out.append(e)
+    return out, notes
+
+
+def _type_quota(profile, n_pages):
+    """Exact page count per panel count ({1: splash, 4, 5, 6}) for this profile's density.
+
+    The plan used to get the profile only as percentages and was trusted to hit them; a 50pp
+    mosaic plan came back with 7 splashes where the profile allows 5. Largest remainder, so
+    the counts always sum to n_pages.
+    """
+    density = layout_profiles.PROFILES[profile]["density"]
+    raw = {n: w * n_pages for n, w in density.items()}
+    quota = {n: int(v) for n, v in raw.items()}
+    for n in sorted(raw, key=lambda n: raw[n] - quota[n], reverse=True)[:n_pages - sum(quota.values())]:
+        quota[n] += 1
+    return quota
+
+
+def _quota_line(quota):
+    names = {1: "single-panel splash", 4: "4-panel", 5: "5-panel", 6: "6-panel"}
+    parts = [f"{quota[n]} {names[n]}" for n in sorted(quota) if quota.get(n)]
+    return (f"exactly {', '.join(parts)} pages "
+            f"(= {sum(n * c for n, c in quota.items())} panels)")
+
+
+def _enforce_quota(outline, quota):
+    """Rebalance the plan's page types onto the exact quota. -> notes
+
+    Keeps every page whose panel count is still within quota (the model's own choice, where
+    it placed splashes and dense pages); only the overflow is reassigned, in reading order,
+    to the counts still owed, never repeating the previous page's structure.
+    """
+    left, excess = dict(quota), []
+    for e in outline:
+        n = sum(e["structure"])
+        if left.get(n, 0) > 0:
+            left[n] -= 1
+        else:
+            excess.append(e)
+    owed = [n for n in sorted(left, reverse=True) for _ in range(left[n])]
+    notes, turn = [], {n: 0 for n in LEGAL_STRUCTURES}
+    for e, n in zip(excess, owed):
+        before = e["structure"]
+        if n == 1:
+            e["type"], e["structure"] = "splash", [1]
+        else:
+            prev = next((p["structure"] for p in reversed(outline[:outline.index(e)])), None)
+            opts = LEGAL_STRUCTURES[n]
+            pick = opts[turn[n] % len(opts)]
+            if pick == prev:
+                turn[n] += 1
+                pick = opts[turn[n] % len(opts)]
+            turn[n] += 1
+            e["type"], e["structure"] = "grid", pick
+        notes.append(f"page {e['page']}: {before} -> {e['structure']}")
+    return notes
+
+
+def _finalise_meta(meta, issue_no):
+    meta = {k: v for k, v in meta.items() if k != "pages"}
+    meta["series"] = meta.get("series") or "SHADOW GASP"
+    meta["issue_no"] = str(issue_no)
+    meta["panels_dir"] = meta.get("panels_dir") or "panels"
+    cover = meta["cover"] if isinstance(meta.get("cover"), dict) else {}
+    cover.setdefault("image", "cover.jpg")
+    meta["cover"] = cover
+    # Issue 27 shipped as the literal TITLE_issue_27.pdf: the placeholder was copied, not filled.
+    out = str(meta.get("output") or "")
+    if not out or out.upper().startswith("TITLE"):
+        stem = re.sub(r"[^A-Z0-9]+", "_", str(meta.get("title") or "SHADOW GASP").upper())
+        meta["output"] = f"{stem.strip('_')}_issue{issue_no}.pdf"
+    return meta
+
+
+def _outline_lines(outline, lo, hi):
+    rows = []
+    for e in outline:
+        mark = ">>" if lo <= e["page"] <= hi else "  "
+        kind = "splash" if e["type"] == "splash" else "grid " + "".join(map(str, e["structure"]))
+        rows.append(f"{mark} p{e['page']} [{kind}] {e['title']} -- {e['beat']}")
+    return "\n".join(rows)
+
+
+def _part_plan(entries):
+    out = []
+    for e in entries:
+        facts = "; ".join(e["facts"]) or "(none -- an atmosphere or reaction beat)"
+        out.append(f"PAGE {e['page']} | {e['type']} | rows {e['structure']} | title: {e['title']}\n"
+                   f"  beat: {e['beat']}\n  facts for this page: {facts}")
+    return "\n".join(out)
+
+
+def _page_cells(pg):
+    if pg.get("type") == "splash" and isinstance(pg.get("panel"), dict):
+        return [pg["panel"]]
+    return [c for row in pg.get("rows") or [] if isinstance(row, list)
+            for c in row if isinstance(c, dict)]
+
+
+def _seam_text(pages):
+    """What the last pages actually said, so the next part continues rather than restarts."""
+    lines = []
+    for pg in pages:
+        said = []
+        for c in _page_cells(pg):
+            said += [str(c[k]) for k in ("caption", "caption2") if c.get(k)]
+            for d in c.get("dialogue") or []:
+                if isinstance(d, dict) and d.get("text"):
+                    said.append(f"{d.get('speaker') or 'VOICE'}: '{d['text']}'")
+                elif isinstance(d, str) and d.strip():
+                    said.append(f"'{d}'")
+        lines.append(f"p{pg.get('page')}: " + " / ".join(said))
+    return "\n".join(lines)
+
+
+def _renumber_files(pages):
+    """Deterministic, book-unique panel files -- whatever names each part wrote."""
+    for i, pg in enumerate(pages, 1):
+        if pg.get("type") == "splash" and isinstance(pg.get("panel"), dict):
+            pg["panel"]["file"] = f"p{i:02d}_splash.jpg"
+            continue
+        for r, row in enumerate(pg.get("rows") or [], 1):
+            for c, cell in enumerate(row if isinstance(row, list) else [], 1):
+                if isinstance(cell, dict):
+                    cell["file"] = f"p{i:02d}_{r}_{c}.jpg"
+
+
+def _check_part(result, entries):
+    pages = result.get("pages") if isinstance(result, dict) else None
+    if not isinstance(pages, list):
+        raise ValueError("part has no pages list")
+    pages = [p for p in pages if isinstance(p, dict)]
+    if len(pages) < len(entries):
+        raise ValueError(f"part returned {len(pages)} pages, planned {len(entries)}")
+    notes = []
+    if len(pages) > len(entries):
+        notes.append(f"dropped {len(pages) - len(entries)} page(s) written beyond the plan")
+        pages = pages[:len(entries)]
+    for pg, e in zip(pages, entries):
+        pg["page"] = e["page"]
+        if not pg.get("title") and e["title"]:
+            pg["title"] = e["title"]
+        wrote = [1] if pg.get("type") == "splash" else [
+            len(r) for r in pg.get("rows") or [] if isinstance(r, list)]
+        if wrote != e["structure"]:
+            notes.append(f"page {e['page']}: planned rows {e['structure']}, written {wrote}")
+    problems = script_problems({"pages": pages})
+    if problems:
+        raise ValueError(f"part unusable: {problems[:4]}")
+    return pages, notes
+
+
+def _ask_json(label, system, user, max_tokens, check, provider, attempts=2):
+    """One JSON-returning call, validated by `check`, retried on any malformed answer."""
+    last = None
+    for attempt in range(1, attempts + 1):
+        t0 = time.time()
+        try:
+            text = call_model(system, user, max_tokens=max_tokens, provider=provider)
+            out = check(extract_json(text))
+            print(f"  {label}: {len(text):,} chars in {time.time() - t0:.0f}s", flush=True)
+            return out
+        except (json.JSONDecodeError, ValueError, RuntimeError, KeyError, TypeError) as e:
+            last = e
+            print(f"  {label}: attempt {attempt}/{attempts} failed after "
+                  f"{time.time() - t0:.0f}s ({e})", flush=True)
+    raise RuntimeError(f"{label}: no usable response after {attempts} attempts: {last}")
+
+
+def _save_partial(cache_key, **state):
+    cache_save(f"{cache_key}:partial", {"script": dict(__partial__=1, **state),
+                                         "panel_prompts": []})
+
+
+def _retire_partial(cache_key):
+    cache_save(f"{cache_key}:partial", {"script": {"__partial__": 0}, "panel_prompts": []})
+
+
+def _load_partial(cache_key):
+    saved = cache_get(f"{cache_key}:partial")
+    state = saved.get("script") if isinstance(saved, dict) else None
+    if isinstance(state, dict) and state.get("__partial__") and state.get("outline"):
+        return state
+    return None
+
+
+def _plan_user(case, issue_no, target_pages, target_panels, layout_block, quota=None):
+    mix = (f"- Page types, counted: {_quota_line(quota)}. Place the splashes on the biggest "
+           "beats.\n" if quota else f"- About {target_panels} panels in total across all pages.\n")
+    return (
+        f"Case: {case}\nIssue number: {issue_no}\n\n"
+        f"This issue is long -- {target_pages} story pages -- so it is written in stages. THIS "
+        "call is stage 1: plan the whole book and write every part of it EXCEPT the page "
+        "captions, which later calls write from your plan.\n\n"
+        f"{layout_block}\n{SCRIPT_SCHEMA}\n"
+        'Return ONE JSON object with exactly three keys: "script", "bible", "outline".\n\n'
+        '"script": every field of the schema above EXCEPT "pages" -- series, issue_no, title, '
+        "subtitle, tagline, panels_dir, output, subject, store_description, promo_badge, "
+        "promo_inside, promo_hook, keywords, cover, title_page, back_matter, back_cover -- "
+        "following the schema's own instructions for each.\n\n"
+        '"bible": {"tone": "one sentence on voice and mood", "people": [{"name": "...", '
+        '"role": "...", "look": "..."}], "places": [{"name": "...", "look": "..."}], '
+        '"objects": [{"name": "...", "look": "..."}]} -- only people, places and objects that '
+        'recur across the story. "look" is how they are drawn: build, clothing, era, colours, '
+        "silhouette -- never a real person's likeness. The pages are written and drawn from "
+        "this, so it is what keeps the book consistent from start to end.\n\n"
+        f'"outline": exactly {target_pages} entries, one per story page, in reading order, '
+        f"numbered 3 to {target_pages + 2}:\n"
+        '  {"page": 3, "type": "splash" or "grid", "structure": row lengths such as [1,2,3] '
+        '(a splash is [1]), "title": "SHORT ALL-CAPS PAGE TITLE", "beat": "one or two '
+        'sentences: what this page shows and why it matters", "facts": ["each documented fact '
+        "this page's captions will state\"]}\n"
+        "Rules for the outline:\n"
+        "- Tell the whole case in order with a real arc: the hook, the build-up, the turning "
+        "points, the aftermath, what is still unknown. No filler pages.\n"
+        "- Every documented fact is assigned to exactly ONE page. Never give the same fact to "
+        "two pages -- the pages are written separately, and this is what stops the book "
+        "repeating itself.\n"
+        "- Page types and row structures follow the LAYOUT PROFILE above: its splash share, "
+        "and ONLY its listed 4/5/6-panel structures, varied page to page.\n"
+        f"{mix}\n"
+        f"{JSON_RULES}")
+
+
+def _part_user(case, issue_no, layout_block, meta, bible, outline, entries, seam, nxt, k, n):
+    lo, hi = entries[0]["page"], entries[-1]["page"]
+    parts = [
+        f"Case: {case}\nIssue number: {issue_no}\nBook title: {meta.get('title', '')}\n",
+        f"This book has been planned in full and is being written in {n} parts. You are "
+        f"writing PART {k} of {n}: story pages {lo} to {hi} ONLY.\n",
+        layout_block + "\nThe page types and row structures are ALREADY decided in your "
+        "pages' plan below -- follow the plan, not the percentages.\n",
+        _bible_block(bible),
+        "THE WHOLE BOOK'S OUTLINE (your pages are marked >>). Other pages are written "
+        "separately: do not cover their events or state their facts.\n"
+        + _outline_lines(outline, lo, hi) + "\n",
+        "YOUR PAGES -- write exactly these, in this order, each with exactly its listed row "
+        "structure and carrying its listed facts:\n" + _part_plan(entries) + "\n",
+    ]
+    if seam:
+        parts.append("THE PAGES JUST BEFORE YOURS, as already written. Continue straight on "
+                     "in the same voice -- do not recap them or repeat what they said:\n"
+                     + _seam_text(seam) + "\n")
+    else:
+        parts.append("Yours are the opening pages: start the book cold, on the hook.\n")
+    if nxt:
+        parts.append(f"After your last page the book continues with page {nxt['page']}: "
+                     f"{nxt['beat']} -- lead toward it, but do not cover it.\n")
+    else:
+        parts.append("Yours are the closing pages: land the ending.\n")
+    parts.append(
+        "PAGE FORMAT -- the same JSON as every other page of the book:\n" + PAGE_SCHEMA + "\n"
+        '- A splash page has one "panel" with shape SPLASH. A grid page has "rows" -- a list '
+        "of rows, each a list of panels -- whose lengths are exactly its structure.\n"
+        "- A grid panel's shape suits its cell: a row of 1 is wide (LANDSCAPE), a row of 2 is "
+        "LANDSCAPE or SQUARE, a row of 3 is narrow (PORTRAIT or SQUARE).\n"
+        "- Name panel files p<page>_<row>_<col>.jpg, or p<page>_splash.jpg for a splash.\n"
+        "- Captions state this page's assigned facts in tight, vivid documentary prose. Only "
+        "facts you are confident are true; if unsure, stay vaguer rather than invent. "
+        "Dialogue is optional, short, and dramatized.\n\n"
+        f'Return ONLY: {{"pages": [ ...{len(entries)} page objects... ]}}\n\n{JSON_RULES}')
+    return "\n".join(p for p in parts if p)
+
+
+def generate_script_chunked(case, issue_no, target_pages, target_panels, layout_block,
+                            system, provider, cache_key, profile=None):
+    """Plan the whole book once, write its pages in parts, stitch. Returns the script."""
+    quota = _type_quota(profile, target_pages) if profile else None
+    state = _load_partial(cache_key)
+    if state and state.get("stitched"):
+        print("RESUMING: stitched script found in the partial cache", flush=True)
+        return state["stitched"]
+
+    if state:
+        meta, bible, outline = state["meta"], state.get("bible") or {}, state["outline"]
+        done = state.get("parts") or {}
+        print(f"RESUMING: plan + {len(done)} part(s) already written", flush=True)
+    else:
+        def check_plan(res):
+            meta = res.get("script") if isinstance(res, dict) else None
+            if not isinstance(meta, dict):
+                raise ValueError("plan has no script fields")
+            missing = [k for k in META_REQUIRED if not meta.get(k)]
+            if missing:
+                raise ValueError(f"plan is missing {missing}")
+            outline, notes = _normalise_outline(res.get("outline"))
+            if len(outline) < max(3, target_pages // 2):
+                raise ValueError(f"outline has {len(outline)} pages for a "
+                                 f"{target_pages}-page book")
+            for note in notes:
+                print(f"  PLAN REPAIR: {note}", flush=True)
+            if quota and len(outline) == target_pages:
+                for note in _enforce_quota(outline, quota):
+                    print(f"  PAGE MIX: {note}", flush=True)
+            bible = res.get("bible") if isinstance(res.get("bible"), dict) else {}
+            return _finalise_meta(meta, issue_no), bible, outline
+
+        print(f"[plan] outlining all {target_pages} pages in one call", flush=True)
+        meta, bible, outline = _ask_json(
+            "plan", system,
+            _plan_user(case, issue_no, target_pages, target_panels, layout_block, quota),
+            max(12000, target_pages * 180 + 6000), check_plan, provider)
+        done = {}
+        _save_partial(cache_key, meta=meta, bible=bible, outline=outline, parts=done)
+
+    n_splash = sum(e["type"] == "splash" for e in outline)
+    n_panels = sum(sum(e["structure"]) for e in outline)
+    goal = (f"profile density {sum(n * c for n, c in quota.items())}" if quota
+            else f"target ~{target_panels}")
+    print(f"  plan: {len(outline)} pages ({n_splash} splash), {n_panels} panels planned "
+          f"({goal}); bible: "
+          f"{sum(len(bible.get(g) or []) for g in ('people', 'places', 'objects'))} entries",
+          flush=True)
+
+    ranges = _plan_parts(len(outline))
+    written = []
+    for k, (lo, hi) in enumerate(ranges, 1):
+        entries = outline[lo:hi]
+        span = f"{entries[0]['page']}-{entries[-1]['page']}"
+        label = f"part {k}/{len(ranges)} (pages {span})"
+        if span in done:
+            print(f"[{label}] from cache", flush=True)
+            written.extend(done[span])
+            continue
+        print(f"[{label}] writing {len(entries)} pages, "
+              f"{sum(sum(e['structure']) for e in entries)} panels", flush=True)
+        user = _part_user(case, issue_no, layout_block, meta, bible, outline, entries,
+                          written[-SEAM_PAGES:], outline[hi] if hi < len(outline) else None,
+                          k, len(ranges))
+        pages, notes = _ask_json(label, system, user, max(8000, len(entries) * 800),
+                                 lambda res, e=entries: _check_part(res, e), provider)
+        for note in notes:
+            print(f"  STRUCTURE DRIFT: {note}", flush=True)
+        written.extend(pages)
+        done[span] = pages
+        _save_partial(cache_key, meta=meta, bible=bible, outline=outline, parts=done)
+
+    _renumber_files(written)
+    script = dict(meta)
+    script["pages"] = written
+    script["story_bible"] = bible
+    problems = script_problems(script)
+    if problems:
+        raise RuntimeError(f"stitched script is unusable: {problems[:5]}")
+    # Kept until the full result is cached, so a failure in the prompts pass does not cost the
+    # script too.
+    _save_partial(cache_key, meta=meta, bible=bible, outline=outline, parts=done,
+                  stitched=script)
+    return script
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", required=True)
@@ -749,7 +1224,32 @@ def main():
         max_tokens = min(64000, max(16000, target_panels * 500))
 
         split = (os.environ.get("COMIC_SPLIT_GENERATION", "true").lower() != "false")
-        if split:
+        chunked = args.target_pages > CHUNK_ABOVE
+        # The single call needs `max_tokens` of output in ONE reply. Featherless cuts every
+        # reply at ~30K: a 40pp cinematic issue (#136) came back as 24 pages of 3-panel grids
+        # -- the model squeezed the book to fit. So a provider whose ceiling is below what the
+        # single call needs gets the chunked path at any length.
+        _prov = (os.environ.get("COMIC_SCRIPT_PROVIDER") or os.environ.get("COMIC_LLM_PROVIDER")
+                 or "").strip().lower()
+        import llm as _LLM
+        _ceiling = _LLM.PROVIDER_MAX_OUTPUT.get(_prov)
+        if not chunked and _ceiling and _ceiling < max_tokens:
+            print(f"{_prov} caps a reply at {_ceiling:,} tokens; a {args.target_pages}pp script "
+                  f"needs ~{max_tokens:,} in one call", flush=True)
+            chunked = True
+        if chunked:
+            script_provider = os.environ.get("COMIC_SCRIPT_PROVIDER") or None
+            prompts_provider = os.environ.get("COMIC_PROMPTS_PROVIDER") or None
+            print(f"CHUNKED SCRIPT: {args.target_pages} pages -- plan once, "
+                  f"then write in parts of ~{CHUNK_PAGES} (provider: "
+                  f"{script_provider or 'default'})", flush=True)
+            script = generate_script_chunked(
+                args.case, args.issue_no, args.target_pages, target_panels, layout_block,
+                system, script_provider, cache_key, profile=_profile_key)
+            print(f"[prompts] (provider: {prompts_provider or 'default'})", flush=True)
+            result = {"script": script,
+                      "panel_prompts": generate_prompts(script, prompts_provider)}
+        elif split:
             # TWO sequential calls instead of one.
             #
             # A combined response is ~100KB and JSON has no partial validity, so one stray
@@ -776,7 +1276,16 @@ def main():
             result = {"script": script_only["script"], "panel_prompts": prompts}
         else:
             result = generate(system, user, max_tokens=max_tokens)
-        cache_save(cache_key, result)
+        # A script well short of the requested length is a truncated reply, not a thin case.
+        # Caching it made the rebuild of #136 reload the same 24-of-40-page script in a minute.
+        _got = len((result.get("script") or {}).get("pages") or [])
+        if _got < 0.8 * args.target_pages:
+            print(f"NOT CACHED: {_got} of {args.target_pages} pages -- a rerun writes it afresh",
+                  flush=True)
+        else:
+            cache_save(cache_key, result)
+        if chunked:
+            _retire_partial(cache_key)
 
     # After BOTH paths, and deliberately after cache_save: the cache holds what the model
     # actually said, and every load repairs it the same way. That also means a script already
