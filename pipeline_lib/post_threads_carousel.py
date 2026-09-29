@@ -42,6 +42,16 @@ MAX_HASHTAGS = 4  # a 5th tag is what makes Threads strip the "#" off the first 
 DROP_TAG_FIRST = "#documentarycomic"  # least useful tag -- drop this one before shortening by position
 
 
+def threads_tags(line):
+    """Threads only (owner, 2026-09-30): #truecrime becomes #documentarycomic, kept in its place, no duplicate."""
+    tags = ["#documentarycomic" if t.lower() == "#truecrime" else t for t in line.split()]
+    seen, out = set(), []
+    for t in tags:
+        if t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    return out
+
 def threads_caption(e):
     """The IG caption, with the DM call to action swapped for the public-reply one and a single tag."""
     cta = CTA_FREE if int(e.get("issue") or 0) == 1 else CTA_ISSUE
@@ -54,7 +64,8 @@ def threads_caption(e):
                 placed = True
             continue
         if s.startswith("#"):
-            tags = s.split()
+            tags = threads_tags(s)
+            ln = " ".join(tags)
             if len(tags) > MAX_HASHTAGS:
                 tags = [t for t in tags if t.lower() != DROP_TAG_FIRST] or tags
                 tags = tags[:MAX_HASHTAGS]
