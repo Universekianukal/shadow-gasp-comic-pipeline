@@ -51,6 +51,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # A scheduled run has no inputs -> live. A manual run defaults to dry.
+          COMIC_AUTOPILOT_FROM: ${{ vars.COMIC_AUTOPILOT_FROM }}
           DRY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run || 'false' }}
         run: |
           git config user.name "comic-autopilot"

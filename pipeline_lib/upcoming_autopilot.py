@@ -43,6 +43,10 @@ MAX_ATTEMPTS = 3
 MIN_SLOT_HOURS = 3.0                     # 40pp ~ 2h of T4, plus margin
 SLOT_TOKEN = {"-": "KAGGLE_API_TOKEN", "B": "KAGGLE_B_API_TOKEN", "C": "KAGGLE_C_API_TOKEN"}
 UA = "shadow-gasp-comic-autopilot/1.0"
+# Owner, 2026-09-29: 09-29 and 09-30 belong to the back catalogue still waiting on Gumroad's
+# 10-creates/day cap, so the autopilot must not spend a create (or publish anything) before
+# 2026-10-01 00:00 IST. Override with the COMIC_AUTOPILOT_FROM repo variable (ISO timestamp).
+ACTIVE_FROM = os.environ.get("COMIC_AUTOPILOT_FROM") or "2026-10-01T00:00:00+05:30"
 
 
 def log(*a):
@@ -216,6 +220,10 @@ def write_reservation(case, issue, slot):
 def tick(dry_run, workdir):
     t = now()
     state = load(STATE, {"days": {}})
+    start = dt.datetime.fromisoformat(ACTIVE_FROM)
+    if t < start and not dry_run:
+        log(f"autopilot dormant until {ACTIVE_FROM} -- nothing built or published")
+        return state
     days = state.setdefault("days", {})
     upcoming, frontier = video_upcoming(workdir)
     log(f"upcoming shorts (next 5): {[(d, c[:40]) for d, c in upcoming[:5]]}; "
