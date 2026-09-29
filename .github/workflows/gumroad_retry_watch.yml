@@ -1,0 +1,40 @@
+name: Gumroad cap retry buttons
+
+# After every Comic Pipeline run (and every re-run attempt), if Gumroad's 10-creates/day cap
+# refused the product, send a Telegram "🔁 Retry #N" button. The comics bot re-runs the build on
+# tap; that attempt's completion comes back here, so a comic keeps getting a button until it is
+# on Gumroad. See pipeline_lib/gumroad_retry_watch.py. Manual dispatch with run_ids sends buttons
+# for a list of older runs (the #118-129 back catalogue).
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_run:
+    workflows: ["Comic Pipeline"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_ids:
+        description: "Space-separated Comic Pipeline run ids to offer Retry buttons for"
+        required: true
+
+jobs:
+  offer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Offer Retry buttons
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GUMROAD_ACCESS_TOKEN: ${{ secrets.GUMROAD_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_IDS: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.event.inputs.run_ids }}
+        run: python pipeline_lib/gumroad_retry_watch.py $RUN_IDS
