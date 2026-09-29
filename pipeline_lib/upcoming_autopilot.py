@@ -96,6 +96,13 @@ def video_upcoming(workdir):
         if base + "images/seq/01.mp4" not in names:
             continue                     # render_queue steps over a day with no hook clip
         case = (days.get(str(n)) or {}).get("case")
+        if not case and base + "pick.json" in names:
+            # state.json stops at day 97 (entries 98-117 lost when the two 09-09 pregen chains'
+            # conflicts were merged), but every pregenerated day has its own pick.json.
+            try:
+                case = show(base + "pick.json").get("case")
+            except Exception as e:
+                log(f"  day {n}: unreadable pick.json ({e})")
         if case:
             out.append((n, case))
     return out, frontier
