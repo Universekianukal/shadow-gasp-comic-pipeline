@@ -249,6 +249,18 @@ def issue_of(product):
     return int(m.group(1)) if m else 0
 
 
+def threads_tags(line):
+    """Threads only (owner, 2026-09-30): #truecrime becomes #documentarycomic, kept in its place, no duplicate.
+    Same rule as post_threads_carousel.threads_tags; the IG/FB captions keep #truecrime."""
+    tags = ["#documentarycomic" if t.lower() == "#truecrime" else t for t in line.split()]
+    seen, out = set(), []
+    for t in tags:
+        if t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    return out
+
+
 def threads_caption(caption, issue):
     """The Instagram caption with the DM ask swapped for the public-reply one, inside 500 chars.
 
@@ -264,6 +276,8 @@ def threads_caption(caption, issue):
                 out.append(cta)
                 placed = True
             continue
+        if line.strip().startswith("#"):
+            line = " ".join(threads_tags(line))
         out.append(line)
     if not placed:
         at = next((i for i in range(len(out) - 1, -1, -1) if out[i].strip().startswith("#")), len(out))
