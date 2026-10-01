@@ -787,7 +787,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "HUrvvsgnD0U",
       "case": "The Mad Trapper of Rat River (Yukon Territory, January–February 1932)",
       "publishedAt": null
     },
@@ -1060,6 +1060,16 @@
       "videoId": null,
       "case": "SS Central America sinking and the fugitive salvor (1857, Atlantic Ocean; wreck found 1988)",
       "publishedAt": "2026-09-20"
+    },
+    {
+      "videoId": null,
+      "case": "The 1999 disappearance of the Le Griffon",
+      "publishedAt": "2026-09-29"
+    },
+    {
+      "videoId": null,
+      "case": "The Leper Colony Ghost Train Heist (Moscow, 1904)",
+      "publishedAt": "2026-09-30"
     }
   ]
 }
