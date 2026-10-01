@@ -92,11 +92,20 @@ def _call(method, path, params, token):
         req = urllib.request.Request(f"{GRAPH}/{path}?{q}", headers=UA)
     else:
         req = urllib.request.Request(f"{GRAPH}/{path}", data=q.encode(), headers=UA)
-    try:
-        with urllib.request.urlopen(req, timeout=180) as r:
-            return json.loads(r.read().decode())
-    except urllib.error.HTTPError as ex:
-        raise SystemExit(f"Threads {path.split('/')[-1]} failed: {ex.code} {ex.read().decode()[:500]}")
+    # Meta returns transient 5xx (is_transient:true). Retry, except the final publish call,
+    # where a retry after an unseen success could double-post.
+    tries = 1 if path.endswith("threads_publish") else 3
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as r:
+                return json.loads(r.read().decode())
+        except urllib.error.HTTPError as ex:
+            body = ex.read().decode()[:500]
+            if ex.code >= 500 and attempt < tries - 1:
+                print(f"Threads {path.split('/')[-1]} {ex.code}, retrying ({attempt + 1}/{tries - 1}): {body}")
+                time.sleep(15 * (attempt + 1))
+                continue
+            raise SystemExit(f"Threads {path.split('/')[-1]} failed: {ex.code} {body}")
 
 
 def _wait(cid, token, what):
