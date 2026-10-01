@@ -5,7 +5,16 @@
       "case": "Elmer McCurdy, the Outlaw Mummy (1976 discovery, Long Beach, California)",
       "dispatched_at": "2026-10-01T12:31:22.787023+00:00",
       "issue": 139,
+      "product_id": "i0OCe398np4hMcgh4n-Udw==",
+      "published": true,
       "slot": "B"
+    },
+    "69": {
+      "attempts": 1,
+      "case": "The Banco Central Tunnel Heist (Fortaleza, Brazil, 2005)",
+      "dispatched_at": "2026-10-01T17:01:23.967338+00:00",
+      "issue": 140,
+      "slot": "-"
     }
   }
 }
