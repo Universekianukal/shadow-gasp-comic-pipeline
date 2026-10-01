@@ -345,7 +345,8 @@ def tick(dry_run, workdir):
 
 def commit_and_push(msg):
     for attempt in range(3):
-        subprocess.run(["git", "add", "-A", "issues.json", "autopilot"], check=True, cwd=ROOT)
+        paths = [p for p in ("issues.json", "autopilot") if os.path.exists(os.path.join(ROOT, p))]
+        subprocess.run(["git", "add", "-A", *paths], check=True, cwd=ROOT)
         if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT).returncode == 0:
             return
         subprocess.run(["git", "commit", "-q", "-m", msg], check=True, cwd=ROOT)
