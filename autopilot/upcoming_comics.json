@@ -17,6 +17,13 @@
       "product_id": "QkImS-yAcha9N_1mWyBZYA==",
       "published": true,
       "slot": "-"
+    },
+    "70": {
+      "attempts": 1,
+      "case": "SS Princess Sophia disaster (Vanderbilt Reef, Alaska, October 25, 1918)",
+      "dispatched_at": "2026-10-02T05:32:29.801139+00:00",
+      "issue": 141,
+      "slot": "B"
     }
   }
 }
