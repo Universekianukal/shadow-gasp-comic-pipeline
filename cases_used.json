@@ -817,12 +817,12 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "4zrvBwAu9T8",
       "case": "The Banco Central Tunnel Heist (Fortaleza, Brazil, 2005)",
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "qlfNhCoLVE8",
       "case": "SS Princess Sophia disaster (Vanderbilt Reef, Alaska, October 25, 1918)",
       "publishedAt": null
     },
@@ -1080,6 +1080,11 @@
       "videoId": null,
       "case": "The 1978 disappearance of Steven Kubacki",
       "publishedAt": "2026-10-02"
+    },
+    {
+      "videoId": null,
+      "case": "Sylvia Likens torture murder (Indianapolis, 1965)",
+      "publishedAt": "2026-10-04"
     }
   ]
 }
