@@ -35,6 +35,13 @@
       "product_id": "3P6eI6AeBKZiYtaOSf1xig==",
       "published": true,
       "slot": "-"
+    },
+    "72": {
+      "attempts": 1,
+      "case": "Keddie Cabin Murders (1981, Keddie, California)",
+      "dispatched_at": "2026-10-05T00:54:03.042300+00:00",
+      "issue": 143,
+      "slot": "B"
     }
   }
 }
