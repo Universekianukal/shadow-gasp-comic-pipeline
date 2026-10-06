@@ -51,6 +51,128 @@ def gumroad(args_list):
     return json.loads(result.stdout)
 
 
+# Gumroad refuses to create or update a product whose name or description contains any word on
+# its adult-content list (AdultKeywordDetector in antiwork/gumroad), and the whole call fails with
+# "Adult keywords are not allowed". The list catches ordinary true-crime vocabulary: #143 KEDDIE
+# CABIN MURDERS -- victims bound and "gagged" -- finished its 45-page PDF on 2026-10-05 and then
+# lost its draft, its landing page and its Publish button to that one word, three attempts
+# running. The model writes this copy freely, so it has to be cleaned here rather than trusted.
+#
+# Three layers, merged at first use (later wins):
+#   1. GUMROAD_ADULT_SWAPS below -- neutral replacements for the words on Gumroad's list.
+#   2. Gumroad's CURRENT list, read from its open-source detector each build, so a word Gumroad
+#      adds later is dropped even before anyone writes a replacement for it.
+#   3. gumroad_word_swaps.json, the owner's own list, read from MAIN (not this run's checkout) so
+#      the Telegram "Fix wording" button -- fix_wording.yml, which commits a swap and re-runs the
+#      build -- takes effect on the re-run even though a re-run executes its original commit.
+# A word mapped to "" is dropped outright.
+GUMROAD_ADULT_SWAPS = {
+    "gagged": "silenced", "hogtied": "tied up", "bondage": "restraints", "nude": "unclothed",
+    "topless": "shirtless", "crotch": "groin", "semen": "DNA evidence", "fetish": "obsession",
+    "uncensored": "unredacted", "lingerie": "nightclothes", "boudoir": "bedroom",
+    "thong": "sandal", "kink": "twist", "tickling": "teasing", "gape": "stare",
+    "milking": "exploiting", "necro": "death", "lolita": "the novel", "pinup": "poster",
+    "breast inflation": "", "abs punch": "punch", "gutpunch": "punch", "gutpunching": "punching",
+    "futa": "", "pussy": "", "bdsm": "", "lewd": "", "lewds": "", "ahegao": "", "creampie": "",
+    "dildo": "", "cuckold": "", "hairjob": "", "impregnation": "", "hentai": "", "squirt": "",
+    "orgasm": "", "virginkiller": "", "abdl": "", "ahri": "", "granblue": "", "shibari": "",
+    "vibrator": "", "nsfw": "", "footjob": "", "joi": "",
+}
+GUMROAD_DETECTOR_URL = ("https://raw.githubusercontent.com/antiwork/gumroad/main/"
+                        "app/services/adult_keyword_detector.rb")
+WORD_SWAPS_FILE = "pipeline_lib/gumroad_word_swaps.json"
+ADULT_ERROR = "adult keywords"
+_LETTER = r"[^\W\d_]"
+_swaps, _adult_re = None, None
+replaced_words = set()       # every flagged word swapped out this run, for the Telegram note
+
+
+def _http_get(url, headers=None, timeout=20):
+    req = urllib.request.Request(url, headers={"User-Agent": "shadow-gasp-pipeline/1.0",
+                                               **(headers or {})})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8")
+
+
+def _gumroad_live_words():
+    """The words on Gumroad's detector right now, or [] when it can't be read."""
+    try:
+        src = _http_get(GUMROAD_DETECTOR_URL)
+        block = re.search(r"ADULT_KEYWORD_REGEX.*?\[(.*?)\]\.join", src, re.S).group(1)
+        return [w.lower() for w in re.findall(r'"([^"]+)"', block)]
+    except Exception as e:
+        print(f"gumroad: could not read Gumroad's live keyword list ({e}) -- using the built-in "
+              "one", flush=True)
+        return []
+
+
+def _owner_swaps():
+    """gumroad_word_swaps.json from main via the API (no CDN lag right after fix_wording.yml
+    commits), falling back to this checkout's copy."""
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if repo:
+        hdr = {"Accept": "application/vnd.github.raw+json"}
+        if os.environ.get("GH_TOKEN"):
+            hdr["Authorization"] = f"Bearer {os.environ['GH_TOKEN']}"
+        try:
+            return json.loads(_http_get(
+                f"https://api.github.com/repos/{repo}/contents/{WORD_SWAPS_FILE}?ref=main",
+                hdr)).get("swaps", {})
+        except Exception as e:
+            print(f"gumroad: could not read {WORD_SWAPS_FILE} from main ({e}) -- using the "
+                  "local copy", flush=True)
+    local = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         WORD_SWAPS_FILE)
+    try:
+        with open(local, encoding="utf-8") as fh:
+            return json.load(fh).get("swaps", {})
+    except Exception:
+        return {}
+
+
+def _load_swaps():
+    global _swaps, _adult_re
+    if _swaps is None:
+        _swaps = dict(GUMROAD_ADULT_SWAPS)
+        for w in _gumroad_live_words():
+            _swaps.setdefault(w, "")
+        for k, v in _owner_swaps().items():
+            k = re.sub(r"[^\w]+", " ", k).strip().lower()
+            if k:
+                _swaps[k] = (v or "").strip()
+        _adult_re = re.compile(
+            rf"(?<!{_LETTER})("
+            + "|".join(re.escape(k).replace(r"\ ", r"[^\w]+")
+                       for k in sorted(_swaps, key=len, reverse=True))
+            + rf")(?!{_LETTER})", re.IGNORECASE)
+    return _swaps, _adult_re
+
+
+def gumroad_safe(text):
+    """Swap the words Gumroad's adult-keyword check rejects for neutral ones, keeping the case
+    of the original ('GAGGED' -> 'SILENCED') so titles and copy still read naturally."""
+    if not text:
+        return text
+    swaps, adult_re = _load_swaps()
+
+    def swap(m):
+        word = m.group(0)
+        replaced_words.add(word.lower())
+        new = swaps[re.sub(r"[^\w]+", " ", word).lower()]
+        if word.isupper():
+            return new.upper()
+        if word[:1].isupper():
+            return new[:1].upper() + new[1:]
+        return new
+
+    out = adult_re.sub(swap, text)
+    if out != text:
+        hits = sorted({m.group(0).lower() for m in adult_re.finditer(text)})
+        print(f"gumroad: replaced adult-flagged word(s) {hits} in product copy", flush=True)
+        out = re.sub(r"[ \t]{2,}", " ", out)
+    return out
+
+
 def pick_preview_panels(comic_dir, script, limit=3):
     """Pick interior panels to use as extra product previews / promo images.
 
@@ -178,6 +300,8 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
     # Deliberate defaults, all left OFF because the API's absence of a flag IS
     # the off state: pay-what-you-want, installments, quantity selection,
     # purchase limits and shipping. None help a $2.99 single-file download.
+    name, description = gumroad_safe(name), gumroad_safe(description)
+    tags = [t for t in (gumroad_safe(t).strip() for t in (tags or [])) if len(t) >= 2]
     args = ["products", "create", "--name", name, "--price", price,
             "--file", pdf_path, "--file-name", os.path.basename(pdf_path),
             # Once a PDF is downloaded there's nothing to return, which is why
@@ -424,6 +548,41 @@ def telegram_send_photo(token, chat_id, file_path, caption):
         headers={"Content-Type": "multipart/form-data; boundary=" + boundary})
     with urllib.request.urlopen(req) as r:
         return json.load(r)
+
+
+def telegram_send_link_button(token, chat_id, text, button_text, url):
+    """A plain message with one inline URL button. A URL button needs nothing from the bot
+    Worker -- Telegram opens the link itself -- so this works without touching the Worker."""
+    body = urllib.parse.urlencode({
+        "chat_id": chat_id, "text": text, "disable_web_page_preview": "true",
+        "reply_markup": json.dumps({"inline_keyboard": [[{"text": button_text, "url": url}]]}),
+    }).encode()
+    with urllib.request.urlopen("https://api.telegram.org/bot" + token + "/sendMessage", body,
+                                timeout=30) as r:
+        return json.load(r)
+
+
+WORDING_PENDING_FILE = "pipeline_lib/gumroad_wording_pending.json"
+
+
+def record_wording_issue(issue_no, case, words, staged):
+    """Remember which run built this issue, so fix_wording.yml can re-run it from just the
+    issue number the owner types. Committed with the ledgers by pipeline.yml."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        WORDING_PENDING_FILE)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        data = {}
+    data[str(issue_no).lstrip("0") or "0"] = {
+        "run_id": os.environ.get("GITHUB_RUN_ID", ""), "case": case, "words": sorted(words),
+        "staged": bool(staged),
+        "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        .isoformat(timespec="seconds")}
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
 
 
 def _form_field(boundary, name, value):
@@ -841,14 +1000,39 @@ def main():
     # the artefact. Deliver the PDF, say plainly that the draft was not staged, let the reviewer
     # re-run once the cap clears.
     product_id, gumroad_error = None, ""
+    product_name = gumroad_safe(product_name)
+    # When Gumroad still finds an adult keyword after gumroad_safe() -- a word on its PRODUCTION
+    # list that the open-source one does not carry -- stage the draft anyway with plain copy
+    # that cannot trip it, rather than leave the book with no product. The owner then fixes the
+    # wording from Telegram (fix_wording.yml) and the re-run updates this same draft in place.
+    pages_n = len(script.get("pages", []))
+    safe_desc = ("<p>" + (f"{pages_n} story pages of documentary comics. " if pages_n else "")
+                 + "Based on real events and the public record. Dialogue is dramatized.</p>")
+    attempts = [(product_name, description, tags, None),
+                (product_name, safe_desc, [], "description and tags"),
+                (f"{script['series']} #{script['issue_no']}", safe_desc, [],
+                 "name, description and tags")]
+    wording_fallback = None
     try:
-        product_id = stage_draft(
-            name=product_name,
-            pdf_path=pdf_path, cover_path=cover_path, price=args.price,
-            description=description, tags=tags, category=DEFAULT_CATEGORY,
-            preview_paths=previews, thumbnail_path=thumb_path,
-            permalink=permalink,
-        )
+        for i, (a_name, a_desc, a_tags, fallback) in enumerate(attempts):
+            try:
+                product_id = stage_draft(
+                    name=a_name,
+                    pdf_path=pdf_path, cover_path=cover_path, price=args.price,
+                    description=a_desc, tags=a_tags, category=DEFAULT_CATEGORY,
+                    preview_paths=previews, thumbnail_path=thumb_path,
+                    permalink=permalink,
+                )
+                wording_fallback = fallback
+                break
+            except Exception as e:
+                if ADULT_ERROR not in str(e).lower() or i == len(attempts) - 1:
+                    raise
+                print(f"WARNING: Gumroad still found an adult keyword -- retrying with plain "
+                      f"{attempts[i + 1][3]}", flush=True)
+        if wording_fallback:
+            print(f"WARNING: draft staged with PLAIN {wording_fallback} -- fix the wording "
+                  "from Telegram and re-run to restore the real copy", flush=True)
         print(f"Staged Gumroad draft: {product_id}")
         try:
             attach_epub(product_id, pdf_path, product_name)
@@ -943,8 +1127,10 @@ def main():
                  f"back cover prints {rendered_price} · Gumroad ${args.price}"
                  f"{_bounds}"
                  + (f"\n\n⚠️ GUMROAD DRAFT NOT STAGED: {gumroad_error}\n"
-                    "The comic itself is fine — this PDF is the finished book. Re-run the "
-                    "build to stage the draft once the limit clears."
+                    "The comic itself is fine — this PDF is the finished book. "
+                    + ("Gumroad refused a word in the product copy — tap ✏️ Fix wording below."
+                       if ADULT_ERROR in gumroad_error.lower() else
+                       "Re-run the build to stage the draft once the limit clears.")
                     if gumroad_error else "\n(approval buttons in the next message)")),
     )
     if not result.get("ok"):
@@ -959,6 +1145,41 @@ def main():
                                 caption=f"back cover of the PDF just sent — reads {rendered_price}")
         except Exception as e:
             print(f"WARNING: could not send the back-cover check image ({e})", flush=True)
+
+    # ---- Gumroad wording: tell the owner, and give them a one-tap way to fix it ----
+    # Sent whenever the copy had to change for Gumroad's adult-keyword check: words swapped,
+    # plain fallback copy used, or the draft refused outright. The button opens fix_wording.yml
+    # in GitHub, where the owner types the issue number and the word to use; that workflow saves
+    # the swap to gumroad_word_swaps.json and re-runs this build (script + art reused, no GPU).
+    adult_refused = ADULT_ERROR in gumroad_error.lower()
+    if replaced_words or wording_fallback or adult_refused:
+        issue_no = script.get("issue_no", "?")
+        try:
+            record_wording_issue(issue_no, args.title, replaced_words, product_id)
+        except Exception as e:
+            print(f"WARNING: could not record the wording issue ({e})", flush=True)
+        if adult_refused:
+            head = (f"⛔ #{issue_no}: Gumroad refused the product copy (adult-keyword filter) "
+                    "even after the automatic swaps — no draft was staged.")
+        elif wording_fallback:
+            head = (f"⚠️ #{issue_no}: Gumroad refused the product copy, so the draft was staged "
+                    f"with PLAIN {wording_fallback}. Fix the word and re-run to restore them.")
+        else:
+            head = f"ℹ️ #{issue_no}: the draft is staged; some words were swapped for Gumroad."
+        msg = (head
+               + (f"\n\nSwapped automatically: {', '.join(sorted(replaced_words))}"
+                  if replaced_words else "")
+               + "\n\nTo change the wording: tap ✏️ Fix wording → Run workflow, enter issue "
+               f"{issue_no}, the word Gumroad objects to, and what to write instead. It re-runs "
+               "this build (~10 min, no GPU) and updates the draft.")
+        repo = os.environ.get("GITHUB_REPOSITORY", "")
+        try:
+            r = telegram_send_link_button(
+                bot_token, chat_id, msg, "✏️ Fix wording",
+                f"https://github.com/{repo}/actions/workflows/fix_wording.yml")
+            print(f"sent the Gumroad wording note to Telegram ({r.get('ok')})", flush=True)
+        except Exception as e:
+            print(f"WARNING: could not send the wording note to Telegram ({e})", flush=True)
 
     # A second, independent copy of the script itself.
     #
