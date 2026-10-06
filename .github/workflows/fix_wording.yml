@@ -1,0 +1,57 @@
+name: Fix Gumroad wording
+
+# Opened from the "✏️ Fix wording" button the pipeline sends to Telegram when Gumroad's
+# adult-keyword filter objects to a book's product copy. Saves the swap to
+# pipeline_lib/gumroad_word_swaps.json on main and re-runs that issue's build (script + art
+# reused, no GPU). See pipeline_lib/fix_wording.py.
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fix-wording
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number, e.g. 143"
+        required: true
+      word:
+        description: "The word Gumroad objects to (shown in the Telegram message), e.g. gagged"
+        required: true
+      replacement:
+        description: "What to write instead (leave blank to just remove the word)"
+        required: false
+        default: ""
+      rerun:
+        description: "Re-run the build now so the draft is updated (true/false)"
+        required: false
+        default: "true"
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Save the swap and re-run the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Via env, never interpolated into the command line: these are free text.
+          IN_ISSUE: ${{ github.event.inputs.issue }}
+          IN_WORD: ${{ github.event.inputs.word }}
+          IN_REPLACEMENT: ${{ github.event.inputs.replacement }}
+          IN_RERUN: ${{ github.event.inputs.rerun }}
+        run: |
+          python pipeline_lib/fix_wording.py --issue "$IN_ISSUE" --word "$IN_WORD" \
+            --replacement "$IN_REPLACEMENT" --rerun "$IN_RERUN"

@@ -1,0 +1,4 @@
+{
+  "_about": "Words Gumroad's adult-keyword filter rejects in a product name/description, and what to write instead (\"\" = drop the word). Built-in swaps live in stage_and_deliver.py; entries here override them. Edited by the Telegram 'Fix wording' button (fix_wording.yml) or by hand.",
+  "swaps": {}
+}
