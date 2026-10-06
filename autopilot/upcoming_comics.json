@@ -40,8 +40,16 @@
       "attempts": 3,
       "case": "Keddie Cabin Murders (1981, Keddie, California)",
       "dispatched_at": "2026-10-05T19:17:15.528801+00:00",
+      "gave_up": "2026-10-06T01:17:43.143268+00:00",
       "issue": 143,
       "slot": "B"
+    },
+    "73": {
+      "attempts": 1,
+      "case": "The Gal\u00e1pagos Affair (Floreana Island, 1934)",
+      "dispatched_at": "2026-10-06T01:17:43.143268+00:00",
+      "issue": 144,
+      "slot": "C"
     }
   }
 }
