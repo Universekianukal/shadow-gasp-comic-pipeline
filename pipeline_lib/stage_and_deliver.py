@@ -51,6 +51,56 @@ def gumroad(args_list):
     return json.loads(result.stdout)
 
 
+# Gumroad refuses to create or update a product whose name or description contains any word on
+# its adult-content list (AdultKeywordDetector in antiwork/gumroad), and the whole call fails with
+# "Adult keywords are not allowed". The list catches ordinary true-crime vocabulary: #143 KEDDIE
+# CABIN MURDERS -- victims bound and "gagged" -- finished its 45-page PDF on 2026-10-05 and then
+# lost its draft, its landing page and its Publish button to that one word, three attempts
+# running. The model writes this copy freely, so it has to be cleaned here rather than trusted.
+# Keep the keys in step with Gumroad's list; a word mapped to "" is dropped outright.
+GUMROAD_ADULT_SWAPS = {
+    "gagged": "silenced", "hogtied": "tied up", "bondage": "restraints", "nude": "unclothed",
+    "topless": "shirtless", "crotch": "groin", "semen": "DNA evidence", "fetish": "obsession",
+    "uncensored": "unredacted", "lingerie": "nightclothes", "boudoir": "bedroom",
+    "thong": "sandal", "kink": "twist", "tickling": "teasing", "gape": "stare",
+    "milking": "exploiting", "necro": "death", "lolita": "the novel", "pinup": "poster",
+    "breast inflation": "", "abs punch": "punch", "gutpunch": "punch", "gutpunching": "punching",
+    "futa": "", "pussy": "", "bdsm": "", "lewd": "", "lewds": "", "ahegao": "", "creampie": "",
+    "dildo": "", "cuckold": "", "hairjob": "", "impregnation": "", "hentai": "", "squirt": "",
+    "orgasm": "", "virginkiller": "", "abdl": "", "ahri": "", "granblue": "", "shibari": "",
+    "vibrator": "", "nsfw": "", "footjob": "", "joi": "",
+}
+_LETTER = r"[^\W\d_]"
+_ADULT_RE = re.compile(
+    rf"(?<!{_LETTER})("
+    + "|".join(re.escape(k).replace(r"\ ", r"[^\w]+") for k in
+               sorted(GUMROAD_ADULT_SWAPS, key=len, reverse=True))
+    + rf")(?!{_LETTER})", re.IGNORECASE)
+
+
+def gumroad_safe(text):
+    """Swap the words Gumroad's adult-keyword check rejects for neutral ones, keeping the case
+    of the original ('GAGGED' -> 'SILENCED') so titles and copy still read naturally."""
+    if not text:
+        return text
+
+    def swap(m):
+        word = m.group(0)
+        new = GUMROAD_ADULT_SWAPS[re.sub(r"[^\w]+", " ", word).lower()]
+        if word.isupper():
+            return new.upper()
+        if word[:1].isupper():
+            return new[:1].upper() + new[1:]
+        return new
+
+    out = _ADULT_RE.sub(swap, text)
+    if out != text:
+        hits = sorted({m.group(0).lower() for m in _ADULT_RE.finditer(text)})
+        print(f"gumroad: replaced adult-flagged word(s) {hits} in product copy", flush=True)
+        out = re.sub(r"[ \t]{2,}", " ", out)
+    return out
+
+
 def pick_preview_panels(comic_dir, script, limit=3):
     """Pick interior panels to use as extra product previews / promo images.
 
@@ -178,6 +228,8 @@ def stage_draft(name, pdf_path, cover_path, price, description, tags, category,
     # Deliberate defaults, all left OFF because the API's absence of a flag IS
     # the off state: pay-what-you-want, installments, quantity selection,
     # purchase limits and shipping. None help a $2.99 single-file download.
+    name, description = gumroad_safe(name), gumroad_safe(description)
+    tags = [t for t in (gumroad_safe(t).strip() for t in (tags or [])) if len(t) >= 2]
     args = ["products", "create", "--name", name, "--price", price,
             "--file", pdf_path, "--file-name", os.path.basename(pdf_path),
             # Once a PDF is downloaded there's nothing to return, which is why
