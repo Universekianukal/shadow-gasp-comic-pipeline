@@ -54,6 +54,13 @@
       "product_id": "pCtbnXlNKrhzCXnxEFVUGA==",
       "published": true,
       "slot": "C"
+    },
+    "74": {
+      "attempts": 1,
+      "case": "Disappearance of Richard Halliburton (1939, Pacific Ocean)",
+      "dispatched_at": "2026-10-07T05:54:46.195810+00:00",
+      "issue": 145,
+      "slot": "B"
     }
   }
 }
