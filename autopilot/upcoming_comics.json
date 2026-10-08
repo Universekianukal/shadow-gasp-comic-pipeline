@@ -63,6 +63,13 @@
       "product_id": "BolN-QWGApFZCpv6uPC1VA==",
       "published": true,
       "slot": "B"
+    },
+    "75": {
+      "attempts": 1,
+      "case": "Disappearance of Andrew Gosden (London, 2007)",
+      "dispatched_at": "2026-10-08T00:11:19.287088+00:00",
+      "issue": 146,
+      "slot": "C"
     }
   }
 }
