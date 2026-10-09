@@ -72,6 +72,13 @@
       "product_id": "qFyPTZkM0p4-Bc5AmcFtJw==",
       "published": true,
       "slot": "C"
+    },
+    "76": {
+      "attempts": 1,
+      "case": "Disappearance of Zebb Quinn (Asheville, NC, January 2, 2000)",
+      "dispatched_at": "2026-10-09T00:21:04.006933+00:00",
+      "issue": 147,
+      "slot": "B"
     }
   }
 }
