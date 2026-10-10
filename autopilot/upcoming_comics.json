@@ -80,6 +80,13 @@
       "gave_up": "2026-10-09T22:35:58.104176+00:00",
       "issue": 147,
       "slot": "B"
+    },
+    "77": {
+      "attempts": 1,
+      "case": "Peter Bergmann (Sligo, Ireland, 2009)",
+      "dispatched_at": "2026-10-10T05:47:53.348836+00:00",
+      "issue": 148,
+      "slot": "C"
     }
   }
 }
