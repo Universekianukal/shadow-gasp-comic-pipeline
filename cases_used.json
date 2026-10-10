@@ -862,7 +862,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "kJmqHy415Y4",
       "case": "Disappearance of Richard Halliburton (1939, Pacific Ocean)",
       "publishedAt": null
     },
@@ -872,7 +872,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "XoMVXwrYYFo",
       "case": "Disappearance of Andrew Gosden (London, 2007)",
       "publishedAt": null
     },
@@ -1095,6 +1095,16 @@
       "videoId": null,
       "case": "The 1891 disappearance of Ambrose Bierce",
       "publishedAt": "2026-10-07"
+    },
+    {
+      "videoId": null,
+      "case": "The 1991 Austin yogurt shop murders",
+      "publishedAt": "2026-10-08"
+    },
+    {
+      "videoId": null,
+      "case": "Pac West Airlines flight $500K hijacking (1971, Washington)",
+      "publishedAt": "2026-10-09"
     }
   ]
 }
