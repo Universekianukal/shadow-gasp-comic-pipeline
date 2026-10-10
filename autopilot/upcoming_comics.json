@@ -89,6 +89,13 @@
       "product_id": "lddi88umW8KlpkcCpT5U3g==",
       "published": true,
       "slot": "C"
+    },
+    "78": {
+      "attempts": 1,
+      "case": "Isidor Fink Locked-Room Death (New York, 1929)",
+      "dispatched_at": "2026-10-10T23:31:53.578126+00:00",
+      "issue": 149,
+      "slot": "B"
     }
   }
 }
