@@ -98,6 +98,13 @@
       "product_id": "H839vEpSRthpOzRKwR1Uhg==",
       "published": true,
       "slot": "B"
+    },
+    "79": {
+      "attempts": 1,
+      "case": "SS Flor de la Mar wreck (1511, Strait of Malacca)",
+      "dispatched_at": "2026-10-11T23:38:41.957621+00:00",
+      "issue": 150,
+      "slot": "-"
     }
   }
 }
