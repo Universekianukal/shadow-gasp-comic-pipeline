@@ -107,6 +107,13 @@
       "product_id": "u5Fs1bXuw_nUPzofGuA_Cg==",
       "published": true,
       "slot": "-"
+    },
+    "80": {
+      "attempts": 1,
+      "case": "Banqiao Dam collapse (1975, Henan, China)",
+      "dispatched_at": "2026-10-13T06:44:59.982823+00:00",
+      "issue": 151,
+      "slot": "B"
     }
   }
 }
