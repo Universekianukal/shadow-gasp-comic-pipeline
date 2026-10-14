@@ -116,6 +116,13 @@
       "product_id": "RTYnpkK9gdKMXTL4Vlkitw==",
       "published": true,
       "slot": "B"
+    },
+    "81": {
+      "attempts": 1,
+      "case": "Han van Meegeren art forgery trial (Netherlands, 1945)",
+      "dispatched_at": "2026-10-14T23:11:55.493870+00:00",
+      "issue": 152,
+      "slot": "-"
     }
   }
 }
