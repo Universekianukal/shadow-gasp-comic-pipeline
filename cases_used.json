@@ -907,7 +907,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "zOVyVBAeQlU",
       "case": "Isidor Fink Locked-Room Death (New York, 1929)",
       "publishedAt": null
     },
@@ -1120,6 +1120,16 @@
       "videoId": null,
       "case": "The 1956 disappearance of the S.S. Naronic's lifeboats",
       "publishedAt": "2026-10-12"
+    },
+    {
+      "videoId": null,
+      "case": "The K-141 Kursk cover-up (2000)",
+      "publishedAt": "2026-10-13"
+    },
+    {
+      "videoId": null,
+      "case": "The 1971 Mount Rainier plane disappearance & ransom call",
+      "publishedAt": "2026-10-14"
     }
   ]
 }
