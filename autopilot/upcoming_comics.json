@@ -134,6 +134,13 @@
       "product_id": "RnzI_25yScw8kWjWOKLiCg==",
       "published": true,
       "slot": "B"
+    },
+    "83": {
+      "attempts": 1,
+      "case": "MV Lyubov Orlova ghost ship (North Atlantic, 2013)",
+      "dispatched_at": "2026-10-17T22:16:04.155724+00:00",
+      "issue": 154,
+      "slot": "B"
     }
   }
 }
