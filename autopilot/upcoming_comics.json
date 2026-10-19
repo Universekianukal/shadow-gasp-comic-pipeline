@@ -152,6 +152,13 @@
       "product_id": "pUX1uh40MiEOFXiYxzu1QA==",
       "published": true,
       "slot": "-"
+    },
+    "85": {
+      "attempts": 1,
+      "case": "Disappearance of Dennis Martin (1969, Great Smoky Mountains)",
+      "dispatched_at": "2026-10-19T23:37:06.251622+00:00",
+      "issue": 156,
+      "slot": "C"
     }
   }
 }
