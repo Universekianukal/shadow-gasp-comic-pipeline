@@ -166,7 +166,15 @@
       "attempts": 3,
       "case": "The Lady of the Dunes / Provincetown Jane Doe (Cape Cod, Massachusetts, 1974)",
       "dispatched_at": "2026-10-21T13:44:49.103364+00:00",
+      "gave_up": "2026-10-21T23:16:41.307545+00:00",
       "issue": 157,
+      "slot": "B"
+    },
+    "87": {
+      "attempts": 1,
+      "case": "Xavier Dupont de Ligonn\u00e8s Murders and Disappearance (Nantes, France, 2011)",
+      "dispatched_at": "2026-10-21T23:16:41.307545+00:00",
+      "issue": 158,
       "slot": "B"
     }
   }
