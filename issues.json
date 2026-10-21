@@ -173,7 +173,8 @@
     "villisca-axe-murders-villisca-iowa-june-": 46,
     "vitaly-kaloyev-2002-uberlingen-mid-air-c": 74,
     "wilhelm-gustloff-sinking-1945-deadliest-": 88,
-    "wouter-basson--project-coast-south-afric": 73
+    "wouter-basson--project-coast-south-afric": 73,
+    "xavier-dupont-de-ligonns-murders-and-dis": 158
   },
   "kaggle": {
     "1979-sverdlovsk-anthrax-leak-soviet-biow": "C",
@@ -286,6 +287,7 @@
     "villisca-axe-murders-villisca-iowa-june-": "C",
     "vitaly-kaloyev-2002-uberlingen-mid-air-c": "C",
     "wilhelm-gustloff-sinking-1945-deadliest-": "C",
-    "wouter-basson--project-coast-south-afric": "B"
+    "wouter-basson--project-coast-south-afric": "B",
+    "xavier-dupont-de-ligonns-murders-and-dis": "B"
   }
 }
