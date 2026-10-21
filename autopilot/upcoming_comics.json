@@ -161,6 +161,13 @@
       "product_id": "fenBeMjuf3jbpxuxG58Kkw==",
       "published": true,
       "slot": "C"
+    },
+    "86": {
+      "attempts": 1,
+      "case": "The Lady of the Dunes / Provincetown Jane Doe (Cape Cod, Massachusetts, 1974)",
+      "dispatched_at": "2026-10-21T00:36:34.543665+00:00",
+      "issue": 157,
+      "slot": "B"
     }
   }
 }
