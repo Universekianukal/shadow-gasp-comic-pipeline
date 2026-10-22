@@ -962,7 +962,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "jWmbKQDOcF0",
       "case": "Disappearance of Ray Gricar (2005, Centre County, Pennsylvania)",
       "publishedAt": null
     },
@@ -972,7 +972,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "9oqoiEJc2Jg",
       "case": "Disappearance of Dennis Martin (1969, Great Smoky Mountains)",
       "publishedAt": null
     },
@@ -1155,6 +1155,16 @@
       "videoId": null,
       "case": "1994 Northridge earthquake time capsule theft",
       "publishedAt": "2026-10-19"
+    },
+    {
+      "videoId": null,
+      "case": "The 1985 disappearance of the crew of the MV Marques",
+      "publishedAt": "2026-10-20"
+    },
+    {
+      "videoId": null,
+      "case": "The 1976 disappearance of the uranium sphere from Georgia Tech",
+      "publishedAt": "2026-10-21"
     }
   ]
 }
