@@ -178,6 +178,13 @@
       "product_id": "J8TmJNZaKEMkV5cUu_Gzig==",
       "published": true,
       "slot": "B"
+    },
+    "88": {
+      "attempts": 1,
+      "case": "Project Azorian / K-129 Submarine (1968, Pacific Ocean)",
+      "dispatched_at": "2026-10-23T00:38:54.847745+00:00",
+      "issue": 159,
+      "slot": "-"
     }
   }
 }
