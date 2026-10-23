@@ -187,6 +187,13 @@
       "product_id": "gqmhrvLXZHwjn6XRD9P-mQ==",
       "published": true,
       "slot": "-"
+    },
+    "89": {
+      "attempts": 1,
+      "case": "The Chevaline Shootings / al-Hilli family murders (2012, Annecy, France)",
+      "dispatched_at": "2026-10-23T23:07:33.686681+00:00",
+      "issue": 160,
+      "slot": "B"
     }
   }
 }
