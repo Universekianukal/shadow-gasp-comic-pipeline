@@ -196,6 +196,13 @@
       "product_id": "t2hAQ2uYqkpUY8xaePDlrw==",
       "published": true,
       "slot": "B"
+    },
+    "90": {
+      "attempts": 1,
+      "case": "MS Estonia Sinking (Baltic Sea, September 28, 1994)",
+      "dispatched_at": "2026-10-24T22:27:48.330209+00:00",
+      "issue": 161,
+      "slot": "B"
     }
   }
 }
