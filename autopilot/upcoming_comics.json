@@ -204,6 +204,13 @@
       "gave_up": "2026-10-25T19:02:40.024262+00:00",
       "issue": 161,
       "slot": "B"
+    },
+    "92": {
+      "attempts": 1,
+      "case": "Assassination of Olof Palme (Stockholm, Sweden, February 28, 1986)",
+      "dispatched_at": "2026-10-25T22:32:07.128817+00:00",
+      "issue": 162,
+      "slot": "-"
     }
   }
 }
