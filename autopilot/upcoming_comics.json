@@ -201,6 +201,7 @@
       "attempts": 3,
       "case": "MS Estonia Sinking (Baltic Sea, September 28, 1994)",
       "dispatched_at": "2026-10-25T11:20:44.253123+00:00",
+      "gave_up": "2026-10-25T19:02:40.024262+00:00",
       "issue": 161,
       "slot": "B"
     }
