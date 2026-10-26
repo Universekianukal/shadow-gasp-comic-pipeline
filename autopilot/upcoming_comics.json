@@ -206,9 +206,9 @@
       "slot": "B"
     },
     "92": {
-      "attempts": 2,
+      "attempts": 3,
       "case": "Assassination of Olof Palme (Stockholm, Sweden, February 28, 1986)",
-      "dispatched_at": "2026-10-26T04:41:39.758671+00:00",
+      "dispatched_at": "2026-10-26T12:55:04.180659+00:00",
       "issue": 162,
       "slot": "-"
     }
