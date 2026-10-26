@@ -212,6 +212,13 @@
       "gave_up": "2026-10-26T19:55:37.467676+00:00",
       "issue": 162,
       "slot": "-"
+    },
+    "93": {
+      "attempts": 1,
+      "case": "Soci\u00e9t\u00e9 G\u00e9n\u00e9rale sewer heist (Nice, France, 1976)",
+      "dispatched_at": "2026-10-26T23:50:56.450213+00:00",
+      "issue": 163,
+      "slot": "C"
     }
   }
 }
