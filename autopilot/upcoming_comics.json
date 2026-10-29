@@ -238,6 +238,13 @@
       "product_id": "wbIO3xXfBdkK1ADhfpqb3Q==",
       "published": true,
       "slot": "B"
+    },
+    "96": {
+      "attempts": 1,
+      "case": "Joyce Carol Vincent death (found January 2006, Wood Green, London)",
+      "dispatched_at": "2026-10-29T23:55:48.531677+00:00",
+      "issue": 166,
+      "slot": "C"
     }
   }
 }
