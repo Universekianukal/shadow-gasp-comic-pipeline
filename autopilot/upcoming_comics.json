@@ -247,6 +247,13 @@
       "product_id": "v9z6_OGL6PGp8NwDSyj7Cg==",
       "published": true,
       "slot": "C"
+    },
+    "97": {
+      "attempts": 1,
+      "case": "The Bogle-Chandler Case (Sydney, Australia, 1963)",
+      "dispatched_at": "2026-10-30T23:44:16.558854+00:00",
+      "issue": 167,
+      "slot": "B"
     }
   }
 }
