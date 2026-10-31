@@ -256,6 +256,13 @@
       "product_id": "82zwA_7UmVQ4FwMyh9biYw==",
       "published": true,
       "slot": "B"
+    },
+    "98": {
+      "attempts": 1,
+      "case": "Loss of the French Submarine Minerve (Mediterranean, 1968)",
+      "dispatched_at": "2026-10-31T23:21:35.751142+00:00",
+      "issue": 168,
+      "slot": "-"
     }
   }
 }
