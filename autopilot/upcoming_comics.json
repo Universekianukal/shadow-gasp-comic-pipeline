@@ -258,9 +258,9 @@
       "slot": "B"
     },
     "98": {
-      "attempts": 2,
+      "attempts": 3,
       "case": "Loss of the French Submarine Minerve (Mediterranean, 1968)",
-      "dispatched_at": "2026-11-01T05:57:32.931454+00:00",
+      "dispatched_at": "2026-11-01T13:15:54.690697+00:00",
       "issue": 168,
       "slot": "-"
     }
