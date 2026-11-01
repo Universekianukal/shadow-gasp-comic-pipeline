@@ -264,6 +264,13 @@
       "gave_up": "2026-11-01T18:54:53.739204+00:00",
       "issue": 168,
       "slot": "-"
+    },
+    "99": {
+      "attempts": 1,
+      "case": "Brian Shaffer disappearance (2006, Columbus, Ohio)",
+      "dispatched_at": "2026-11-01T23:34:01.846132+00:00",
+      "issue": 169,
+      "slot": "C"
     }
   }
 }
