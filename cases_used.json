@@ -802,7 +802,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "o8NN8uDN5rE",
       "case": "Joyce Carol Vincent death (found January 2006, Wood Green, London)",
       "publishedAt": null
     },
@@ -812,7 +812,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "SpPTfkBou5w",
       "case": "The Bogle-Chandler Case (Sydney, Australia, 1963)",
       "publishedAt": null
     },
@@ -1210,6 +1210,16 @@
       "videoId": null,
       "case": "The Barlonyo Massacre cover-up (2004, Uganda)",
       "publishedAt": "2026-10-30"
+    },
+    {
+      "videoId": null,
+      "case": "2004 disappearance of the Los Lunas subway train (Mexico City)",
+      "publishedAt": "2026-10-31"
+    },
+    {
+      "videoId": null,
+      "case": "The 1986 theft of The Scream from the National Gallery, Oslo",
+      "publishedAt": "2026-11-01"
     }
   ]
 }
