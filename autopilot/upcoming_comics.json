@@ -54,6 +54,13 @@
       "published": true,
       "slot": "B"
     },
+    "107": {
+      "attempts": 1,
+      "case": "Disappearance of Glenn Miller (December 15, 1944, English Channel)",
+      "dispatched_at": "2026-11-09T01:43:18.585707+00:00",
+      "issue": 176,
+      "slot": "-"
+    },
     "68": {
       "attempts": 1,
       "case": "Elmer McCurdy, the Outlaw Mummy (1976 discovery, Long Beach, California)",
