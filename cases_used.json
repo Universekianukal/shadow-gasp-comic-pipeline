@@ -892,7 +892,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "uFmgnubbRRE",
       "case": "The Celle Hole / Celler Loch (1978, West Germany)",
       "publishedAt": null
     },
@@ -902,7 +902,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "28Hl1kiGrzE",
       "case": "Disappearance of Connie Smith (1952, Salisbury, Connecticut)",
       "publishedAt": null
     },
@@ -1250,6 +1250,16 @@
       "videoId": null,
       "case": "The 1979 disappearance of the Mount Laguna radar blip",
       "publishedAt": "2026-11-07"
+    },
+    {
+      "videoId": null,
+      "case": "Disappearance of the SS Warrington (1956)",
+      "publishedAt": "2026-11-08"
+    },
+    {
+      "videoId": null,
+      "case": "The 1975 D.B. Tuber Heist",
+      "publishedAt": "2026-11-09"
     }
   ]
 }
