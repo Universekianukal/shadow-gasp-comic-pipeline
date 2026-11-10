@@ -58,7 +58,15 @@
       "attempts": 3,
       "case": "Disappearance of Glenn Miller (December 15, 1944, English Channel)",
       "dispatched_at": "2026-11-09T20:42:21.564462+00:00",
+      "gave_up": "2026-11-10T04:06:05.549776+00:00",
       "issue": 176,
+      "slot": "-"
+    },
+    "108": {
+      "attempts": 1,
+      "case": "The Dugway Sheep Incident (1968, Utah)",
+      "dispatched_at": "2026-11-10T04:06:05.549776+00:00",
+      "issue": 177,
       "slot": "-"
     },
     "68": {
