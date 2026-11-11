@@ -912,7 +912,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "pRt9TxJuFHY",
       "case": "Disappearance of Glenn Miller (December 15, 1944, English Channel)",
       "publishedAt": null
     },
@@ -1260,6 +1260,11 @@
       "videoId": null,
       "case": "The 1975 D.B. Tuber Heist",
       "publishedAt": "2026-11-09"
+    },
+    {
+      "videoId": null,
+      "case": "The 1995 Disappearance of the Leary Family Yacht",
+      "publishedAt": "2026-11-10"
     }
   ]
 }
