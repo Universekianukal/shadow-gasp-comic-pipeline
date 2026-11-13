@@ -89,6 +89,13 @@
       "published": true,
       "slot": "-"
     },
+    "111": {
+      "attempts": 1,
+      "case": "Paul Fronczak Disappearance (1964, Chicago)",
+      "dispatched_at": "2026-11-13T01:03:44.009820+00:00",
+      "issue": 180,
+      "slot": "C"
+    },
     "68": {
       "attempts": 1,
       "case": "Elmer McCurdy, the Outlaw Mummy (1976 discovery, Long Beach, California)",
