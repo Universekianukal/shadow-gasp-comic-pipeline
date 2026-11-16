@@ -967,7 +967,7 @@
       "publishedAt": null
     },
     {
-      "videoId": null,
+      "videoId": "2xAldQoniIc",
       "case": "The Julia Wallace Case (Liverpool, 1931)",
       "publishedAt": null
     },
@@ -1285,6 +1285,11 @@
       "videoId": null,
       "case": "The 1960 disappearance of the S.S. Arctic Rose's navigation logs",
       "publishedAt": "2026-11-14"
+    },
+    {
+      "videoId": null,
+      "case": "The Great Kentucky Meat Shower (1876)",
+      "publishedAt": "2026-11-15"
     }
   ]
 }
