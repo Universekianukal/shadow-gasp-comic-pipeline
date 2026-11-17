@@ -125,6 +125,13 @@
       "published": true,
       "slot": "-"
     },
+    "115": {
+      "attempts": 1,
+      "case": "Dag Hammarskj\u00f6ld plane crash (Ndola, Northern Rhodesia, September 18, 1961)",
+      "dispatched_at": "2026-11-17T04:28:15.922294+00:00",
+      "issue": 184,
+      "slot": "B"
+    },
     "68": {
       "attempts": 1,
       "case": "Elmer McCurdy, the Outlaw Mummy (1976 discovery, Long Beach, California)",
