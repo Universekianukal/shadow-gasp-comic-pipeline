@@ -134,6 +134,13 @@
       "published": true,
       "slot": "B"
     },
+    "117": {
+      "attempts": 1,
+      "case": "SS El Faro Sinking (Hurricane Joaquin, Bahamas, October 1, 2015)",
+      "dispatched_at": "2026-11-18T07:22:03.088953+00:00",
+      "issue": 185,
+      "slot": "-"
+    },
     "68": {
       "attempts": 1,
       "case": "Elmer McCurdy, the Outlaw Mummy (1976 discovery, Long Beach, California)",
